@@ -375,7 +375,7 @@ export default function Header({ onMobileToggle }) {
           className="flex items-center gap-2 p-1 hover:bg-gray-100 rounded-lg transition-base group"
           aria-label="Profile menu"
         >
-          <div className="w-8 h-8 rounded-full bg-brand-gradient flex items-center justify-center text-white text-sm font-bold flex-shrink-0 shadow-sm">
+          <div className="w-8 h-8 rounded-full bg-brand-red flex items-center justify-center text-white text-sm font-bold flex-shrink-0 shadow-sm">
             {user?.name?.[0]?.toUpperCase() || 'U'}
           </div>
           {!isMobile && (

@@ -106,7 +106,7 @@ export default function Sidebar({
       >
         {/* Logo and Mobile Close Button */}
         <div className={`border-b border-white/10 min-h-[70px] sm:min-h-[80px] flex items-center ${collapsed && !isMobile ? 'justify-center p-4' : 'px-5 p-6'}`}>
-          <div className="w-10 h-10 rounded-xl bg-brand-gradient flex items-center justify-center shadow-lg shadow-brand-red/30 flex-shrink-0">
+          <div className="w-10 h-10 rounded-xl bg-brand-red flex items-center justify-center shadow-lg shadow-brand-red/30 flex-shrink-0">
             <span className="text-white font-display font-bold text-xl">ZB</span>
           </div>
           
