@@ -6,8 +6,15 @@ export default {
   ],
   theme: {
     extend: {
+      screens: {
+        'xs': '480px',
+        'sm': '640px',
+        'md': '768px',
+        'lg': '1024px',
+        'xl': '1280px',
+        '2xl': '1536px',
+      },
       colors: {
-        // Zemen Bank Brand Colors (per document: red, white, black - more red and white)
         brand: {
           red: '#C8102E',
           'red-dark': '#A00D24',
@@ -16,7 +23,6 @@ export default {
           black: '#1A1A1A',
           'black-soft': '#27272A',
         },
-        // Competency Level Colors
         level: {
           basic: '#F59E0B',
           intermediate: '#EA580C',
@@ -31,6 +37,14 @@ export default {
       boxShadow: {
         'card': '0 2px 8px rgba(0,0,0,0.06)',
         'card-hover': '0 4px 12px rgba(0,0,0,0.10)',
+      },
+      animation: {
+        'spin-slow': 'spin 2s linear infinite',
+        'pulse-slow': 'pulse 3s ease-in-out infinite',
+      },
+      transitionProperty: {
+        'height': 'height',
+        'spacing': 'margin, padding',
       },
     },
   },

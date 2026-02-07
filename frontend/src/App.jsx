@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
 
@@ -33,12 +33,51 @@ function ProtectedRoute({ children, adminOnly }) {
 
 function AppShell({ children }) {
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  // Check if mobile on mount and resize
+  useEffect(() => {
+    const checkMobile = () => {
+      const mobile = window.innerWidth < 1024;
+      setIsMobile(mobile);
+      if (!mobile) {
+        setMobileOpen(false); // Close mobile sidebar when resizing to desktop
+      }
+    };
+
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  const handleMobileToggle = () => {
+    setMobileOpen(!mobileOpen);
+  };
+
+  const handleDesktopToggle = () => {
+    setCollapsed(!collapsed);
+  };
+
+  const handleNavClick = () => {
+    if (isMobile) {
+      setMobileOpen(false);
+    }
+  };
+
   return (
     <div className="flex min-h-screen bg-gray-50">
-      <Sidebar collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} />
-      <div className={`flex-1 flex flex-col min-w-0 transition-all duration-200 ${collapsed ? 'lg:ml-20' : 'lg:ml-64'}`}>
-        <Header onMobileToggle={() => setCollapsed(!collapsed)} />
-        <main className="flex-1">{children}</main>
+      <Sidebar 
+        collapsed={collapsed}
+        onToggle={isMobile ? handleMobileToggle : handleDesktopToggle}
+        mobileOpen={mobileOpen}
+        onNavClick={handleNavClick}
+      />
+      <div className={`flex-1 flex flex-col min-w-0 transition-all duration-200 ${
+        isMobile ? '' : (collapsed ? 'lg:ml-20' : 'lg:ml-64')
+      }`}>
+        <Header onMobileToggle={handleMobileToggle} />
+        <main className="flex-1 overflow-auto">{children}</main>
       </div>
     </div>
   );
