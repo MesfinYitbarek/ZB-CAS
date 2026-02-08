@@ -77,25 +77,52 @@ exports.getMe = asyncHandler(async (req, res, next) => {
 
 // ─── UPDATE USER ─────────────────────────────────────────────────────────────
 exports.updateUser = asyncHandler(async (req, res, next) => {
-  const allowedFields = ['name', 'position', 'department', 'supervisorId', 'role', 'status'];
+  const allowedFields = [
+    'name',
+    'position',
+    'department',
+    'supervisorId',
+    'role',
+    'status'
+  ];
+
   const updates = {};
+
   allowedFields.forEach((field) => {
-    if (req.body[field] !== undefined) updates[field] = req.body[field];
+    const value = req.body[field];
+
+    // Ignore empty string for supervisorId
+    if (field === 'supervisorId') {
+      if (value === '' || value === null) {
+        updates.supervisorId = null; // or skip entirely
+      } else if (value !== undefined) {
+        updates.supervisorId = value;
+      }
+    } else {
+      if (value !== undefined) {
+        updates[field] = value;
+      }
+    }
   });
 
   if (Object.keys(updates).length === 0) {
     return next(new AppError('No valid fields to update.', 400));
   }
 
-  const user = await User.findByIdAndUpdate(req.params.id, updates, {
-    new:           true,
-    runValidators: true,
-  }).populate('supervisorId', 'name email');
+  const user = await User.findByIdAndUpdate(
+    req.params.id,
+    updates,
+    { new: true, runValidators: true }
+  ).populate('supervisorId', 'name email');
 
   if (!user) return next(new AppError('User not found.', 404));
 
-  res.status(200).json({ status: 'success', data: { user: user.toPublic() } });
+  res.status(200).json({
+    status: 'success',
+    data: { user: user.toPublic() }
+  });
 });
+
 
 // ─── SOFT DELETE ──────────────────────────────────────────────────────────────
 exports.deleteUser = asyncHandler(async (req, res, next) => {
