@@ -22,20 +22,18 @@ const { scoreSingleResponse } = require('../utils/scoring');
 
 // ─── helper: validate that the assessment is active and the user is allowed ──
 const validateAccess = async (assessmentId, userId, employeeId, respondentType) => {
-  const assessment = await Assessment.findById(assessmentId).lean();
+  const assessment = await Assessment.findById(assessmentId);
   if (!assessment) throw new AppError('Assessment not found.', 404);
   if (assessment.status !== 'ACTIVE') {
     throw new AppError('Assessment is not active.', 400);
   }
 
-  // For self: userId must equal employeeId
   if (respondentType === 'self' && userId.toString() !== employeeId.toString()) {
     throw new AppError('You can only submit self-assessments for yourself.', 403);
   }
 
-  // For supervisor: the employee must be assigned to this supervisor
   if (respondentType === 'supervisor') {
-    const employee = await User.findById(employeeId).lean();
+    const employee = await User.findById(employeeId);
     if (!employee || employee.supervisorId?.toString() !== userId.toString()) {
       throw new AppError('You can only evaluate your direct reports.', 403);
     }
@@ -44,85 +42,104 @@ const validateAccess = async (assessmentId, userId, employeeId, respondentType) 
   return assessment;
 };
 
+
 // ─── AUTO-SAVE (upsert one answer) ───────────────────────────────────────────
 exports.saveAnswer = asyncHandler(async (req, res, next) => {
-  const { assessmentId, questionId, selectedAnswer, employeeId, respondentType } = req.body;
+  const {
+    assessmentId,
+    questionId,
+    selectedAnswer,
+    employeeId,
+  } = req.body;
+
+  const empId = employeeId || req.user.id;
 
   const assessment = await validateAccess(
     assessmentId,
     req.user.id,
-    employeeId || req.user.id,
-    respondentType || 'self'
+    empId,
+    'self'
   );
 
-  // Verify the question belongs to this assessment
-  if (!assessment.questionIds.some((qId) => qId.toString() === questionId)) {
+  if (!assessment.questionIds.some(q => q.toString() === questionId)) {
     return next(new AppError('Question does not belong to this assessment.', 400));
   }
 
-  // Upsert
   const response = await Response.findOneAndUpdate(
     {
       assessmentId,
       questionId,
-      userId:     req.user.id,
-      employeeId:  employeeId || req.user.id,
+      userId: req.user.id,
+      employeeId: empId,
+      respondentType: 'self',
     },
     {
       selectedAnswer,
-      respondentType: respondentType || 'self',
-      $setOnInsert: { score: 0 },
+      respondentType: 'self',
     },
-    { new: true, upsert: true, runValidators: true }
+    {
+      new: true,
+      upsert: true,
+      runValidators: true,
+    }
   );
 
   res.status(200).json({ status: 'success', data: { response } });
 });
 
+
 // ─── SUBMIT FULL ASSESSMENT ──────────────────────────────────────────────────
 exports.submitAssessment = asyncHandler(async (req, res, next) => {
-  const { assessmentId, employeeId, respondentType } = req.body;
-  const empId = employeeId || req.user.id;
-  const rType = respondentType || 'self';
+  const { assessmentId } = req.body;
+  const userId = req.user.id;
 
-  const assessment = await validateAccess(assessmentId, req.user.id, empId, rType);
-
-  // Check all questions are answered
-  const responses = await Response.find({
+  const assessment = await validateAccess(
     assessmentId,
-    userId:        req.user.id,
-    employeeId:     empId,
-    respondentType: rType,
-  }).lean();
-
-  const answeredIds = new Set(responses.map((r) => r.questionId.toString()));
-  const missing     = assessment.questionIds.filter(
-    (qId) => !answeredIds.has(qId.toString())
+    userId,
+    userId,
+    'self'
   );
 
-  if (missing.length > 0) {
-    return next(new AppError(`${missing.length} question(s) are unanswered. Please complete all questions.`, 400));
+  const responses = await Response.find({
+    assessmentId,
+    userId,
+    respondentType: 'self',
+  });
+
+  const answered = new Set(responses.map(r => r.questionId.toString()));
+  const missing = assessment.questionIds.filter(
+    q => !answered.has(q.toString())
+  );
+
+  if (missing.length) {
+    return next(
+      new AppError(`${missing.length} questions are unanswered.`, 400)
+    );
   }
 
-  // Score each response using the scoring engine
-  const questions = await Question.find({ _id: { $in: assessment.questionIds } })
-    .select('+correctAnswer').lean();
+  const questions = await Question.find({
+    _id: { $in: assessment.questionIds },
+  }).select('+correctAnswer');
 
   const now = new Date();
 
   for (const resp of responses) {
-    const question = questions.find((q) => q._id.toString() === resp.questionId.toString());
+    const question = questions.find(
+      q => q._id.toString() === resp.questionId.toString()
+    );
     if (question) {
-      const score = scoreSingleResponse(question, resp);
-      await Response.findByIdAndUpdate(resp._id, { score, submittedAt: now });
+      resp.score = scoreSingleResponse(question, resp);
+      resp.submittedAt = now;
+      await resp.save();
     }
   }
 
   res.status(200).json({
-    status:  'success',
+    status: 'success',
     message: 'Assessment submitted successfully.',
   });
 });
+
 
 // ─── GET PROGRESS ────────────────────────────────────────────────────────────
 exports.getProgress = asyncHandler(async (req, res, next) => {
@@ -196,4 +213,142 @@ exports.setManualScore = asyncHandler(async (req, res, next) => {
   await response.save();
 
   res.status(200).json({ status: 'success', data: { response } });
+});
+
+// ─── SAVE SUPERVISOR EVALUATION DRAFT ──────────────────────────────────────
+exports.saveSupervisorEvaluation = asyncHandler(async (req, res, next) => {
+  const { assessmentId, employeeId, score, comments } = req.body;
+  const supervisorId = req.user.id;
+
+  await validateAccess(
+    assessmentId,
+    supervisorId,
+    employeeId,
+    'supervisor'
+  );
+
+  const parsedScore = Number(score);
+  if (isNaN(parsedScore) || parsedScore < 0 || parsedScore > 100) {
+    return next(new AppError('Score must be 0–100.', 400));
+  }
+
+  const evaluation = await Response.findOneAndUpdate(
+    {
+      assessmentId,
+      employeeId,
+      userId: supervisorId,
+      respondentType: 'supervisor',
+    },
+    {
+      score: parsedScore,
+      comments: comments || '',
+      isSupervisorEvaluation: true,
+    },
+    {
+      new: true,
+      upsert: true,
+      runValidators: true,
+    }
+  );
+
+  res.status(200).json({
+    status: 'success',
+    message: 'Supervisor evaluation draft saved.',
+    data: { evaluation },
+  });
+});
+
+
+// ─── SUBMIT SUPERVISOR EVALUATION ──────────────────────────────────────────
+exports.submitSupervisorEvaluation = asyncHandler(async (req, res, next) => {
+  const { assessmentId, employeeId, score, comments } = req.body;
+  const supervisorId = req.user.id;
+
+  const assessment = await validateAccess(
+    assessmentId,
+    supervisorId,
+    employeeId,
+    'supervisor'
+  );
+
+  const parsedScore = Number(score);
+  if (isNaN(parsedScore) || parsedScore < 0 || parsedScore > 100) {
+    return next(new AppError('Score must be 0–100.', 400));
+  }
+
+  const now = new Date();
+
+  const evaluation = await Response.findOneAndUpdate(
+    {
+      assessmentId,
+      employeeId,
+      userId: supervisorId,
+      respondentType: 'supervisor',
+    },
+    {
+      score: parsedScore,
+      comments: comments || '',
+      isSupervisorEvaluation: true,
+      submittedAt: now,
+    },
+    {
+      new: true,
+      upsert: true,
+      runValidators: true,
+    }
+  );
+
+  // Update Assessment supervisorEvaluations
+  const existing = assessment.supervisorEvaluations.find(
+    e =>
+      e.employeeId.toString() === employeeId &&
+      e.supervisorId.toString() === supervisorId
+  );
+
+  if (existing) {
+    existing.status = 'COMPLETED';
+    existing.completedAt = now;
+    existing.finalScore = parsedScore;
+  } else {
+    assessment.supervisorEvaluations.push({
+      employeeId,
+      supervisorId,
+      status: 'COMPLETED',
+      completedAt: now,
+      finalScore: parsedScore,
+    });
+  }
+
+  await assessment.save();
+
+  res.status(200).json({
+    status: 'success',
+    message: 'Supervisor evaluation submitted successfully.',
+    data: { evaluation },
+  });
+});
+
+
+// ─── GET SUPERVISOR EVALUATION ─────────────────────────────────────────────
+exports.getSupervisorEvaluation = asyncHandler(async (req, res, next) => {
+  const { assessmentId, employeeId } = req.params;
+  const supervisorId = req.user.id;
+
+  // Verify access
+  const employee = await User.findById(employeeId);
+  if (!employee || employee.supervisorId?.toString() !== supervisorId) {
+    return next(new AppError('Access denied.', 403));
+  }
+
+  const evaluation = await Response.findOne({
+    assessmentId,
+    employeeId,
+    userId: supervisorId,
+    respondentType: 'supervisor',
+  }).lean();
+
+  res.status(200).json({
+    status: 'success',
+    data: { evaluation }
+  });
 });

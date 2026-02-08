@@ -15,4 +15,24 @@ router.get('/progress/:assessmentId',  rCtrl.getProgress);         // progress c
 router.get('/:assessmentId/all',       authorize('HR_ADMIN'), rCtrl.getAllResponses);
 router.patch('/:id/manual',            authorize('HR_ADMIN'), rCtrl.setManualScore);
 
+router.post(
+  '/save-supervisor-evaluation',
+  protect,
+  authorize('SUPERVISOR'),
+  rCtrl.saveSupervisorEvaluation
+);
+
+router.post(
+  '/submit-supervisor-evaluation',
+  protect,
+  authorize('SUPERVISOR'),
+  rCtrl.submitSupervisorEvaluation
+);
+
+router.get(
+  '/supervisor-evaluation/:assessmentId/:employeeId',
+  protect,
+  authorize('SUPERVISOR'),
+  rCtrl.getSupervisorEvaluation
+);
 module.exports = router;

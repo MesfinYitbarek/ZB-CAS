@@ -12,9 +12,9 @@ export default function Users() {
   const [filterStatus, setFilterStatus] = useState('');
   const [modal, setModal] = useState(null);
   const [selected, setSelected] = useState(null);
+  const [supervisors, setSupervisors] = useState([]);
   const { show } = useToast();
   
-  // Pagination state
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 10,
@@ -22,9 +22,19 @@ export default function Users() {
     totalPages: 0
   });
 
-  const initForm = () => ({ employeeId: '', name: '', email: '', role: 'EMPLOYEE', position: '', department: '', supervisorId: '' });
+  const initForm = () => ({
+    employeeId: '',
+    name: '',
+    email: '',
+    role: 'EMPLOYEE',
+    position: '',
+    department: '',
+    supervisorId: ''
+  });
+
   const [form, setForm] = useState(initForm());
 
+  // ─── Fetch Users ─────────────────────────────────────────────────────────────
   const fetch = useCallback(async () => {
     setLoading(true);
     try {
@@ -35,12 +45,10 @@ export default function Users() {
       if (filterRole) params.role = filterRole;
       if (filterStatus) params.status = filterStatus;
       if (search) params.search = search;
-      
+
       const { data } = await api.get('/users', { params });
-      
       setUsers(data.data.users);
-      
-      // Update pagination from API response
+
       if (data.data.pagination) {
         setPagination(prev => ({
           ...prev,
@@ -54,17 +62,39 @@ export default function Users() {
     setLoading(false);
   }, [filterRole, filterStatus, search, pagination.page, pagination.limit]);
 
+  // ─── Fetch Supervisors ───────────────────────────────────────────────────────
+  const fetchSupervisors = async () => {
+    try {
+      const { data } = await api.get('/users', {
+        params: { role: 'SUPERVISOR', status: 'ACTIVE', limit: 1000 }
+      });
+      setSupervisors(data.data.users || []);
+    } catch {
+      show('Failed to load supervisors.', 'error');
+    }
+  };
+
   useEffect(() => {
     fetch();
+    fetchSupervisors();
   }, [fetch]);
 
+  // ─── Modal Handlers ─────────────────────────────────────────────────────────
   const openCreate = () => {
     setForm(initForm());
     setModal('create');
   };
   
   const openEdit = (u) => {
-    setForm({ employeeId: u.employeeId, name: u.name, email: u.email, role: u.role, position: u.position || '', department: u.department || '', supervisorId: u.supervisorId?._id || '' });
+    setForm({
+      employeeId: u.employeeId,
+      name: u.name,
+      email: u.email,
+      role: u.role,
+      position: u.position || '',
+      department: u.department || '',
+      supervisorId: u.supervisorId?._id || ''
+    });
     setSelected(u);
     setModal('edit');
   };
@@ -96,7 +126,7 @@ export default function Users() {
     }
   };
 
-  // Pagination handlers
+  // ─── Pagination Handlers ────────────────────────────────────────────────────
   const goToPage = (page) => {
     if (page >= 1 && page <= pagination.totalPages) {
       setPagination(prev => ({ ...prev, page }));
@@ -113,7 +143,6 @@ export default function Users() {
     });
   };
 
-  // Handle search with debounce
   const handleSearch = (value) => {
     setSearch(value);
     setPagination(prev => ({ ...prev, page: 1 }));
@@ -121,6 +150,7 @@ export default function Users() {
 
   return (
     <div className="p-7">
+      {/* Header */}
       <div className="flex justify-between items-start mb-6">
         <div>
           <h1 className="text-3xl font-display font-bold text-brand-black">User Management</h1>
@@ -172,7 +202,7 @@ export default function Users() {
         </div>
       </div>
 
-      {/* Table */}
+      {/* Users Table */}
       <div className="bg-white rounded-xl shadow-card border border-gray-100 overflow-hidden mb-4">
         {loading ? (
           <div className="flex items-center justify-center p-16"><div className="w-10 h-10 border-4 border-brand-red border-t-transparent rounded-full animate-spin" /></div>
@@ -186,6 +216,7 @@ export default function Users() {
                   <th className="text-left px-6 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">Email</th>
                   <th className="text-left px-6 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">Role</th>
                   <th className="text-left px-6 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">Department</th>
+                  <th className="text-left px-6 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">Supervisor</th>
                   <th className="text-left px-6 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
                   <th className="text-left px-6 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-24">Actions</th>
                 </tr>
@@ -193,7 +224,7 @@ export default function Users() {
               <tbody className="divide-y divide-gray-100">
                 {users.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-6 py-8 text-center text-gray-400">No users found.</td>
+                    <td colSpan={8} className="px-6 py-8 text-center text-gray-400">No users found.</td>
                   </tr>
                 )}
                 {users.map((u) => (
@@ -205,6 +236,7 @@ export default function Users() {
                       <span className={`badge badge-${u.role.toLowerCase()}`}>{u.role.replace('_', ' ')}</span>
                     </td>
                     <td className="px-6 py-3 text-sm text-gray-600">{u.department || '—'}</td>
+                    <td className="px-6 py-3 text-sm text-gray-600">{u.supervisorId?.name || '—'}</td>
                     <td className="px-6 py-3">
                       <span className={`badge badge-${u.status.toLowerCase()}`}>{u.status}</span>
                     </td>
@@ -250,24 +282,14 @@ export default function Users() {
               {(() => {
                 const pages = [];
                 const maxVisible = 5;
-                
                 if (pagination.totalPages <= maxVisible) {
-                  for (let i = 1; i <= pagination.totalPages; i++) {
-                    pages.push(i);
-                  }
+                  for (let i = 1; i <= pagination.totalPages; i++) pages.push(i);
                 } else {
                   let start = Math.max(1, pagination.page - Math.floor(maxVisible / 2));
                   let end = Math.min(pagination.totalPages, start + maxVisible - 1);
-                  
-                  if (end - start + 1 < maxVisible) {
-                    start = Math.max(1, end - maxVisible + 1);
-                  }
-                  
-                  for (let i = start; i <= end; i++) {
-                    pages.push(i);
-                  }
+                  if (end - start + 1 < maxVisible) start = Math.max(1, end - maxVisible + 1);
+                  for (let i = start; i <= end; i++) pages.push(i);
                 }
-                
                 return pages.map((pageNum) => (
                   <button
                     key={pageNum}
@@ -312,7 +334,7 @@ export default function Users() {
           </div>
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">Role</label>
-            <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="w-full h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm">
+            <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value, supervisorId: e.target.value === 'EMPLOYEE' ? form.supervisorId : '' })} className="w-full h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm">
               <option value="EMPLOYEE">Employee</option>
               <option value="SUPERVISOR">Supervisor</option>
               <option value="HR_ADMIN">HR Admin</option>
@@ -326,7 +348,22 @@ export default function Users() {
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">Department</label>
             <input value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} placeholder="IT Department" className="w-full h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm" />
           </div>
+
+          {/* Supervisor Dropdown (Visible only for EMPLOYEE) */}
+          {form.role === 'EMPLOYEE' && (
+            <div className="col-span-2">
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Supervisor</label>
+              <select value={form.supervisorId || ''} onChange={(e) => setForm({ ...form, supervisorId: e.target.value })} className="w-full h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm">
+                <option value="">Select Supervisor</option>
+                {supervisors.map((sup) => (
+                  <option key={sup._id} value={sup._id}>{sup.name} ({sup.employeeId})</option>
+                ))}
+              </select>
+            </div>
+          )}
+
         </div>
+
         <div className="flex justify-end gap-3 mt-6">
           <button onClick={() => setModal(null)} className="px-4 py-2 border border-gray-300 rounded-lg font-semibold text-gray-700 hover:bg-gray-50 transition-colors">
             Cancel

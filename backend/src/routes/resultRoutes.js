@@ -16,4 +16,19 @@ router.get('/user/:userId',           resCtrl.getUserResults);
 router.get('/pdp/:userId',            resCtrl.getPDP);
 router.get('/:id',                     resCtrl.getResult);
 
+
+router.post(
+  '/auto-score',
+  protect,
+  authorize('SUPERVISOR'),
+  resCtrl.autoScoreEmployee
+);
+
+
+router.get(
+  '/supervisor-score/:assessmentId/:employeeId',
+  protect,
+  resCtrl.getSupervisorEvaluationScores
+);
+
 module.exports = router;

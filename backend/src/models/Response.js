@@ -1,15 +1,3 @@
-/* models/Response.js
- * Response(ResponseID, AssessmentID, QuestionID, UserID, Score)
- *
- * Extended with:
- *   selectedAnswer  – what the user actually picked / typed
- *   manualScore     – filled by HR admin for ShortAnswer questions
- *   respondentType  – 'self' | 'supervisor'  (needed for Combined weighting)
- *   submittedAt     – when the full assessment was submitted
- *
- * Auto-save: responses are upserted as the user progresses, so partial
- * progress is never lost.
- */
 const mongoose = require('mongoose');
 
 const RESPONDENT_TYPES = ['self', 'supervisor'];
@@ -17,58 +5,103 @@ const RESPONDENT_TYPES = ['self', 'supervisor'];
 const responseSchema = new mongoose.Schema(
   {
     assessmentId: {
-      type:     mongoose.Schema.Types.ObjectId,
-      ref:      'Assessment',
-      required: [true, 'Assessment ID is required.'],
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Assessment',
+      required: true,
     },
+
+    // ONLY used for SELF assessments
     questionId: {
-      type:     mongoose.Schema.Types.ObjectId,
-      ref:      'Question',
-      required: [true, 'Question ID is required.'],
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Question',
+      default: null,
     },
+
+    // Person who is answering (employee or supervisor)
     userId: {
-      type:     mongoose.Schema.Types.ObjectId,
-      ref:      'User',
-      required: [true, 'User ID is required.'],
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
     },
-    // The target employee (for supervisor assessments, this differs from userId)
+
+    // Employee being evaluated
     employeeId: {
-      type:     mongoose.Schema.Types.ObjectId,
-      ref:      'User',
-      required: [true, 'Employee ID is required.'],
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
     },
+
     selectedAnswer: {
-      type: mongoose.Schema.Types.Mixed,   // String | Number depending on qType
+      type: mongoose.Schema.Types.Mixed,
       default: null,
     },
+
     score: {
-      type:    Number,
+      type: Number,
       default: 0,
+      min: 0,
+      max: 100,
     },
-    // HR admin fills this in for ShortAnswer questions
+
     manualScore: {
-      type:    Number,
+      type: Number,
       default: null,
     },
+
     respondentType: {
-      type:     String,
-      required: [true, 'Respondent type is required.'],
-      enum:     RESPONDENT_TYPES,
+      type: String,
+      enum: RESPONDENT_TYPES,
+      required: true,
     },
+
     submittedAt: {
-      type:    Date,
+      type: Date,
       default: null,
+    },
+
+    comments: {
+      type: String,
+      default: '',
+    },
+
+    // Marks single-score supervisor evaluation
+    isSupervisorEvaluation: {
+      type: Boolean,
+      default: false,
     },
   },
-  { timestamps: true, strict: true }
+  { timestamps: true }
 );
 
-// A single user can answer each question only once per assessment
+/* ───────────────────────────────────────────────
+   INDEXES
+─────────────────────────────────────────────── */
+
+// SELF: one answer per question
 responseSchema.index(
   { assessmentId: 1, questionId: 1, userId: 1 },
-  { unique: true }
+  {
+    unique: true,
+    partialFilterExpression: {
+      respondentType: 'self',
+      questionId: { $ne: null },
+    },
+  }
 );
+
+// SUPERVISOR: one evaluation per employee
+responseSchema.index(
+  { assessmentId: 1, employeeId: 1, userId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      respondentType: 'supervisor',
+    },
+  }
+);
+
+// Query helpers
 responseSchema.index({ assessmentId: 1, userId: 1 });
-responseSchema.index({ employeeId: 1, assessmentId: 1 });
+responseSchema.index({ assessmentId: 1, employeeId: 1 });
 
 module.exports = mongoose.model('Response', responseSchema);

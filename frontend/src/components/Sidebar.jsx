@@ -4,28 +4,40 @@ import { useAuth } from '../context/AuthContext';
 import {
   LayoutDashboard, Users, BookOpen, ClipboardList, FileText,
   BarChart3, MessageSquare, ChevronLeft, LogOut, Target, Lightbulb, Activity,
-  X
+  UserCheck, ClipboardCheck, Award, TrendingUp, X
 } from 'lucide-react';
 
 const NAV_ITEMS = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard', roles: null },
+  
+  // Admin Only
   { icon: Users, label: 'Users', path: '/users', roles: ['HR_ADMIN'] },
   { icon: Target, label: 'Competencies', path: '/competencies', roles: ['HR_ADMIN'] },
   { icon: Lightbulb, label: 'Recommendations', path: '/recommendations', roles: ['HR_ADMIN'] },
+  { icon: Target, label: 'Assessments', path: '/assessments', roles: ['HR_ADMIN'] },
   { icon: BookOpen, label: 'Question Bank', path: '/questions', roles: ['HR_ADMIN'] },
-  { icon: ClipboardList, label: 'Assessments', path: '/assessments', roles: null },
-  { icon: FileText, label: 'My Results', path: '/results', roles: ['EMPLOYEE', 'SUPERVISOR'] },
-  { icon: FileText, label: 'Results', path: '/results', roles: ['HR_ADMIN'] },
-  { icon: BarChart3, label: 'Reports', path: '/reports', roles: null },
-  { icon: MessageSquare, label: 'Feedback', path: '/feedback', roles: null },
   { icon: Activity, label: 'Activity Log', path: '/activity-log', roles: ['HR_ADMIN'] },
+  
+  // Supervisor Only
+  { icon: UserCheck, label: 'My Team', path: '/my-team', roles: ['SUPERVISOR'] },
+  { icon: ClipboardCheck, label: 'Pending Evaluations', path: '/my-team/evaluations', roles: ['SUPERVISOR'] },
+  { icon: Award, label: 'Team Results', path: '/my-team/results', roles: ['SUPERVISOR'] },
+  { icon: TrendingUp, label: 'Team Reports', path: '/my-team/reports', roles: ['SUPERVISOR'] },
+  
+  // All Roles
+  { icon: ClipboardList, label: 'Assessments', path: '/assessments', roles: ['EMPLOYEE'] },
+  { icon: FileText, label: 'My Results', path: '/results', roles: ['EMPLOYEE'] },
+  { icon: FileText, label: 'Results', path: '/results', roles: ['HR_ADMIN'] },
+  { icon: BarChart3, label: 'Reports', path: '/reports', roles: ['EMPLOYEE','HR_ADMIN'] },
+  { icon: MessageSquare, label: 'Feedback', path: '/feedback', roles: ['EMPLOYEE'] },
 ];
 
 export default function Sidebar({ 
   collapsed, 
   onToggle, 
   mobileOpen = false,
-  onNavClick 
+  onNavClick, 
+  onMobileClose
 }) {
   const loc = useLocation();
   const nav = useNavigate();
@@ -51,10 +63,10 @@ export default function Sidebar({
   };
 
   const handleCloseMobile = () => {
-    if (isMobile && onToggle) {
-      onToggle(); // This will toggle mobileOpen state
-    }
-  };
+  if (isMobile && onMobileClose) {
+    onMobileClose();
+  }
+};
 
   // Close sidebar on escape key press (mobile only)
   useEffect(() => {
@@ -171,6 +183,18 @@ export default function Sidebar({
 
         {/* Bottom: Logout + Desktop Toggle */}
         <div className="border-t border-white/10 pt-3 pb-4">
+          {/* User Info - Only show when not collapsed or on mobile */}
+          {(!collapsed || isMobile) && (
+            <div className="mb-2 px-5 py-2 bg-white/5 rounded-lg mx-3">
+              <div className="text-xs font-semibold text-white truncate">
+                {auth.user?.name}
+              </div>
+              <div className="text-[10px] text-white/60 uppercase tracking-wide mt-0.5">
+                {auth.user?.role?.replace('_', ' ')}
+              </div>
+            </div>
+          )}
+
           {/* Logout */}
           <button
             onClick={() => {

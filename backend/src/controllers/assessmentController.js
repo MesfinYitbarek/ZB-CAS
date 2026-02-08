@@ -141,6 +141,26 @@ exports.updateStatus = asyncHandler(async (req, res, next) => {
   }
 
   assessment.status = status;
+  
+  // Initialize supervisor evaluations when moving to SCHEDULED
+  if (status === 'SCHEDULED' && (assessment.type === 'Combined' || assessment.type === 'SupervisorOnly')) {
+    // Find target employees
+    const userFilter = { status: 'ACTIVE' };
+    if (assessment.target?.department) userFilter.department = assessment.target.department;
+    if (assessment.target?.position)   userFilter.position   = assessment.target.position;
+
+    const employees = await User.find(userFilter).lean();
+    
+    // Create pending supervisor evaluations
+    assessment.supervisorEvaluations = employees
+      .filter(emp => emp.supervisorId)
+      .map(emp => ({
+        employeeId: emp._id,
+        supervisorId: emp.supervisorId,
+        status: 'PENDING'
+      }));
+  }
+
   await assessment.save({ validateBeforeSave: false });
 
   // ── Notify participants when moving to SCHEDULED ────────────────────────
@@ -152,13 +172,14 @@ exports.updateStatus = asyncHandler(async (req, res, next) => {
 
     const employees = await User.find(userFilter).lean();
 
-    // Send notifications (fire-and-forget; won't block the response)
+    // Send notifications to employees
     employees.forEach((emp) => sendAssessmentNotification(emp, assessment));
 
     // For Combined / SupervisorOnly, also notify supervisors
     if (assessment.type === 'Combined' || assessment.type === 'SupervisorOnly') {
       const supervisorIds = [...new Set(employees.map((e) => e.supervisorId).filter(Boolean))];
       const supervisors   = await User.find({ _id: { $in: supervisorIds } }).lean();
+      
       supervisors.forEach((sup) => {
         const supEmployees = employees.filter((e) => e.supervisorId?.toString() === sup._id.toString());
         supEmployees.forEach((emp) => sendSupervisorReminder(sup, emp.name, assessment));

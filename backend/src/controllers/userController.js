@@ -17,15 +17,22 @@ exports.getUsers = asyncHandler(async (req, res) => {
   const { department, role, status, page = 1, limit = 20 } = req.query;
 
   const filter = {};
+
+  // Filter by query params
   if (department) filter.department = department;
   if (role)       filter.role       = role;
   if (status)     filter.status     = status;
+
+  // If caller is SUPERVISOR, only show their employees
+  if (req.user.role === 'SUPERVISOR') {
+    filter.supervisorId = req.user.id;
+  }
 
   const skip = (parseInt(page, 10) - 1) * parseInt(limit, 10);
 
   const [users, total] = await Promise.all([
     User.find(filter)
-      .populate('supervisorId', 'name email')
+      .populate('supervisorId', 'name email employeeId')
       .skip(skip)
       .limit(parseInt(limit, 10))
       .sort({ createdAt: -1 })
@@ -52,6 +59,7 @@ exports.getUsers = asyncHandler(async (req, res) => {
     },
   });
 });
+
 
 // ─── GET SINGLE USER ─────────────────────────────────────────────────────────
 exports.getUser = asyncHandler(async (req, res, next) => {
@@ -137,21 +145,17 @@ exports.deleteUser = asyncHandler(async (req, res, next) => {
 });
 
 // ─── GET EMPLOYEES UNDER A SUPERVISOR ────────────────────────────────────────
-exports.getSupervisorEmployees = asyncHandler(async (req, res, next) => {
+
+exports.getSupervisorEmployees = asyncHandler(async (req, res) => {
   const supervisorId = req.params.id;
 
-  // If caller is a SUPERVISOR, they can only see their own subordinates
-  if (req.user.role === 'SUPERVISOR' && req.user.id !== supervisorId) {
-    return next(new AppError('Access denied.', 403));
-  }
-
-  const employees = await User.find({
-    supervisorId,
-    status: 'ACTIVE',
-  })
-    .select('-passwordHash -refreshToken -passwordResetToken -passwordResetExpires')
-    .sort({ name: 1 })
+  const employees = await User.find({ supervisorId })
+    .populate('supervisorId', 'name email employeeId') 
     .lean();
 
-  res.status(200).json({ status: 'success', data: { employees } });
+  res.status(200).json({
+    status: 'success',
+    data: { teamMembers: employees }
+  });
 });
+

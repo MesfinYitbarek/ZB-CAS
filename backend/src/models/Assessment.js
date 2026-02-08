@@ -14,13 +14,13 @@
 const mongoose = require('mongoose');
 
 const ASSESSMENT_TYPES = ['SelfAssessment', 'SupervisorOnly', 'Combined'];
-const STATUSES         = ['DRAFT', 'SCHEDULED', 'ACTIVE', 'COMPLETED', 'ARCHIVED'];
+const STATUSES = ['DRAFT', 'SCHEDULED', 'ACTIVE', 'COMPLETED', 'ARCHIVED'];
 
 const assessmentSchema = new mongoose.Schema(
   {
     competencyId: {
-      type:     mongoose.Schema.Types.ObjectId,
-      ref:      'Competency',
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Competency',
       required: [true, 'Competency ID is required.'],
     },
     description: {
@@ -32,49 +32,70 @@ const assessmentSchema = new mongoose.Schema(
     // Who this assessment targets
     target: {
       department: { type: String, trim: true, default: null },
-      position:   { type: String, trim: true, default: null },
+      position: { type: String, trim: true, default: null },
     },
     // Questions included in this assessment
     questionIds: [
       {
         type: mongoose.Schema.Types.ObjectId,
-        ref:  'Question',
+        ref: 'Question',
       },
     ],
     startDate: {
-      type:     Date,
+      type: Date,
       required: [true, 'Start date is required.'],
     },
     endDate: {
-      type:     Date,
+      type: Date,
       required: [true, 'End date is required.'],
     },
     // Time limit in minutes (null = no limit)
     timeLimit: {
-      type:    Number,
+      type: Number,
       default: null,
-      min:     1,
+      min: 1,
     },
     type: {
-      type:     String,
+      type: String,
       required: [true, 'Assessment type is required.'],
-      enum:     ASSESSMENT_TYPES,
+      enum: ASSESSMENT_TYPES,
     },
     // Only meaningful when type === 'Combined'
     weight: {
       selfAssessment: { type: Number, default: 20 },
-      supervisor:     { type: Number, default: 80 },
+      supervisor: { type: Number, default: 80 },
     },
     status: {
-      type:    String,
-      enum:    STATUSES,
+      type: String,
+      enum: STATUSES,
       default: 'DRAFT',
     },
+    
     // Who created / manages this assessment
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
-      ref:  'User',
+      ref: 'User',
     },
+    // Add to assessmentSchema after the createdBy field
+    supervisorEvaluations: [{
+      employeeId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+      },
+      supervisorId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+      },
+      status: {
+        type: String,
+        enum: ['PENDING', 'COMPLETED'],
+        default: 'PENDING',
+      },
+      completedAt: {
+        type: Date,
+        default: null,
+      },
+    }],
   },
   { timestamps: true, strict: true }
 );

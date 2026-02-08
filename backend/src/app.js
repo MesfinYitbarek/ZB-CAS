@@ -41,6 +41,7 @@ const responseRoutes       = require('./routes/responseRoutes');
 const resultRoutes         = require('./routes/resultRoutes');
 const reportRoutes         = require('./routes/reportRoutes');
 const feedbackRoutes       = require('./routes/feedbackRoutes');
+const supervisorRoutes       = require('./routes/supervisorRoutes');
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 const app = express();
@@ -83,6 +84,7 @@ app.use('/api/responses',       responseRoutes);
 app.use('/api/results',         resultRoutes);
 app.use('/api/reports',         reportRoutes);
 app.use('/api/feedback',        feedbackRoutes);
+app.use('/api/supervisors',        supervisorRoutes);
 
 // ── 404 catcher (must be after all routes) ───────────────────────────────────
 app.use((req, res, next) => {
