@@ -16,9 +16,13 @@ const Assessment   = require('../models/Assessment');
 const Question     = require('../models/Question');
 const Response     = require('../models/Response');
 const User         = require('../models/User');
+const Result       = require('../models/Result');
+const Recommendation = require('../models/Recommendation');
 const AppError     = require('../utils/AppError');
 const asyncHandler = require('../utils/asyncHandler');
-const { scoreSingleResponse } = require('../utils/scoring');
+const { scoreSingleResponse, computeRawScore, assignLevel } = require('../utils/scoring');
+const { computeWeightedScore } = require('../services/scoringService');
+const { sendResultsEmail } = require('../services/emailService');
 
 // ─── helper: validate that the assessment is active and the user is allowed ──
 const validateAccess = async (assessmentId, userId, employeeId, respondentType) => {
@@ -42,6 +46,102 @@ const validateAccess = async (assessmentId, userId, employeeId, respondentType) 
   return assessment;
 };
 
+// ─── AUTO-SCORE ASSESSMENT ──────────────────────────────────────────────────
+const autoScoreAssessment = async (assessmentId, employeeId, assessmentType) => {
+  const assessment = await Assessment.findById(assessmentId);
+  if (!assessment) throw new Error('Assessment not found');
+
+  // Get all responses for this employee
+  const responses = await Response.find({
+    assessmentId,
+    employeeId
+  });
+
+  const questions = await Question.find({ _id: { $in: assessment.questionIds } })
+    .select('+correctAnswer')
+    .lean();
+
+  const selfResponses = responses.filter(r => r.respondentType === 'self');
+  const supervisorResponses = responses.filter(r => r.respondentType === 'supervisor');
+
+  let finalScore = 0;
+  let scoreDetails = {};
+
+  if (assessmentType === 'SelfAssessment') {
+    const { raw, total, percentage } = computeRawScore(questions, selfResponses);
+    finalScore = percentage;
+    scoreDetails = {
+      selfScore: percentage,
+      calculation: `${raw}/${total} = ${percentage}%`
+    };
+  } 
+  else if (assessmentType === 'SupervisorOnly') {
+    // Supervisor gives a single score
+    const supervisorResponse = supervisorResponses[0];
+    finalScore = supervisorResponse?.score || 0;
+    scoreDetails = {
+      supervisorScore: finalScore,
+      calculation: `Supervisor evaluation: ${finalScore}%`
+    };
+  } 
+  else if (assessmentType === 'Combined') {
+    const selfResult = computeRawScore(questions, selfResponses);
+    const selfPercentage = selfResult.percentage;
+    
+    const supervisorResponse = supervisorResponses[0];
+    const supervisorPercentage = supervisorResponse?.score || 0;
+    
+    finalScore = computeWeightedScore(
+      selfPercentage,
+      supervisorPercentage,
+      assessment.weight
+    );
+    
+    scoreDetails = {
+      selfScore: selfPercentage,
+      supervisorScore: supervisorPercentage,
+      weightUsed: assessment.weight || { selfAssessment: 20, supervisor: 80 },
+      calculation: `(${selfPercentage} × ${assessment.weight?.selfAssessment || 20}%) + (${supervisorPercentage} × ${assessment.weight?.supervisor || 80}%) = ${finalScore}%`
+    };
+  }
+
+  const level = assignLevel(finalScore);
+
+  // Lookup recommendation
+  const rec = await Recommendation.findOne({
+    competencyId: assessment.competencyId,
+    level,
+  }).lean();
+
+  // Create or update result
+  let result = await Result.findOne({
+    userId: employeeId,
+    assessmentId,
+    competencyId: assessment.competencyId,
+  });
+
+  if (result) {
+    result.finalScore = finalScore;
+    result.level = level;
+    result.recommendation = rec ? rec.recommendation : '';
+    result.status = 'FINAL';
+    result.scoreDetails = scoreDetails;
+    await result.save();
+  } else {
+    result = await Result.create({
+      userId: employeeId,
+      assessmentId,
+      competencyId: assessment.competencyId,
+      finalScore,
+      level,
+      recommendation: rec ? rec.recommendation : '',
+      status: 'FINAL',
+      scoreDetails,
+    });
+  }
+
+  return result;
+};
 
 // ─── AUTO-SAVE (upsert one answer) ───────────────────────────────────────────
 exports.saveAnswer = asyncHandler(async (req, res, next) => {
@@ -87,22 +187,22 @@ exports.saveAnswer = asyncHandler(async (req, res, next) => {
   res.status(200).json({ status: 'success', data: { response } });
 });
 
-
 // ─── SUBMIT FULL ASSESSMENT ──────────────────────────────────────────────────
 exports.submitAssessment = asyncHandler(async (req, res, next) => {
-  const { assessmentId } = req.body;
+  const { assessmentId, employeeId: empId } = req.body;
   const userId = req.user.id;
+  const employeeId = empId || userId;
 
   const assessment = await validateAccess(
     assessmentId,
     userId,
-    userId,
+    employeeId,
     'self'
   );
 
   const responses = await Response.find({
     assessmentId,
-    userId,
+    employeeId,
     respondentType: 'self',
   });
 
@@ -134,12 +234,45 @@ exports.submitAssessment = asyncHandler(async (req, res, next) => {
     }
   }
 
+  // AUTOMATIC SCORING FOR SELF ASSESSMENT
+  if (assessment.type === 'SelfAssessment') {
+    try {
+      const result = await autoScoreAssessment(assessmentId, employeeId, 'SelfAssessment');
+      
+      // Send notification to employee
+      const employee = await User.findById(employeeId);
+      if (employee && employee.email) {
+        try {
+          await sendResultsEmail(
+            { name: employee.name, email: employee.email },
+            [{ 
+              competencyName: assessment.competencyId?.name || 'Competency',
+              finalScore: result.finalScore,
+              level: result.level,
+              assessmentType: assessment.type
+            }]
+          );
+        } catch (e) {
+          console.error('Failed to send results email:', e.message);
+        }
+      }
+      
+      res.status(200).json({
+        status: 'success',
+        message: 'Assessment submitted and scored successfully.',
+        data: { result }
+      });
+      return;
+    } catch (error) {
+      console.error('Auto-scoring failed:', error);
+    }
+  }
+
   res.status(200).json({
     status: 'success',
     message: 'Assessment submitted successfully.',
   });
 });
-
 
 // ─── GET PROGRESS ────────────────────────────────────────────────────────────
 exports.getProgress = asyncHandler(async (req, res, next) => {
@@ -154,11 +287,12 @@ exports.getProgress = asyncHandler(async (req, res, next) => {
   const answeredCount = await Response.countDocuments({
     assessmentId,
     userId: req.user.id,
+    submittedAt: null,
   });
 
   const submitted = await Response.findOne({
     assessmentId,
-    userId:     req.user.id,
+    userId: req.user.id,
     submittedAt: { $ne: null },
   }).lean();
 
@@ -258,7 +392,6 @@ exports.saveSupervisorEvaluation = asyncHandler(async (req, res, next) => {
   });
 });
 
-
 // ─── SUBMIT SUPERVISOR EVALUATION ──────────────────────────────────────────
 exports.submitSupervisorEvaluation = asyncHandler(async (req, res, next) => {
   const { assessmentId, employeeId, score, comments } = req.body;
@@ -321,13 +454,46 @@ exports.submitSupervisorEvaluation = asyncHandler(async (req, res, next) => {
 
   await assessment.save();
 
+  // AUTOMATIC SCORING FOR SUPERVISOR-ONLY ASSESSMENTS
+  if (assessment.type === 'SupervisorOnly') {
+    try {
+      const result = await autoScoreAssessment(assessmentId, employeeId, 'SupervisorOnly');
+      
+      // Send notification to employee
+      const employee = await User.findById(employeeId);
+      if (employee && employee.email) {
+        try {
+          await sendResultsEmail(
+            { name: employee.name, email: employee.email },
+            [{ 
+              competencyName: assessment.competencyId?.name || 'Competency',
+              finalScore: result.finalScore,
+              level: result.level,
+              assessmentType: assessment.type
+            }]
+          );
+        } catch (e) {
+          console.error('Failed to send results email:', e.message);
+        }
+      }
+      
+      res.status(200).json({
+        status: 'success',
+        message: 'Supervisor evaluation submitted and scored successfully.',
+        data: { evaluation, result }
+      });
+      return;
+    } catch (error) {
+      console.error('Auto-scoring failed:', error);
+    }
+  }
+
   res.status(200).json({
     status: 'success',
     message: 'Supervisor evaluation submitted successfully.',
     data: { evaluation },
   });
 });
-
 
 // ─── GET SUPERVISOR EVALUATION ─────────────────────────────────────────────
 exports.getSupervisorEvaluation = asyncHandler(async (req, res, next) => {

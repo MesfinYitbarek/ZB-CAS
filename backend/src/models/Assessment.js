@@ -105,6 +105,19 @@ assessmentSchema.index({ status: 1 });
 assessmentSchema.index({ startDate: 1, endDate: 1 });
 assessmentSchema.index({ 'target.department': 1 });
 
+
+assessmentSchema.post('save', async function(doc) {
+
+  if (doc.status === 'COMPLETED') {
+
+    const { generateReportsForAssessment } =
+      require('../services/reportService');
+
+    await generateReportsForAssessment(doc._id);
+
+  }
+
+});
 // ─── Validation: endDate must be after startDate ─────────────────────────────
 assessmentSchema.pre('save', function (next) {
   if (this.endDate <= this.startDate) {

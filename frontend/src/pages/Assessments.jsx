@@ -496,7 +496,7 @@ export default function Assessments() {
                     )}
                     
                     {/* Score Results for admin */}
-                    {isAdmin && a.status === 'COMPLETED' && (
+                    {isAdmin && a.status === 'COMPLETED' && a.type === 'Combined' && (
                       <button
                         onClick={async () => {
                           try {
