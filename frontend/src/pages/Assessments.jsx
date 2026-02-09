@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Calendar, Clock, ChevronLeft, ChevronRight, Target, Users, Eye } from 'lucide-react';
+import { Plus, Calendar, Clock, ChevronLeft, ChevronRight, Target, Users, Eye, AlertCircle, Check, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import Modal from '../components/Modal';
@@ -18,7 +18,7 @@ export default function Assessments() {
   const [questions, setQuestions] = useState([]);
   const [filterStatus, setFilterStatus] = useState('');
   const [modal, setModal] = useState(null);
-  
+
   // Pagination state
   const [pagination, setPagination] = useState({
     page: 1,
@@ -47,8 +47,8 @@ export default function Assessments() {
   const [form, setForm] = useState(initForm());
 
   useEffect(() => {
-    api.get('/competencies').then(({ data }) => setCompetencies(data.data.competencies)).catch(() => {});
-    
+    api.get('/competencies').then(({ data }) => setCompetencies(data.data.competencies)).catch(() => { });
+
     // Load supervisor stats if supervisor
     if (user?.role === 'SUPERVISOR') {
       loadSupervisorStats();
@@ -60,7 +60,7 @@ export default function Assessments() {
       api
         .get('/questions', { params: { competencyId: form.competencyId } })
         .then(({ data }) => setQuestions(data.data.questions))
-        .catch(() => {});
+        .catch(() => { });
     } else {
       setQuestions([]);
     }
@@ -70,11 +70,11 @@ export default function Assessments() {
     try {
       const res = await api.get('/supervisor/pending');
       const pendingCount = res.data.data.pendingEvaluations?.length || 0;
-      
+
       // Get completed evaluations count (you might need to add this endpoint)
       const completedRes = await api.get('/supervisor/completed-count');
       const completedCount = completedRes.data.data.count || 0;
-      
+
       setSupervisorStats({
         pendingEvaluations: pendingCount,
         completedEvaluations: completedCount
@@ -92,9 +92,9 @@ export default function Assessments() {
         page: pagination.page,
         limit: pagination.limit
       };
-      
+
       if (filterStatus) params.status = filterStatus;
-      
+
       // If supervisor, they should see active assessments they need to evaluate
       if (user?.role === 'SUPERVISOR') {
         endpoint = '/assessments/active';
@@ -103,10 +103,10 @@ export default function Assessments() {
       } else if (user?.role === 'EMPLOYEE') {
         endpoint = '/assessments/active';
       }
-      
+
       const { data } = await api.get(endpoint, { params });
       setItems(data.data.assessments || []);
-      
+
       // Update pagination from API response
       if (data.data.pagination) {
         setPagination(prev => ({
@@ -173,8 +173,8 @@ export default function Assessments() {
   const toggleQuestion = (qId) => {
     setForm((prev) => ({
       ...prev,
-      questionIds: prev.questionIds.includes(qId) 
-        ? prev.questionIds.filter((id) => id !== qId) 
+      questionIds: prev.questionIds.includes(qId)
+        ? prev.questionIds.filter((id) => id !== qId)
         : [...prev.questionIds, qId],
     }));
   };
@@ -241,21 +241,35 @@ export default function Assessments() {
     return assessment.type === 'SupervisorOnly' || assessment.type === 'Combined';
   };
 
+  const handleScoreResults = async (assessmentId) => {
+    if (!window.confirm('Score all Combined assessment results? Missing responses will be treated as 0. This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      const res = await api.post(`/results/score/${assessmentId}`);
+      show(res.data.message || 'Results scored successfully.', 'success');
+      fetch(); // Refresh assessments
+    } catch (err) {
+      show(err.response?.data?.message || 'Failed to score results.', 'error');
+    }
+  };
+
   return (
     <div className="p-7">
       <div className="flex justify-between items-start mb-6">
         <div>
           <h1 className="text-3xl font-display font-bold text-brand-black">Assessments</h1>
           <p className="text-gray-500 mt-1">
-            {isAdmin 
-              ? 'Create, schedule, and manage assessments.' 
+            {isAdmin
+              ? 'Create, schedule, and manage assessments.'
               : user?.role === 'SUPERVISOR'
-              ? 'Your active assessments and evaluations.'
-              : 'Your active assessments.'
+                ? 'Your active assessments and evaluations.'
+                : 'Your active assessments.'
             }
           </p>
         </div>
-        
+
         <div className="flex gap-3">
           {/* Supervisor Pending Evaluations Badge */}
           {user?.role === 'SUPERVISOR' && supervisorStats.pendingEvaluations > 0 && (
@@ -270,7 +284,7 @@ export default function Assessments() {
               </span>
             </button>
           )}
-          
+
           {isAdmin && (
             <button onClick={openCreate} className="flex items-center gap-2 px-5 py-2.5 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors">
               <Plus className="w-4 h-4" /> Create Assessment
@@ -335,9 +349,8 @@ export default function Assessments() {
                 setFilterStatus('');
                 setPagination(prev => ({ ...prev, page: 1 }));
               }}
-              className={`px-4 py-2 rounded-lg border-2 font-semibold text-sm transition-all ${
-                filterStatus === '' ? 'border-brand-red bg-brand-red/10 text-brand-red' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
-              }`}
+              className={`px-4 py-2 rounded-lg border-2 font-semibold text-sm transition-all ${filterStatus === '' ? 'border-brand-red bg-brand-red/10 text-brand-red' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                }`}
             >
               All
             </button>
@@ -348,20 +361,19 @@ export default function Assessments() {
                   setFilterStatus(s);
                   setPagination(prev => ({ ...prev, page: 1 }));
                 }}
-                className={`px-4 py-2 rounded-lg border-2 font-semibold text-sm transition-all ${
-                  filterStatus === s ? 'border-brand-red bg-brand-red/10 text-brand-red' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
-                }`}
+                className={`px-4 py-2 rounded-lg border-2 font-semibold text-sm transition-all ${filterStatus === s ? 'border-brand-red bg-brand-red/10 text-brand-red' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                  }`}
               >
                 {getStatusText(s)}
               </button>
             ))}
           </div>
-          
+
           {/* Page size selector */}
           <div className="flex items-center gap-2">
             <span className="text-sm text-gray-600">Show:</span>
-            <select 
-              value={pagination.limit} 
+            <select
+              value={pagination.limit}
               onChange={handlePageSizeChange}
               className="px-3 py-1.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm"
             >
@@ -384,7 +396,7 @@ export default function Assessments() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
             {items.length === 0 && (
               <div className="col-span-full text-center py-16 text-gray-400">
-                {user?.role === 'SUPERVISOR' 
+                {user?.role === 'SUPERVISOR'
                   ? 'No assessments requiring your evaluation at the moment.'
                   : 'No assessments found.'
                 }
@@ -394,7 +406,7 @@ export default function Assessments() {
               const next = getNextStatus(a.status);
               const isActive = a.status === 'ACTIVE';
               const requiresSupervisor = requiresSupervisorEvaluation(a);
-              
+
               return (
                 <div key={a._id} className="bg-white rounded-xl shadow-card hover:shadow-card-hover transition-all border border-gray-100 overflow-hidden">
                   <div className={`h-2 ${getStatusColor(a.status)}`} />
@@ -403,26 +415,25 @@ export default function Assessments() {
                       <span className={`px-2 py-1 rounded-full text-xs font-bold ${getAssessmentTypeColor(a.type)}`}>
                         {a.type}
                       </span>
-                      <span className={`px-2 py-1 rounded-full text-xs font-bold ${
-                        a.status === 'DRAFT' ? 'bg-gray-100 text-gray-800' :
+                      <span className={`px-2 py-1 rounded-full text-xs font-bold ${a.status === 'DRAFT' ? 'bg-gray-100 text-gray-800' :
                         a.status === 'SCHEDULED' ? 'bg-blue-100 text-blue-800' :
-                        a.status === 'ACTIVE' ? 'bg-green-100 text-green-800' :
-                        a.status === 'COMPLETED' ? 'bg-red-100 text-red-800' :
-                        'bg-gray-100 text-gray-800'
-                      }`}>
+                          a.status === 'ACTIVE' ? 'bg-green-100 text-green-800' :
+                            a.status === 'COMPLETED' ? 'bg-red-100 text-red-800' :
+                              'bg-gray-100 text-gray-800'
+                        }`}>
                         {getStatusText(a.status)}
                       </span>
                     </div>
-                    
+
                     <h3 className="text-base font-bold text-brand-black mb-2 line-clamp-2">
                       {a.description || 'Untitled Assessment'}
                     </h3>
-                    
+
                     <p className="text-sm text-gray-500 mb-3 flex items-center gap-1">
                       <Target className="w-3 h-3" />
                       {a.competencyId?.name || 'No competency'}
                     </p>
-                    
+
                     {a.target?.department && (
                       <div className="text-xs text-gray-500 mb-2 flex items-center gap-1">
                         <Users className="w-3 h-3" />
@@ -430,22 +441,22 @@ export default function Assessments() {
                         {a.target.position && ` • ${a.target.position}`}
                       </div>
                     )}
-                    
+
                     <div className="flex gap-4 text-xs text-gray-400 mb-4">
                       <span className="flex items-center gap-1">
-                        <Calendar className="w-3 h-3" /> 
-                        {new Date(a.startDate).toLocaleDateString('en-US', { 
-                          month: 'short', 
+                        <Calendar className="w-3 h-3" />
+                        {new Date(a.startDate).toLocaleDateString('en-US', {
+                          month: 'short',
                           day: 'numeric',
                           year: 'numeric'
                         })}
                       </span>
                       <span className="flex items-center gap-1">
-                        <Clock className="w-3 h-3" /> 
+                        <Clock className="w-3 h-3" />
                         {a.timeLimit ? `${a.timeLimit} min` : 'No limit'}
                       </span>
                     </div>
-                    
+
                     {a.type === 'Combined' && (
                       <div className="text-xs text-gray-600 bg-gray-50 p-2 rounded-lg mb-3">
                         <div className="flex justify-between">
@@ -455,66 +466,59 @@ export default function Assessments() {
                       </div>
                     )}
                   </div>
-                  
+
                   <div className="border-t border-gray-100 px-5 py-3 flex justify-between items-center bg-gray-50">
                     {isAdmin && next && (
-                      <button 
-                        onClick={() => changeStatus(a._id, next)} 
+                      <button
+                        onClick={() => changeStatus(a._id, next)}
                         className="px-3 py-1.5 text-xs font-semibold text-brand-red border border-brand-red rounded-lg hover:bg-brand-red-muted transition-colors"
                       >
                         Move to {getStatusText(next)}
                       </button>
                     )}
-                    
+
                     {!isAdmin && isActive && !requiresSupervisor && (
-                      <button 
-                        onClick={() => nav(`/assessments/${a._id}/take`)} 
+                      <button
+                        onClick={() => nav(`/assessments/${a._id}/take`)}
                         className="px-3 py-1.5 text-xs font-semibold bg-brand-red text-white rounded-lg hover:bg-brand-red-dark transition-colors"
                       >
                         Start Assessment
                       </button>
                     )}
-                    
+
                     {/* Supervisor can evaluate */}
                     {user?.role === 'SUPERVISOR' && isActive && requiresSupervisor && (
-                      <button 
-                        onClick={() => nav(`/assessments/${a._id}/evaluate`)} 
+                      <button
+                        onClick={() => nav(`/assessments/${a._id}/evaluate`)}
                         className="px-3 py-1.5 text-xs font-semibold bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
                       >
                         Evaluate Team
                       </button>
                     )}
-                    
+
                     {/* Employee can start self-assessment for Combined */}
                     {user?.role === 'EMPLOYEE' && isActive && a.type === 'Combined' && (
-                      <button 
-                        onClick={() => nav(`/assessments/${a._id}/take`)} 
+                      <button
+                        onClick={() => nav(`/assessments/${a._id}/take`)}
                         className="px-3 py-1.5 text-xs font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                       >
                         Start Self-Assessment
                       </button>
                     )}
-                    
+
                     {/* Score Results for admin */}
                     {isAdmin && a.status === 'COMPLETED' && a.type === 'Combined' && (
                       <button
-                        onClick={async () => {
-                          try {
-                            await api.post(`/results/score/${a._id}`);
-                            show('Scoring completed successfully.', 'success');
-                            fetch();
-                          } catch (err) {
-                            show(err.response?.data?.message || 'Failed to score results.', 'error');
-                          }
-                        }}
-                        className="px-3 py-1.5 text-xs font-semibold text-white bg-green-600 rounded-lg hover:bg-green-700 transition-colors"
+                        onClick={() => handleScoreResults(a._id)}
+                        className="px-3 py-1.5 text-xs font-semibold text-white bg-purple-600 rounded-lg hover:bg-purple-700 transition-colors flex items-center gap-1"
                       >
-                        Score Results
+                        <Target className="w-3 h-3" />
+                        Score Combined Results
                       </button>
                     )}
-                    
-                    <button 
-                      onClick={() => nav(`/assessments/${a._id}`)} 
+
+                    <button
+                      onClick={() => nav(`/assessments/${a._id}`)}
                       className="text-xs font-semibold text-gray-500 hover:text-brand-red transition-colors flex items-center gap-1"
                     >
                       Details <ChevronRight className="w-3 h-3" />
@@ -533,7 +537,7 @@ export default function Assessments() {
                 {Math.min(pagination.page * pagination.limit, pagination.total)} of{' '}
                 {pagination.total} assessments
               </div>
-              
+
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => goToPage(pagination.page - 1)}
@@ -542,7 +546,7 @@ export default function Assessments() {
                 >
                   <ChevronLeft className="w-4 h-4" /> Previous
                 </button>
-                
+
                 <div className="flex items-center gap-1">
                   {Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
                     // Show pages around current page
@@ -556,23 +560,22 @@ export default function Assessments() {
                     } else {
                       pageNum = pagination.page - 2 + i;
                     }
-                    
+
                     return (
                       <button
                         key={pageNum}
                         onClick={() => goToPage(pageNum)}
-                        className={`w-9 h-9 rounded-lg text-sm font-medium ${
-                          pagination.page === pageNum
-                            ? 'bg-brand-red text-white'
-                            : 'border border-gray-300 text-gray-700 hover:bg-gray-50'
-                        }`}
+                        className={`w-9 h-9 rounded-lg text-sm font-medium ${pagination.page === pageNum
+                          ? 'bg-brand-red text-white'
+                          : 'border border-gray-300 text-gray-700 hover:bg-gray-50'
+                          }`}
                       >
                         {pageNum}
                       </button>
                     );
                   })}
                 </div>
-                
+
                 <button
                   onClick={() => goToPage(pagination.page + 1)}
                   disabled={pagination.page === pagination.totalPages}
@@ -592,9 +595,9 @@ export default function Assessments() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">Competency *</label>
-              <select 
-                value={form.competencyId} 
-                onChange={(e) => setForm({ ...form, competencyId: e.target.value, questionIds: [] })} 
+              <select
+                value={form.competencyId}
+                onChange={(e) => setForm({ ...form, competencyId: e.target.value, questionIds: [] })}
                 className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm"
                 required
               >
@@ -608,9 +611,9 @@ export default function Assessments() {
             </div>
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">Assessment Type *</label>
-              <select 
-                value={form.type} 
-                onChange={(e) => setForm({ ...form, type: e.target.value })} 
+              <select
+                value={form.type}
+                onChange={(e) => setForm({ ...form, type: e.target.value })}
                 className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm"
               >
                 <option value="SelfAssessment">Self Assessment</option>
@@ -619,17 +622,17 @@ export default function Assessments() {
               </select>
             </div>
           </div>
-          
+
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">Description</label>
-            <input 
-              value={form.description} 
-              onChange={(e) => setForm({ ...form, description: e.target.value })} 
-              placeholder="e.g., Communication Skills Assessment - Q1 2024" 
-              className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm" 
+            <input
+              value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+              placeholder="e.g., Communication Skills Assessment - Q1 2024"
+              className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm"
             />
           </div>
-          
+
           {form.type === 'Combined' && (
             <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
               <h4 className="text-sm font-semibold text-blue-800 mb-2">Combined Assessment Weights</h4>
@@ -642,12 +645,12 @@ export default function Assessments() {
                     onChange={(e) => {
                       const selfWeight = Number(e.target.value);
                       const supervisorWeight = 100 - selfWeight;
-                      setForm({ 
-                        ...form, 
-                        weight: { 
-                          selfAssessment: selfWeight, 
-                          supervisor: supervisorWeight 
-                        } 
+                      setForm({
+                        ...form,
+                        weight: {
+                          selfAssessment: selfWeight,
+                          supervisor: supervisorWeight
+                        }
                       });
                     }}
                     min={0}
@@ -660,11 +663,11 @@ export default function Assessments() {
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-1.5">Supervisor Weight (%)</label>
-                  <input 
-                    type="number" 
-                    value={form.weight.supervisor} 
-                    readOnly 
-                    className="w-full h-10 px-3 rounded-lg border border-gray-300 bg-gray-100 text-sm" 
+                  <input
+                    type="number"
+                    value={form.weight.supervisor}
+                    readOnly
+                    className="w-full h-10 px-3 rounded-lg border border-gray-300 bg-gray-100 text-sm"
                   />
                   <div className="text-xs text-gray-500 mt-1">
                     Automatically calculated
@@ -678,15 +681,15 @@ export default function Assessments() {
               )}
             </div>
           )}
-          
+
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">Target Department (Optional)</label>
-              <input 
-                value={form.target.department} 
-                onChange={(e) => setForm({ ...form, target: { ...form.target, department: e.target.value } })} 
-                placeholder="e.g., IT Department" 
-                className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm" 
+              <input
+                value={form.target.department}
+                onChange={(e) => setForm({ ...form, target: { ...form.target, department: e.target.value } })}
+                placeholder="e.g., IT Department"
+                className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm"
               />
               <div className="text-xs text-gray-500 mt-1">
                 Leave empty to target all departments
@@ -694,76 +697,76 @@ export default function Assessments() {
             </div>
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">Target Position (Optional)</label>
-              <input 
-                value={form.target.position} 
-                onChange={(e) => setForm({ ...form, target: { ...form.target, position: e.target.value } })} 
-                placeholder="e.g., IT Officer 1" 
-                className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm" 
+              <input
+                value={form.target.position}
+                onChange={(e) => setForm({ ...form, target: { ...form.target, position: e.target.value } })}
+                placeholder="e.g., IT Officer 1"
+                className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm"
               />
               <div className="text-xs text-gray-500 mt-1">
                 Leave empty to target all positions
               </div>
             </div>
           </div>
-          
+
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">Start Date *</label>
-              <input 
-                type="date" 
-                value={form.startDate} 
-                onChange={(e) => setForm({ ...form, startDate: e.target.value })} 
-                className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm" 
-                required 
+              <input
+                type="date"
+                value={form.startDate}
+                onChange={(e) => setForm({ ...form, startDate: e.target.value })}
+                className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm"
+                required
               />
             </div>
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">End Date *</label>
-              <input 
-                type="date" 
-                value={form.endDate} 
-                onChange={(e) => setForm({ ...form, endDate: e.target.value })} 
-                className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm" 
-                required 
+              <input
+                type="date"
+                value={form.endDate}
+                onChange={(e) => setForm({ ...form, endDate: e.target.value })}
+                className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm"
+                required
               />
             </div>
           </div>
-          
+
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">Time Limit (minutes, Optional)</label>
-            <input 
-              type="number" 
-              value={form.timeLimit} 
-              onChange={(e) => setForm({ ...form, timeLimit: e.target.value })} 
-              placeholder="e.g., 60 (leave empty for no limit)" 
-              min={1} 
-              className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm max-w-xs" 
+            <input
+              type="number"
+              value={form.timeLimit}
+              onChange={(e) => setForm({ ...form, timeLimit: e.target.value })}
+              placeholder="e.g., 60 (leave empty for no limit)"
+              min={1}
+              className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm max-w-xs"
             />
             <div className="text-xs text-gray-500 mt-1">
               Time limit per attempt. Leave empty for unlimited time.
             </div>
           </div>
-          
+
           {questions.length > 0 && (
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">Select Questions</label>
               <div className="text-xs text-gray-500 mb-2">
-                {form.type === 'SupervisorOnly' 
+                {form.type === 'SupervisorOnly'
                   ? 'Supervisor evaluations use a single score (not per-question). Questions selected here are for reference only.'
                   : 'Select questions for this assessment.'
                 }
               </div>
               <div className="border border-gray-200 rounded-lg max-h-48 overflow-y-auto custom-scrollbar p-2 space-y-1">
                 {questions.map((q) => (
-                  <label 
-                    key={q._id} 
+                  <label
+                    key={q._id}
                     className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer text-sm"
                   >
-                    <input 
-                      type="checkbox" 
-                      checked={form.questionIds.includes(q._id)} 
-                      onChange={() => toggleQuestion(q._id)} 
-                      className="w-4 h-4 text-brand-red focus:ring-brand-red rounded" 
+                    <input
+                      type="checkbox"
+                      checked={form.questionIds.includes(q._id)}
+                      onChange={() => toggleQuestion(q._id)}
+                      className="w-4 h-4 text-brand-red focus:ring-brand-red rounded"
                     />
                     <span className="flex-1 line-clamp-1">{q.text}</span>
                     <span className="text-xs text-gray-400">{q.type}</span>
@@ -778,14 +781,14 @@ export default function Assessments() {
           )}
         </div>
         <div className="flex justify-end gap-3 mt-6">
-          <button 
-            onClick={() => setModal(null)} 
+          <button
+            onClick={() => setModal(null)}
             className="px-4 py-2 border border-gray-300 rounded-lg font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
           >
             Cancel
           </button>
-          <button 
-            onClick={handleSave} 
+          <button
+            onClick={handleSave}
             disabled={form.type === 'Combined' && (form.weight.selfAssessment + form.weight.supervisor !== 100)}
             className="px-4 py-2 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >

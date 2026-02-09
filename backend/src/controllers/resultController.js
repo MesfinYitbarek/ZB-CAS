@@ -1,4 +1,3 @@
-/* controllers/resultController.js - Updated */
 const mongoose = require('mongoose');
 const Result       = require('../models/Result');
 const User         = require('../models/User');
@@ -8,34 +7,61 @@ const AppError     = require('../utils/AppError');
 const asyncHandler = require('../utils/asyncHandler');
 const { scoreAssessment, finaliseResult } = require('../services/scoringService');
 const { sendResultsEmail } = require('../services/emailService');
+const { computeRawScore, computeWeightedScore, assignLevel } = require('../utils/scoring');
+const Question = require('../models/Question');
+const Recommendation = require('../models/Recommendation');
 
 // ─── TRIGGER SCORING ─────────────────────────────────────────────────────────
 exports.scoreAssessment = asyncHandler(async (req, res, next) => {
   const { assessmentId } = req.params;
 
+  // Validate assessment exists and populate competency
+  const assessment = await Assessment.findById(assessmentId)
+    .populate('competencyId', 'name category');
+  
+  if (!assessment) {
+    return next(new AppError('Assessment not found.', 404));
+  }
+
+  // Only allow scoring for Combined assessments
+  if (assessment.type !== 'Combined') {
+    return next(new AppError('Only Combined assessments can be scored manually.', 400));
+  }
+
+  // Check if assessment is completed
+  if (assessment.status !== 'COMPLETED') {
+    return next(new AppError('Assessment must be in COMPLETED status to score.', 400));
+  }
+
   const results = await scoreAssessment(assessmentId);
 
   // Notify each employee whose results are FINAL
-  results
-    .filter((r) => r.resultStatus === 'FINAL')
-    .forEach(async (r) => {
-      try {
+  for (const r of results.filter((r) => r.status === 'FINAL')) {
+    try {
+      const employee = await User.findById(r.employeeId);
+      if (employee && employee.email) {
         await sendResultsEmail(
-          { name: r.employeeName, email: r.employeeEmail },
+          { name: employee.name, email: employee.email },
           [{ 
-            competencyName: r.competencyName, 
+            competencyName: assessment.competencyId.name,
             finalScore: r.finalScore, 
             level: r.level,
-            assessmentType: r.assessmentType 
+            assessmentType: assessment.type 
           }]
         );
-      } catch (e) {
-        console.error('[ResultCtrl] Email send failed:', e.message);
       }
-    });
+    } catch (e) {
+      console.error('[ResultCtrl] Email send failed:', e.message);
+    }
+  }
 
-  res.status(200).json({ status: 'success', data: { results } });
+  res.status(200).json({ 
+    status: 'success', 
+    message: `Successfully scored ${results.length} employee(s). Missing responses treated as 0.`,
+    data: { results } 
+  });
 });
+
 
 // ─── AUTO-SCORE WHEN SUPERVISOR SUBMITS EVALUATION ──────────────────────────
 exports.autoScoreEmployee = asyncHandler(async (req, res, next) => {
@@ -46,77 +72,59 @@ exports.autoScoreEmployee = asyncHandler(async (req, res, next) => {
     return next(new AppError('Assessment not found.', 404));
   }
 
+  // ⚠️ IMPORTANT: Only auto-score SelfAssessment and SupervisorOnly
+  // Combined assessments should be scored manually via admin "Score Results" button
+  if (assessment.type === 'Combined') {
+    return next(new AppError('Combined assessments must be scored manually via Score Results button.', 400));
+  }
+
   // Get all responses for this employee
   const responses = await Response.find({
     assessmentId,
     employeeId
   });
 
-  // For SelfAssessment or SupervisorOnly, we can score immediately
-  if (assessment.type === 'SelfAssessment' || assessment.type === 'SupervisorOnly') {
-    // Check if all required responses are submitted
-    const submittedResponses = responses.filter(r => r.submittedAt);
-    
-    if (assessment.type === 'SelfAssessment') {
-      // Need self-assessment responses
-      const selfResponses = submittedResponses.filter(r => r.respondentType === 'self');
-      if (selfResponses.length === 0) {
-        return next(new AppError('Self-assessment not completed.', 400));
-      }
-    } else if (assessment.type === 'SupervisorOnly') {
-      // Need supervisor response
-      const supervisorResponse = submittedResponses.find(r => r.respondentType === 'supervisor');
-      if (!supervisorResponse) {
-        return next(new AppError('Supervisor evaluation not completed.', 400));
-      }
-    }
-  }
-  
-  // For Combined, need both self and supervisor
-  else if (assessment.type === 'Combined') {
-    const selfSubmitted = responses.some(r => 
-      r.respondentType === 'self' && r.submittedAt
-    );
-    const supervisorSubmitted = responses.some(r => 
-      r.respondentType === 'supervisor' && r.submittedAt
-    );
-    
-    if (!selfSubmitted || !supervisorSubmitted) {
-      return next(new AppError('Both self-assessment and supervisor evaluation are required.', 400));
-    }
-  }
-
-  // Trigger scoring for this specific employee
-  const questions = await Question.find({ _id: { $in: assessment.questionIds } })
-    .select('+correctAnswer')
-    .lean();
-
-  const selfResponses = responses.filter(r => r.respondentType === 'self');
-  const supervisorResponses = responses.filter(r => r.respondentType === 'supervisor');
-
   let finalScore = 0;
-  
+  let scoreDetails = null;
+
+  // For SelfAssessment
   if (assessment.type === 'SelfAssessment') {
+    const submittedResponses = responses.filter(r => r.submittedAt);
+    const selfResponses = submittedResponses.filter(r => r.respondentType === 'self');
+    
+    if (selfResponses.length === 0) {
+      return next(new AppError('Self-assessment not completed.', 400));
+    }
+    
+    const questions = await Question.find({ _id: { $in: assessment.questionIds } })
+      .select('+correctAnswer')
+      .lean();
+    
     const { percentage } = computeRawScore(questions, selfResponses);
     finalScore = percentage;
+    
+    scoreDetails = {
+      selfScore: finalScore,
+      supervisorScore: null,
+      weightUsed: { selfAssessment: 100, supervisor: 0 }
+    };
   } 
+  // For SupervisorOnly
   else if (assessment.type === 'SupervisorOnly') {
-    // Supervisor gives a single score
-    const supervisorResponse = supervisorResponses[0];
+    const submittedResponses = responses.filter(r => r.submittedAt);
+    const supervisorResponse = submittedResponses.find(r => r.respondentType === 'supervisor');
+    
+    if (!supervisorResponse) {
+      return next(new AppError('Supervisor evaluation not completed.', 400));
+    }
+    
     finalScore = supervisorResponse?.score || 0;
-  } 
-  else if (assessment.type === 'Combined') {
-    const selfResult = computeRawScore(questions, selfResponses);
-    const selfPercentage = selfResult.percentage;
     
-    const supervisorResponse = supervisorResponses[0];
-    const supervisorPercentage = supervisorResponse?.score || 0;
-    
-    finalScore = computeWeightedScore(
-      selfPercentage,
-      supervisorPercentage,
-      assessment.weight
-    );
+    scoreDetails = {
+      selfScore: null,
+      supervisorScore: finalScore,
+      weightUsed: { selfAssessment: 0, supervisor: 100 }
+    };
   }
 
   const level = assignLevel(finalScore);
@@ -141,6 +149,7 @@ exports.autoScoreEmployee = asyncHandler(async (req, res, next) => {
     existingResult.level = level;
     existingResult.recommendation = rec ? rec.recommendation : '';
     existingResult.status = 'FINAL';
+    existingResult.scoreDetails = scoreDetails;
     await existingResult.save();
     result = existingResult;
   } else {
@@ -152,6 +161,7 @@ exports.autoScoreEmployee = asyncHandler(async (req, res, next) => {
       level,
       recommendation: rec ? rec.recommendation : '',
       status: 'FINAL',
+      scoreDetails
     });
   }
 
@@ -271,21 +281,24 @@ exports.getUserResults = asyncHandler(async (req, res, next) => {
         const selfResponses = responses.filter(r => r.respondentType === 'self');
         const supervisorResponses = responses.filter(r => r.respondentType === 'supervisor');
 
-        if (selfResponses.length > 0 && supervisorResponses.length > 0) {
-          const questions = await Question.find({ 
-            _id: { $in: result.assessmentId.questionIds } 
-          }).select('+correctAnswer').lean();
+        // Always calculate, treating missing responses as 0
+        const questions = await Question.find({ 
+          _id: { $in: result.assessmentId.questionIds } 
+        }).select('+correctAnswer').lean();
 
-          const selfResult = computeRawScore(questions, selfResponses);
-          const supervisorResult = computeRawScore(questions, supervisorResponses);
+        const selfResult = computeRawScore(questions, selfResponses);
+        const supervisorPercentage = supervisorResponses.length > 0 
+          ? (supervisorResponses[0]?.score || 0)
+          : 0;
 
-          result.scoreDetails = {
-            selfScore: selfResult.percentage,
-            supervisorScore: supervisorResult.percentage,
-            weightUsed: result.assessmentId.weight || { selfAssessment: 20, supervisor: 80 },
-            calculation: `(${selfResult.percentage} × ${result.assessmentId.weight?.selfAssessment || 20}%) + (${supervisorResult.percentage} × ${result.assessmentId.weight?.supervisor || 80}%) = ${result.finalScore}`
-          };
-        }
+        result.scoreDetails = {
+          selfScore: selfResult.percentage,
+          supervisorScore: supervisorPercentage,
+          weightUsed: result.assessmentId.weight || { selfAssessment: 20, supervisor: 80 },
+          calculation: `(${selfResult.percentage} × ${result.assessmentId.weight?.selfAssessment || 20}%) + (${supervisorPercentage} × ${result.assessmentId.weight?.supervisor || 80}%) = ${result.finalScore}`,
+          missingSelf: selfResponses.length === 0,
+          missingSupervisor: supervisorResponses.length === 0
+        };
       }
     }
     return result;
@@ -317,21 +330,24 @@ exports.getResult = asyncHandler(async (req, res, next) => {
       const selfResponses = responses.filter(r => r.respondentType === 'self');
       const supervisorResponses = responses.filter(r => r.respondentType === 'supervisor');
 
-      if (selfResponses.length > 0 && supervisorResponses.length > 0) {
-        const questions = await Question.find({ 
-          _id: { $in: result.assessmentId.questionIds } 
-        }).select('+correctAnswer').lean();
+      // Always calculate, treating missing responses as 0
+      const questions = await Question.find({ 
+        _id: { $in: result.assessmentId.questionIds } 
+      }).select('+correctAnswer').lean();
 
-        const selfResult = computeRawScore(questions, selfResponses);
-        const supervisorResult = computeRawScore(questions, supervisorResponses);
+      const selfResult = computeRawScore(questions, selfResponses);
+      const supervisorPercentage = supervisorResponses.length > 0 
+        ? (supervisorResponses[0]?.score || 0)
+        : 0;
 
-        result.scoreDetails = {
-          selfScore: selfResult.percentage,
-          supervisorScore: supervisorResult.percentage,
-          weightUsed: result.assessmentId.weight || { selfAssessment: 20, supervisor: 80 },
-          calculation: `(${selfResult.percentage} × ${result.assessmentId.weight?.selfAssessment || 20}%) + (${supervisorResult.percentage} × ${result.assessmentId.weight?.supervisor || 80}%) = ${result.finalScore}`
-        };
-      }
+      result.scoreDetails = {
+        selfScore: selfResult.percentage,
+        supervisorScore: supervisorPercentage,
+        weightUsed: result.assessmentId.weight || { selfAssessment: 20, supervisor: 80 },
+        calculation: `(${selfResult.percentage} × ${result.assessmentId.weight?.selfAssessment || 20}%) + (${supervisorPercentage} × ${result.assessmentId.weight?.supervisor || 80}%) = ${result.finalScore}`,
+        missingSelf: selfResponses.length === 0,
+        missingSupervisor: supervisorResponses.length === 0
+      };
     }
   }
 
@@ -420,8 +436,3 @@ exports.getSupervisorEvaluationScores = asyncHandler(async (req, res, next) => {
     }
   });
 });
-
-// Import scoring utilities
-const { computeRawScore, assignLevel } = require('../utils/scoring');
-const Question = require('../models/Question');
-const Recommendation = require('../models/Recommendation');

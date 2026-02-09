@@ -1,5 +1,3 @@
-// services/scoringService.js
-
 const Assessment     = require('../models/Assessment');
 const Question       = require('../models/Question');
 const Response       = require('../models/Response');
@@ -21,10 +19,12 @@ const {
  * ───────────────────────────────────────────────────────────────
  */
 const scoreAssessment = async (assessmentId) => {
-  const assessment = await Assessment.findById(assessmentId).lean();
+  const assessment = await Assessment.findById(assessmentId)
+    .populate('competencyId', 'name category');
+    
   if (!assessment) throw new Error('Assessment not found.');
 
-  const competency = await Competency.findById(assessment.competencyId).lean();
+  const competency = assessment.competencyId;
   if (!competency) throw new Error('Competency not found.');
 
   // Target employees
@@ -58,9 +58,62 @@ const scoreAssessment = async (assessmentId) => {
       let scoreDetails = null;
 
       /**
+       * ───────────── Combined Assessment ─────────────
+       */
+      if (assessment.type === 'Combined') {
+        // Calculate self score (0 if no responses)
+        const selfResult = selfResponses.length > 0 
+          ? computeRawScore(questions, selfResponses)
+          : { percentage: 0, rawScore: 0, totalPossible: questions.length };
+        
+        const selfPercentage = selfResult.percentage;
+        
+        // Get supervisor score (0 if no evaluation)
+        const supervisorResponse = supervisorResponses.find(r => r.submittedAt);
+        const supervisorPercentage = supervisorResponse 
+          ? (Number(supervisorResponse.score) || 0)
+          : 0;
+
+        // Get and validate weights
+        const weights = assessment.weight || { selfAssessment: 20, supervisor: 80 };
+        let selfWeight = Number(weights.selfAssessment) || 20;
+        let supWeight = Number(weights.supervisor) || 80;
+        
+        // Validate weights sum to 100
+        const totalWeight = selfWeight + supWeight;
+        if (Math.abs(totalWeight - 100) > 0.01) {
+          console.warn(`[ScoringService] Weights don't sum to 100 (${totalWeight}), normalizing...`);
+          selfWeight = (selfWeight / totalWeight) * 100;
+          supWeight = (supWeight / totalWeight) * 100;
+        }
+
+        // Calculate weighted final score
+        finalScore = (selfPercentage * selfWeight / 100) + (supervisorPercentage * supWeight / 100);
+        finalScore = Math.min(100, Math.max(0, Number(finalScore.toFixed(2))));
+
+        scoreDetails = {
+          selfScore: selfPercentage,
+          supervisorScore: supervisorPercentage,
+          weightUsed: { 
+            selfAssessment: Number(selfWeight.toFixed(2)), 
+            supervisor: Number(supWeight.toFixed(2)) 
+          },
+          calculation:
+            `(${selfPercentage.toFixed(2)} × ${selfWeight.toFixed(2)}%) + ` +
+            `(${supervisorPercentage.toFixed(2)} × ${supWeight.toFixed(2)}%) = ${finalScore.toFixed(2)}%`,
+          missingSelf: selfResponses.length === 0,
+          missingSupervisor: !supervisorResponse,
+          selfResponseCount: selfResponses.length,
+          supervisorEvaluationSubmitted: !!supervisorResponse
+        };
+
+        status = 'FINAL'; // Always FINAL for Combined
+      }
+      
+      /**
        * ───────────── Self Assessment ─────────────
        */
-      if (assessment.type === 'SelfAssessment') {
+      else if (assessment.type === 'SelfAssessment') {
         const submitted = selfResponses.some(r => r.submittedAt);
         if (!submitted) continue;
 
@@ -89,54 +142,6 @@ const scoreAssessment = async (assessmentId) => {
           weightUsed: { selfAssessment: 0, supervisor: 100 }
         };
       }
-
-      /**
-       * ───────────── Combined Assessment ─────────────
-       */
-      else if (assessment.type === 'Combined') {
-        const selfSubmitted = selfResponses.some(r => r.submittedAt);
-        const supervisorResponse = supervisorResponses.find(r => r.submittedAt);
-
-        if (!selfSubmitted || !supervisorResponse) {
-          status = 'PENDING';
-        } else {
-          // ✅ Self = question based
-          const selfResult = computeRawScore(questions, selfResponses);
-          const selfPercentage = selfResult.percentage;
-
-          // ✅ Supervisor = DIRECT score (0–100)
-          const supervisorPercentage = Number(supervisorResponse.score) || 0;
-
-          const weights = assessment.weight || { selfAssessment: 20, supervisor: 80 };
-
-          finalScore = computeWeightedScore(
-            selfPercentage,
-            supervisorPercentage,
-            weights
-          );
-
-          scoreDetails = {
-            selfScore: selfPercentage,
-            supervisorScore: supervisorPercentage,
-            weightUsed: weights,
-            calculation:
-              `(${selfPercentage} × ${weights.selfAssessment}%) + ` +
-              `(${supervisorPercentage} × ${weights.supervisor}%) = ${finalScore}`
-          };
-        }
-      }
-
-      // Clamp
-      finalScore = Math.min(100, Math.max(0, finalScore));
-
-      // Manual review pending?
-      if (employeeResponses.some(r =>
-        r.respondentType === 'self' && r.manualScore === null
-      )) {
-        status = 'PENDING';
-      }
-
-      if (status === 'PENDING') continue;
 
       const level = assignLevel(finalScore);
 
@@ -203,19 +208,23 @@ const scoreAssessment = async (assessmentId) => {
       results.push({
         employeeId: employee._id,
         employeeName: employee.name,
+        employeeEmail: employee.email,
         finalScore,
         level,
         status,
         scoreDetails,
+        competencyName: competency.name,
+        assessmentType: assessment.type
       });
 
     } catch (err) {
-      console.error('[ScoringService]', err);
+      console.error('[ScoringService] Error scoring employee:', employee._id, err);
     }
   }
 
   return results;
 };
+
 
 /**
  * ───────────────────────────────────────────────────────────────
@@ -269,25 +278,38 @@ const finaliseResult = async (resultId) => {
 
   else if (assessment.type === 'Combined') {
     const selfResult = computeRawScore(questions, selfResponses);
-    const supervisorResponse = supervisorResponses.find(r => r.submittedAt);
+    const supervisorPercentage = supervisorResponses.length > 0 
+      ? (Number(supervisorResponses[0]?.score) || 0)
+      : 0;
 
     const selfPercentage = selfResult.percentage;
-    const supervisorPercentage = Number(supervisorResponse?.score) || 0;
     const weights = assessment.weight || { selfAssessment: 20, supervisor: 80 };
+
+    // Normalize weights
+    let selfWeight = weights.selfAssessment || 20;
+    let supWeight = weights.supervisor || 80;
+    
+    const totalWeight = selfWeight + supWeight;
+    if (totalWeight > 0 && totalWeight !== 100) {
+      selfWeight = (selfWeight / totalWeight) * 100;
+      supWeight = (supWeight / totalWeight) * 100;
+    }
 
     finalScore = computeWeightedScore(
       selfPercentage,
       supervisorPercentage,
-      weights
+      { selfAssessment: selfWeight, supervisor: supWeight }
     );
 
     scoreDetails = {
       selfScore: selfPercentage,
       supervisorScore: supervisorPercentage,
-      weightUsed: weights,
+      weightUsed: { selfAssessment: selfWeight, supervisor: supWeight },
       calculation:
-        `(${selfPercentage} × ${weights.selfAssessment}%) + ` +
-        `(${supervisorPercentage} × ${weights.supervisor}%) = ${finalScore}`
+        `(${selfPercentage.toFixed(2)} × ${selfWeight.toFixed(2)}%) + ` +
+        `(${supervisorPercentage.toFixed(2)} × ${supWeight.toFixed(2)}%) = ${finalScore.toFixed(2)}`,
+      missingSelf: selfResponses.length === 0,
+      missingSupervisor: supervisorResponses.length === 0
     };
   }
 

@@ -108,7 +108,7 @@ assessmentSchema.index({ 'target.department': 1 });
 
 assessmentSchema.post('save', async function(doc) {
 
-  if (doc.status === 'COMPLETED') {
+  if (doc.status === 'ARCHIVED') {
 
     const { generateReportsForAssessment } =
       require('../services/reportService');
