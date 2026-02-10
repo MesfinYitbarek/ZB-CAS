@@ -6,10 +6,10 @@ import {
   BarChart3, MessageSquare, ChevronLeft, LogOut, Target, Lightbulb, Activity,
   UserCheck, ClipboardCheck, Award, TrendingUp, X
 } from 'lucide-react';
-
+import logo from "../image/z.jpg"
 const NAV_ITEMS = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard', roles: null },
-  
+
   // Admin Only
   { icon: Users, label: 'Users', path: '/users', roles: ['HR_ADMIN'] },
   { icon: Target, label: 'Competencies', path: '/competencies', roles: ['HR_ADMIN'] },
@@ -17,26 +17,26 @@ const NAV_ITEMS = [
   { icon: Target, label: 'Assessments', path: '/assessments', roles: ['HR_ADMIN'] },
   { icon: BookOpen, label: 'Question Bank', path: '/questions', roles: ['HR_ADMIN'] },
   { icon: Activity, label: 'Activity Log', path: '/activity-log', roles: ['HR_ADMIN'] },
-  
+
   // Supervisor Only
   { icon: UserCheck, label: 'My Team', path: '/my-team', roles: ['SUPERVISOR'] },
   { icon: ClipboardCheck, label: 'Pending Evaluations', path: '/my-team/evaluations', roles: ['SUPERVISOR'] },
   { icon: Award, label: 'Team Results', path: '/my-team/results', roles: ['SUPERVISOR'] },
   { icon: TrendingUp, label: 'Team Reports', path: '/my-team/reports', roles: ['SUPERVISOR'] },
-  
+
   // All Roles
   { icon: ClipboardList, label: 'Assessments', path: '/assessments', roles: ['EMPLOYEE'] },
   { icon: FileText, label: 'My Results', path: '/results', roles: ['EMPLOYEE'] },
   { icon: FileText, label: 'Results', path: '/results', roles: ['HR_ADMIN'] },
-  { icon: BarChart3, label: 'Reports', path: '/reports', roles: ['EMPLOYEE','HR_ADMIN'] },
-  { icon: MessageSquare, label: 'Feedback', path: '/feedback', roles: ['EMPLOYEE','HR_ADMIN'] },
+  { icon: BarChart3, label: 'Reports', path: '/reports', roles: ['EMPLOYEE', 'HR_ADMIN'] },
+  { icon: MessageSquare, label: 'Feedback', path: '/feedback', roles: ['EMPLOYEE', 'HR_ADMIN'] },
 ];
 
-export default function Sidebar({ 
-  collapsed, 
-  onToggle, 
+export default function Sidebar({
+  collapsed,
+  onToggle,
   mobileOpen = false,
-  onNavClick, 
+  onNavClick,
   onMobileClose
 }) {
   const loc = useLocation();
@@ -63,10 +63,10 @@ export default function Sidebar({
   };
 
   const handleCloseMobile = () => {
-  if (isMobile && onMobileClose) {
-    onMobileClose();
-  }
-};
+    if (isMobile && onMobileClose) {
+      onMobileClose();
+    }
+  };
 
   // Close sidebar on escape key press (mobile only)
   useEffect(() => {
@@ -97,7 +97,7 @@ export default function Sidebar({
   }, [isMobile, mobileOpen]);
 
   const sidebarWidth = isMobile ? 'w-64' : (collapsed ? 'w-20' : 'w-64');
-  const sidebarPosition = isMobile 
+  const sidebarPosition = isMobile
     ? (mobileOpen ? 'translate-x-0' : '-translate-x-full')
     : 'translate-x-0';
 
@@ -105,7 +105,7 @@ export default function Sidebar({
     <>
       {/* Mobile Overlay */}
       {isMobile && mobileOpen && (
-        <div 
+        <div
           className="fixed inset-0 bg-black/50 z-40 lg:hidden backdrop-blur-sm transition-base"
           onClick={handleCloseMobile}
           style={{ animation: 'fadeIn 0.2s ease' }}
@@ -113,22 +113,24 @@ export default function Sidebar({
       )}
 
       <aside
-        className={`fixed top-0 left-0 bottom-0 bg-gradient-to-b from-brand-black to-gray-900 text-white flex flex-col transition-base z-50 ${sidebarWidth} ${sidebarPosition} shadow-xl`}
+        className={`fixed top-0 left-0 bottom-0 bg-black text-white flex flex-col transition-base z-50 ${sidebarWidth} ${sidebarPosition} shadow-xl`}
         style={{ animation: 'slideIn 0.3s ease' }}
       >
         {/* Logo and Mobile Close Button */}
-        <div className={`border-b border-white/10 min-h-[70px] sm:min-h-[80px] flex items-center ${collapsed && !isMobile ? 'justify-center p-4' : 'px-5 p-6'}`}>
-          <div className="w-10 h-10 rounded-xl bg-brand-red flex items-center justify-center shadow-lg shadow-brand-red/30 flex-shrink-0">
-            <span className="text-white font-display font-bold text-xl">ZB</span>
-          </div>
-          
+        <div className={`border-b border-white/10  min-h-[70px] sm:min-h-[80px] flex items-center ${collapsed && !isMobile ? 'justify-center p-4' : 'px-5 p-6'}`}>
+          <img
+            src={logo}
+            alt="Zemen Bank Logo"
+            className="h-14 w-auto object-contain"
+          />
+
           {(!collapsed || isMobile) && (
             <div className="ml-4 flex-1 flex items-center justify-between">
               <div>
                 <div className="font-display text-lg font-bold tracking-tight">Zemen Bank</div>
                 <div className="text-xs text-white/50 uppercase tracking-widest mt-0.5">CAS Platform</div>
               </div>
-              
+
               {/* Mobile Close Button */}
               {isMobile && (
                 <button
@@ -155,8 +157,8 @@ export default function Sidebar({
                 onMouseEnter={() => setHovering(item.label)}
                 onMouseLeave={() => setHovering(null)}
                 className={`w-full flex items-center gap-3 py-3.5 px-5 border-l-3 transition-base relative group ${active
-                    ? 'bg-brand-red/20 border-brand-red text-white font-semibold'
-                    : 'border-transparent text-white/70 hover:bg-white/10 hover:text-white font-medium'
+                  ? 'bg-brand-red/20 border-brand-red text-white font-semibold'
+                  : 'border-transparent text-white/70 hover:bg-white/10 hover:text-white font-medium'
                   } ${collapsed && !isMobile ? 'justify-center' : ''}`}
               >
                 <Icon className="w-5 h-5" strokeWidth={active ? 2.5 : 2} />
