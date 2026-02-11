@@ -1,350 +1,102 @@
-const Assessment     = require('../models/Assessment');
-const Question       = require('../models/Question');
-const Response       = require('../models/Response');
-const Result         = require('../models/Result');
-const Report         = require('../models/Report');
+const Result = require('../models/Result');
+const Assessment = require('../models/Assessment');
+const Question = require('../models/Question');
+const Response = require('../models/Response');
+const Report = require('../models/Report');
 const Recommendation = require('../models/Recommendation');
-const User           = require('../models/User');
-const Competency     = require('../models/Competency');
+const User = require('../models/User');
+const { computeRawScore, computeWeightedScore, assignLevel } = require('../utils/scoring');
 
-const {
-  computeRawScore,
-  computeWeightedScore,
-  assignLevel,
-} = require('../utils/scoring');
+const SECRET_FIELDS = '+correctAnswer +correctAnswers +matchingPairs +correctOrder +categories';
 
-/**
- * ───────────────────────────────────────────────────────────────
- * SCORE AN ASSESSMENT FOR ALL TARGET EMPLOYEES
- * ───────────────────────────────────────────────────────────────
- */
-const scoreAssessment = async (assessmentId) => {
-  const assessment = await Assessment.findById(assessmentId)
-    .populate('competencyId', 'name category');
-    
-  if (!assessment) throw new Error('Assessment not found.');
+const calculateAndSaveResult = async (assessment, employeeId) => {
+    const emp = await User.findById(employeeId).lean();
+    if (!emp) return null;
 
-  const competency = assessment.competencyId;
-  if (!competency) throw new Error('Competency not found.');
+    console.log(`\n╔══════════════════════════════════════════════════════════════╗`);
+    console.log(`║ PROCESSING RESULT: ${emp.name.toUpperCase().padEnd(31)} ║`);
+    console.log(`╚══════════════════════════════════════════════════════════════╝`);
 
-  // Target employees
-  const userFilter = { status: 'ACTIVE' };
-  if (assessment.target?.department) userFilter.department = assessment.target.department;
-  if (assessment.target?.position)   userFilter.position   = assessment.target.position;
+    const responses = await Response.find({ assessmentId: assessment._id, employeeId }).lean();
+    const questions = assessment.questionIds?.length > 0 
+        ? await Question.find({ _id: { $in: assessment.questionIds } }).select(SECRET_FIELDS).lean()
+        : [];
 
-  const employees = await User.find(userFilter).lean();
-  const allResponses = await Response.find({ assessmentId }).lean();
+    const selfResponses = responses.filter(r => r.respondentType === 'self');
+    const supervisorResp = responses.find(r => r.respondentType === 'supervisor' && r.submittedAt);
 
-  let questions = [];
-  if (assessment.questionIds?.length > 0) {
-    questions = await Question.find({
-      _id: { $in: assessment.questionIds }
-    }).select('+correctAnswer').lean();
-  }
+    // 1. Calculate Individual Components
+    const selfRes = computeRawScore(questions, selfResponses);
+    const selfPerc = selfRes.percentage;
+    const supPerc = Number(supervisorResp?.score) || 0;
 
-  const results = [];
+    let finalScore = 0;
+    let scoreDetails = { selfScore: selfPerc, supervisorScore: supPerc, weightUsed: {}, calculation: "" };
 
-  for (const employee of employees) {
-    try {
-      const employeeResponses = allResponses.filter(
-        r => r.employeeId.toString() === employee._id.toString()
-      );
-
-      const selfResponses = employeeResponses.filter(r => r.respondentType === 'self');
-      const supervisorResponses = employeeResponses.filter(r => r.respondentType === 'supervisor');
-
-      let finalScore = 0;
-      let status = 'FINAL';
-      let scoreDetails = null;
-
-      /**
-       * ───────────── Combined Assessment ─────────────
-       */
-      if (assessment.type === 'Combined') {
-        // Calculate self score (0 if no responses)
-        const selfResult = selfResponses.length > 0 
-          ? computeRawScore(questions, selfResponses)
-          : { percentage: 0, rawScore: 0, totalPossible: questions.length };
-        
-        const selfPercentage = selfResult.percentage;
-        
-        // Get supervisor score (0 if no evaluation)
-        const supervisorResponse = supervisorResponses.find(r => r.submittedAt);
-        const supervisorPercentage = supervisorResponse 
-          ? (Number(supervisorResponse.score) || 0)
-          : 0;
-
-        // Get and validate weights
+    // 2. Apply Assessment Type Logic
+    if (assessment.type === 'Combined') {
         const weights = assessment.weight || { selfAssessment: 20, supervisor: 80 };
-        let selfWeight = Number(weights.selfAssessment) || 20;
-        let supWeight = Number(weights.supervisor) || 80;
-        
-        // Validate weights sum to 100
-        const totalWeight = selfWeight + supWeight;
-        if (Math.abs(totalWeight - 100) > 0.01) {
-          console.warn(`[ScoringService] Weights don't sum to 100 (${totalWeight}), normalizing...`);
-          selfWeight = (selfWeight / totalWeight) * 100;
-          supWeight = (supWeight / totalWeight) * 100;
-        }
-
-        // Calculate weighted final score
-        finalScore = (selfPercentage * selfWeight / 100) + (supervisorPercentage * supWeight / 100);
-        finalScore = Math.min(100, Math.max(0, Number(finalScore.toFixed(2))));
-
-        scoreDetails = {
-          selfScore: selfPercentage,
-          supervisorScore: supervisorPercentage,
-          weightUsed: { 
-            selfAssessment: Number(selfWeight.toFixed(2)), 
-            supervisor: Number(supWeight.toFixed(2)) 
-          },
-          calculation:
-            `(${selfPercentage.toFixed(2)} × ${selfWeight.toFixed(2)}%) + ` +
-            `(${supervisorPercentage.toFixed(2)} × ${supWeight.toFixed(2)}%) = ${finalScore.toFixed(2)}%`,
-          missingSelf: selfResponses.length === 0,
-          missingSupervisor: !supervisorResponse,
-          selfResponseCount: selfResponses.length,
-          supervisorEvaluationSubmitted: !!supervisorResponse
-        };
-
-        status = 'FINAL'; // Always FINAL for Combined
-      }
-      
-      /**
-       * ───────────── Self Assessment ─────────────
-       */
-      else if (assessment.type === 'SelfAssessment') {
-        const submitted = selfResponses.some(r => r.submittedAt);
-        if (!submitted) continue;
-
-        const selfResult = computeRawScore(questions, selfResponses);
-        finalScore = selfResult.percentage;
-
-        scoreDetails = {
-          selfScore: finalScore,
-          supervisorScore: null,
-          weightUsed: { selfAssessment: 100, supervisor: 0 }
-        };
-      }
-
-      /**
-       * ───────────── Supervisor Only ─────────────
-       */
-      else if (assessment.type === 'SupervisorOnly') {
-        const supervisorResponse = supervisorResponses.find(r => r.submittedAt);
-        if (!supervisorResponse) continue;
-
-        finalScore = Number(supervisorResponse.score) || 0;
-
-        scoreDetails = {
-          selfScore: null,
-          supervisorScore: finalScore,
-          weightUsed: { selfAssessment: 0, supervisor: 100 }
-        };
-      }
-
-      const level = assignLevel(finalScore);
-
-      const rec = await Recommendation.findOne({
-        competencyId: assessment.competencyId,
-        level
-      }).lean();
-
-      /**
-       * ───────────── Save Result ─────────────
-       */
-      const existingResult = await Result.findOne({
-        userId: employee._id,
-        assessmentId,
-        competencyId: assessment.competencyId
-      });
-
-      let result;
-      if (existingResult) {
-        existingResult.finalScore = finalScore;
-        existingResult.level = level;
-        existingResult.recommendation = rec?.recommendation || '';
-        existingResult.status = status;
-        existingResult.scoreDetails = scoreDetails;
-        await existingResult.save();
-        result = existingResult;
-      } else {
-        result = await Result.create({
-          userId: employee._id,
-          assessmentId,
-          competencyId: assessment.competencyId,
-          finalScore,
-          level,
-          recommendation: rec?.recommendation || '',
-          status,
-          scoreDetails
-        });
-      }
-
-      /**
-       * ───────────── Update Report ─────────────
-       */
-      await Report.findOneAndUpdate(
-        { assessmentId, 'user.userId': employee._id },
-        {
-          user: {
-            userId: employee._id,
-            name: employee.name,
-            department: employee.department,
-            position: employee.position,
-            email: employee.email,
-          },
-          competencyId: assessment.competencyId,
-          competencyName: competency.name,
-          finalScore,
-          level,
-          recommendation: rec?.recommendation || '',
-          scoreDetails,
-          updatedAt: new Date(),
-        },
-        { upsert: true }
-      );
-
-      results.push({
-        employeeId: employee._id,
-        employeeName: employee.name,
-        employeeEmail: employee.email,
-        finalScore,
-        level,
-        status,
-        scoreDetails,
-        competencyName: competency.name,
-        assessmentType: assessment.type
-      });
-
-    } catch (err) {
-      console.error('[ScoringService] Error scoring employee:', employee._id, err);
-    }
-  }
-
-  return results;
-};
-
-
-/**
- * ───────────────────────────────────────────────────────────────
- * FINALISE RESULT AFTER MANUAL REVIEW
- * ───────────────────────────────────────────────────────────────
- */
-const finaliseResult = async (resultId) => {
-  const result = await Result.findById(resultId);
-  if (!result) throw new Error('Result not found.');
-
-  const assessment = await Assessment.findById(result.assessmentId).lean();
-  const responses = await Response.find({
-    assessmentId: result.assessmentId,
-    employeeId: result.userId
-  }).lean();
-
-  const selfResponses = responses.filter(r => r.respondentType === 'self');
-  const supervisorResponses = responses.filter(r => r.respondentType === 'supervisor');
-
-  let questions = [];
-  if (assessment.questionIds?.length > 0) {
-    questions = await Question.find({
-      _id: { $in: assessment.questionIds }
-    }).select('+correctAnswer').lean();
-  }
-
-  let finalScore = 0;
-  let scoreDetails = null;
-
-  if (assessment.type === 'SelfAssessment') {
-    const selfResult = computeRawScore(questions, selfResponses);
-    finalScore = selfResult.percentage;
-
-    scoreDetails = {
-      selfScore: finalScore,
-      supervisorScore: null,
-      weightUsed: { selfAssessment: 100, supervisor: 0 }
-    };
-  }
-
-  else if (assessment.type === 'SupervisorOnly') {
-    const supervisorResponse = supervisorResponses.find(r => r.submittedAt);
-    finalScore = Number(supervisorResponse?.score) || 0;
-
-    scoreDetails = {
-      selfScore: null,
-      supervisorScore: finalScore,
-      weightUsed: { selfAssessment: 0, supervisor: 100 }
-    };
-  }
-
-  else if (assessment.type === 'Combined') {
-    const selfResult = computeRawScore(questions, selfResponses);
-    const supervisorPercentage = supervisorResponses.length > 0 
-      ? (Number(supervisorResponses[0]?.score) || 0)
-      : 0;
-
-    const selfPercentage = selfResult.percentage;
-    const weights = assessment.weight || { selfAssessment: 20, supervisor: 80 };
-
-    // Normalize weights
-    let selfWeight = weights.selfAssessment || 20;
-    let supWeight = weights.supervisor || 80;
-    
-    const totalWeight = selfWeight + supWeight;
-    if (totalWeight > 0 && totalWeight !== 100) {
-      selfWeight = (selfWeight / totalWeight) * 100;
-      supWeight = (supWeight / totalWeight) * 100;
+        finalScore = computeWeightedScore(selfPerc, supPerc, weights);
+        scoreDetails.weightUsed = weights;
+        scoreDetails.calculation = `Weighted: (${selfPerc}% x ${weights.selfAssessment}%) + (${supPerc}% x ${weights.supervisor}%)`;
+    } else if (assessment.type === 'SelfAssessment') {
+        finalScore = selfPerc;
+        scoreDetails.weightUsed = { selfAssessment: 100, supervisor: 0 };
+        scoreDetails.calculation = `Self-Assessment Only: ${finalScore}%`;
+    } else { // SupervisorOnly
+        finalScore = supPerc;
+        scoreDetails.weightUsed = { selfAssessment: 0, supervisor: 100 };
+        scoreDetails.calculation = `Supervisor Only Score: ${finalScore}%`;
     }
 
-    finalScore = computeWeightedScore(
-      selfPercentage,
-      supervisorPercentage,
-      { selfAssessment: selfWeight, supervisor: supWeight }
+    const level = assignLevel(finalScore);
+    const rec = await Recommendation.findOne({ competencyId: assessment.competencyId, level }).lean();
+
+    console.log(`[STAGE] Logic: ${assessment.type} | Final Score: ${finalScore}% | Level: ${level}`);
+
+    // 3. Persist Result
+    const result = await Result.findOneAndUpdate(
+        { userId: employeeId, assessmentId: assessment._id, competencyId: assessment.competencyId },
+        { finalScore, level, recommendation: rec?.recommendation || '', status: 'FINAL', scoreDetails },
+        { upsert: true, new: true }
     );
 
-    scoreDetails = {
-      selfScore: selfPercentage,
-      supervisorScore: supervisorPercentage,
-      weightUsed: { selfAssessment: selfWeight, supervisor: supWeight },
-      calculation:
-        `(${selfPercentage.toFixed(2)} × ${selfWeight.toFixed(2)}%) + ` +
-        `(${supervisorPercentage.toFixed(2)} × ${supWeight.toFixed(2)}%) = ${finalScore.toFixed(2)}`,
-      missingSelf: selfResponses.length === 0,
-      missingSupervisor: supervisorResponses.length === 0
-    };
-  }
+    // 4. Update HR Report Snapshot
+    await Report.findOneAndUpdate(
+        { assessmentId: assessment._id, 'user.userId': employeeId },
+        {
+            user: { userId: emp._id, name: emp.name, department: emp.department, position: emp.position, email: emp.email },
+            competencyId: assessment.competencyId,
+            competencyName: assessment.competencyId.name || 'Competency',
+            finalScore, level, recommendation: rec?.recommendation || '', scoreDetails, updatedAt: new Date()
+        },
+        { upsert: true }
+    );
 
-  finalScore = Math.min(100, Math.max(0, finalScore));
-
-  const level = assignLevel(finalScore);
-
-  const rec = await Recommendation.findOne({
-    competencyId: assessment.competencyId,
-    level
-  }).lean();
-
-  result.finalScore = finalScore;
-  result.level = level;
-  result.recommendation = rec?.recommendation || '';
-  result.status = 'FINAL';
-  result.scoreDetails = scoreDetails;
-
-  await result.save();
-
-  await Report.findOneAndUpdate(
-    { assessmentId: result.assessmentId, 'user.userId': result.userId },
-    {
-      finalScore,
-      level,
-      recommendation: rec?.recommendation || '',
-      scoreDetails,
-      updatedAt: new Date(),
-    }
-  );
-
-  return result;
+    console.log(`✅ Success: Result for ${emp.name} finalized.\n`);
+    return result;
 };
 
-module.exports = {
-  scoreAssessment,
-  finaliseResult,
+exports.scoreFullAssessment = async (assessmentId) => {
+    const assessment = await Assessment.findById(assessmentId).populate('competencyId');
+    if (!assessment) throw new Error('Assessment not found');
+
+    const filter = { status: { $in: ['ACTIVE', 'COMPLETED'] } };
+    if (assessment.target?.department) filter.department = assessment.target.department;
+    if (assessment.target?.position) filter.position = assessment.target.position;
+
+    const employees = await User.find(filter).select('_id').lean();
+    console.log(`🚀 Bulk Scoring triggered for ${employees.length} employees...`);
+    
+    const results = [];
+    for (const emp of employees) {
+        const res = await calculateAndSaveResult(assessment, emp._id);
+        if (res) results.push(res);
+    }
+    return results;
+};
+
+exports.scoreIndividual = async (assessmentId, employeeId) => {
+    const assessment = await Assessment.findById(assessmentId).populate('competencyId');
+    return calculateAndSaveResult(assessment, employeeId);
 };

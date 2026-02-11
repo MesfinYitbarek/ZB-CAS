@@ -12,7 +12,6 @@ export default function AssessmentDetail() {
   const { isAdmin } = useAuth();
   const { show } = useToast();
   const [assessment, setAssessment] = useState(null);
-  const [responses, setResponses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editModal, setEditModal] = useState(false);
   const [competencies, setCompetencies] = useState([]);
@@ -46,11 +45,6 @@ export default function AssessmentDetail() {
           type: data.data.assessment.type,
           weight: data.data.assessment.weight || { selfAssessment: 20, supervisor: 80 },
         });
-
-        if (isAdmin) {
-          const respRes = await api.get(`/responses/${id}/all`);
-          setResponses(respRes.data.data.responses);
-        }
       } catch (err) {
         show('Failed to load assessment.', 'error');
         nav('/assessments');
@@ -110,9 +104,6 @@ export default function AssessmentDetail() {
     );
   if (!assessment) return null;
 
-  const participantCount = [...new Set(responses.map((r) => r.userId?._id))].length;
-  const completionRate = responses.length > 0 ? Math.round((responses.filter((r) => r.submittedAt).length / responses.length) * 100) : 0;
-
   return (
     <div className="p-7">
       {/* Header */}
@@ -139,7 +130,7 @@ export default function AssessmentDetail() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
         <div className="bg-white rounded-xl p-5 shadow-card border border-gray-100">
           <div className="flex items-center gap-3 mb-2">
             <div className="w-10 h-10 rounded-lg bg-brand-red/10 flex items-center justify-center">
@@ -168,19 +159,8 @@ export default function AssessmentDetail() {
               <Users className="w-5 h-5 text-green-600" />
             </div>
             <div>
-              <div className="text-xs text-gray-500 uppercase font-semibold">Participants</div>
-              <div className="text-2xl font-bold text-brand-black">{participantCount}</div>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-xl p-5 shadow-card border border-gray-100">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 rounded-lg bg-orange-100 flex items-center justify-center">
-              <Calendar className="w-5 h-5 text-orange-600" />
-            </div>
-            <div>
-              <div className="text-xs text-gray-500 uppercase font-semibold">Completion</div>
-              <div className="text-2xl font-bold text-brand-black">{completionRate}%</div>
+              <div className="text-xs text-gray-500 uppercase font-semibold">Type</div>
+              <div className="text-lg font-bold text-brand-black">{assessment.type}</div>
             </div>
           </div>
         </div>
@@ -261,25 +241,24 @@ export default function AssessmentDetail() {
           </div>
         </div>
 
-        {/* Right Column - Responses */}
-        {isAdmin && responses.length > 0 && (
-          <div className="bg-white rounded-xl p-6 shadow-card border border-gray-100">
-            <h3 className="text-lg font-display font-bold text-brand-black mb-4">Recent Responses</h3>
-            <div className="space-y-3">
-              {responses.slice(0, 10).map((r) => (
-                <div key={r._id} className="p-3 border border-gray-100 rounded-lg">
-                  <div className="font-semibold text-sm text-brand-black-soft">{r.userId?.name}</div>
-                  <div className="text-xs text-gray-400 mt-0.5">
-                    Q{r.questionId?.text?.substring(0, 30)}...
-                  </div>
-                  {r.submittedAt && (
-                    <div className="text-xs text-green-600 mt-1 font-semibold">✓ Submitted</div>
-                  )}
-                </div>
-              ))}
+        {/* Right Column - Empty (previously Responses) */}
+        <div className="bg-white rounded-xl p-6 shadow-card border border-gray-100">
+          <h3 className="text-lg font-display font-bold text-brand-black mb-4">Assessment Details</h3>
+          <div className="space-y-4">
+            <div>
+              <div className="text-xs text-gray-500 font-semibold uppercase mb-1">Competency</div>
+              <div className="text-sm text-brand-black-soft font-medium">{assessment.competencyId?.name || 'Not specified'}</div>
+            </div>
+            <div>
+              <div className="text-xs text-gray-500 font-semibold uppercase mb-1">Description</div>
+              <div className="text-sm text-brand-black-soft">{assessment.description || 'No description provided'}</div>
+            </div>
+            <div>
+              <div className="text-xs text-gray-500 font-semibold uppercase mb-1">Created</div>
+              <div className="text-sm text-brand-black-soft">{new Date(assessment.createdAt).toLocaleDateString()}</div>
             </div>
           </div>
-        )}
+        </div>
       </div>
 
       {/* Edit Modal */}

@@ -3,7 +3,10 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import useAssessmentSecurity from '../hooks/useAssessmentSecurity';
-import { CheckCircle, ArrowLeft, Star, AlertTriangle, Clock, Shield, TrendingUp, Award, Download, FileText } from 'lucide-react';
+import {
+  CheckCircle, ArrowLeft, Star, AlertTriangle, Clock, Shield,
+  TrendingUp, Award, Download, FileText, GripVertical, Check
+} from 'lucide-react';
 import SecurityMonitor from '../components/SecurityMonitor';
 import { exportToPDF, generateFilename } from '../utils/exportUtils';
 import api from '../utils/api';
@@ -25,7 +28,9 @@ export default function TakeAssessment() {
   const debounceRef = useRef({});
 
   const respondentType = user?.role === 'SUPERVISOR' ? 'supervisor' : 'self';
-  const employeeId = respondentType === 'supervisor' ? new URLSearchParams(window.location.search).get('employeeId') || user?._id : user?._id;
+  const employeeId = respondentType === 'supervisor'
+    ? new URLSearchParams(window.location.search).get('employeeId') || user?._id
+    : user?._id;
 
   const security = useAssessmentSecurity(assessmentId, (violation) => {
     api.post(`/responses/security-violation`, {
@@ -52,7 +57,6 @@ export default function TakeAssessment() {
         const prog = await api.get(`/responses/progress/${assessmentId}`);
         if (prog.data.data.isSubmitted) {
           setSubmitted(true);
-          // Check if result already exists
           await checkResult();
         }
       } catch (err) {
@@ -109,7 +113,13 @@ export default function TakeAssessment() {
 
   const handleSubmit = async () => {
     const questions = assessment?.questionIds || [];
-    const unanswered = questions.filter((q) => answers[q._id] === undefined || answers[q._id] === '' || answers[q._id] === null);
+    const unanswered = questions.filter((q) => {
+      const ans = answers[q._id];
+      if (ans === undefined || ans === null || ans === '') return true;
+      if (Array.isArray(ans) && ans.length === 0) return true;
+      if (typeof ans === 'object' && Object.keys(ans).length === 0) return true;
+      return false;
+    });
 
     if (unanswered.length > 0 && !security.timeExpired) {
       show(`Please answer all ${unanswered.length} remaining question(s).`, 'warning');
@@ -117,7 +127,6 @@ export default function TakeAssessment() {
     }
 
     try {
-      // Submit responses
       await api.post('/responses/submit', {
         assessmentId,
         employeeId,
@@ -129,18 +138,15 @@ export default function TakeAssessment() {
       setSubmitted(true);
       show('Assessment submitted successfully!', 'success');
 
-      // For Self Assessment, trigger AUTOMATIC scoring immediately
-
       if (assessment.type === 'SelfAssessment') {
         setScoringInProgress(true);
         try {
-          // Try to trigger scoring
-          await api.post(`/results/score/${assessmentId}`);
-
-          // Wait for scoring to complete
+          await api.post(`/results/auto-score`, {
+            assessmentId,
+            employeeId: user._id
+          });
           await new Promise(resolve => setTimeout(resolve, 1500));
 
-          // Fetch the result with retry logic
           let attempts = 0;
           let assessmentResult = null;
 
@@ -148,8 +154,7 @@ export default function TakeAssessment() {
             try {
               const { data } = await api.get(`/results/user/${user._id}`);
               assessmentResult = data.data.results.find(r =>
-                r.assessmentId?._id === assessmentId ||
-                r.assessmentId === assessmentId
+                r.assessmentId?._id === assessmentId || r.assessmentId === assessmentId
               );
 
               if (!assessmentResult) {
@@ -164,12 +169,10 @@ export default function TakeAssessment() {
           if (assessmentResult) {
             setResult(assessmentResult);
           } else {
-            // If no result found, show a message to check later
             show('Assessment submitted! Results will be available shortly.', 'success');
           }
         } catch (err) {
           console.error('Scoring error:', err);
-          // Handle specific duplicate error
           if (err.response?.data?.message?.includes('duplicate') ||
             err.response?.data?.message?.includes('unique')) {
             show('Assessment already scored. Check your results.', 'info');
@@ -210,6 +213,269 @@ export default function TakeAssessment() {
     security.requestFullscreen();
   };
 
+  // Render question based on type
+  const renderQuestion = (q) => {
+    switch (q.type) {
+      case 'MCQ':
+        return (
+          <div className="space-y-2">
+            {(q.options || []).map((opt) => {
+              const chosen = answers[q._id] === opt;
+              return (
+                <label
+                  key={opt}
+                  className={`flex items-center gap-3 p-4 rounded-lg border-2 cursor-pointer transition-all ${chosen ? 'border-brand-red bg-brand-red-muted' : 'border-gray-200 bg-white hover:border-gray-300'
+                    }`}
+                >
+                  <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${chosen ? 'border-brand-red' : 'border-gray-300'
+                    }`}>
+                    {chosen && <div className="w-2.5 h-2.5 rounded-full bg-brand-red" />}
+                  </div>
+                  <input
+                    type="radio"
+                    name={q._id}
+                    checked={chosen}
+                    onChange={() => handleAnswer(q._id, opt)}
+                    className="hidden"
+                  />
+                  <span className={`text-sm ${chosen ? 'text-brand-red-dark font-semibold' : 'text-gray-700'}`}>
+                    {opt}
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        );
+
+      case 'TrueFalse':
+        return (
+          <div className="grid grid-cols-2 gap-3">
+            {['True', 'False'].map((opt) => {
+              const chosen = answers[q._id] === opt;
+              return (
+                <button
+                  key={opt}
+                  onClick={() => handleAnswer(q._id, opt)}
+                  className={`p-4 rounded-lg border-2 font-semibold text-sm transition-all ${chosen ? 'border-brand-red bg-brand-red-muted text-brand-red-dark' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                    }`}
+                >
+                  {opt}
+                </button>
+              );
+            })}
+          </div>
+        );
+
+      case 'Rating':
+        return (
+          <div className="flex items-center gap-2">
+            {[1, 2, 3, 4, 5].map((val) => {
+              const chosen = answers[q._id] >= val;
+              return (
+                <button
+                  key={val}
+                  onClick={() => handleAnswer(q._id, val)}
+                  className="p-1 hover:scale-110 transition-transform"
+                >
+                  <Star
+                    className="w-8 h-8"
+                    fill={chosen ? '#EA580C' : 'none'}
+                    color={chosen ? '#EA580C' : '#D1D5DB'}
+                  />
+                </button>
+              );
+            })}
+            {answers[q._id] && <span className="text-sm text-gray-500 ml-2">{answers[q._id]} / 5</span>}
+          </div>
+        );
+
+      case 'ShortAnswer':
+        return (
+          <textarea
+            rows={4}
+            value={answers[q._id] || ''}
+            onChange={(e) => handleAnswer(q._id, e.target.value)}
+            placeholder="Write your answer here..."
+            className="w-full px-4 py-3 rounded-lg border border-gray-300 focus-brand text-sm resize-none"
+          />
+        );
+
+      case 'MultiSelect':
+        return (
+          <div className="space-y-2">
+            {(q.options || []).map((opt) => {
+              const selected = (answers[q._id] || []).includes(opt);
+              return (
+                <label
+                  key={opt}
+                  className={`flex items-center gap-3 p-4 rounded-lg border-2 cursor-pointer transition-all ${selected ? 'border-brand-red bg-brand-red-muted' : 'border-gray-200 bg-white hover:border-gray-300'
+                    }`}
+                >
+                  <div className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all ${selected ? 'border-brand-red bg-brand-red' : 'border-gray-300'
+                    }`}>
+                    {selected && <Check className="w-3 h-3 text-white" />}
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={selected}
+                    onChange={(e) => {
+                      const current = answers[q._id] || [];
+                      const updated = e.target.checked
+                        ? [...current, opt]
+                        : current.filter((item) => item !== opt);
+                      handleAnswer(q._id, updated);
+                    }}
+                    className="hidden"
+                  />
+                  <span className={`text-sm ${selected ? 'text-brand-red-dark font-semibold' : 'text-gray-700'}`}>
+                    {opt}
+                  </span>
+                </label>
+              );
+            })}
+            <p className="text-xs text-gray-500 mt-2">Select all that apply</p>
+          </div>
+        );
+
+      case 'Matching':
+        return (
+          <div className="space-y-4">
+            <p className="text-xs text-gray-500 mb-3">Match each item on the left with the correct item on the right</p>
+            {(q.matchingLeft || []).map((leftItem, idx) => {
+              const currentMatch = (answers[q._id] || {})[leftItem];
+              return (
+                <div key={idx} className="flex items-center gap-3">
+                  <div className="flex-1 p-3 bg-gray-50 rounded-lg border border-gray-200 text-sm font-medium">
+                    {leftItem}
+                  </div>
+                  <span className="text-gray-400">↔</span>
+                  <select
+                    value={currentMatch || ''}
+                    onChange={(e) => {
+                      const updated = { ...(answers[q._id] || {}), [leftItem]: e.target.value };
+                      handleAnswer(q._id, updated);
+                    }}
+                    className="flex-1 h-11 px-3 rounded-lg border border-gray-300 focus-brand text-sm"
+                  >
+                    <option value="">— Select match —</option>
+                    {(q.matchingRight || []).map((rightItem) => (
+                      <option key={rightItem} value={rightItem}>{rightItem}</option>
+                    ))}
+                  </select>
+                </div>
+              );
+            })}
+          </div>
+        );
+
+      case 'Ordering':
+        return (
+          <div className="space-y-3">
+            <p className="text-xs text-gray-500 mb-3">Arrange the items in the correct order (1 = first, {q.orderItems?.length || 0} = last)</p>
+            {(q.orderItems || []).map((item, idx) => {
+              const currentOrder = (answers[q._id] || {})[item];
+              return (
+                <div key={idx} className="flex items-center gap-3">
+                  <select
+                    value={currentOrder || ''}
+                    onChange={(e) => {
+                      const updated = { ...(answers[q._id] || {}), [item]: parseInt(e.target.value, 10) };
+                      handleAnswer(q._id, updated);
+                    }}
+                    className="w-20 h-11 px-3 rounded-lg border border-gray-300 focus-brand text-sm font-semibold"
+                  >
+                    <option value="">—</option>
+                    {(q.orderItems || []).map((_, i) => (
+                      <option key={i} value={i + 1}>{i + 1}</option>
+                    ))}
+                  </select>
+                  <GripVertical className="w-4 h-4 text-gray-300" />
+                  <div className="flex-1 p-3 bg-gray-50 rounded-lg border border-gray-200 text-sm">
+                    {item}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        );
+
+      case 'ScenarioMCQ':
+        return (
+          <div className="space-y-4">
+            {q.scenario && (
+              <div className="p-4 bg-blue-50 border-l-4 border-blue-500 rounded-lg mb-4">
+                <div className="text-xs font-bold text-blue-800 uppercase mb-2">Scenario</div>
+                <p className="text-sm text-blue-900 leading-relaxed whitespace-pre-wrap">{q.scenario}</p>
+              </div>
+            )}
+            <div className="space-y-2">
+              {(q.options || []).map((opt) => {
+                const chosen = answers[q._id] === opt;
+                return (
+                  <label
+                    key={opt}
+                    className={`flex items-center gap-3 p-4 rounded-lg border-2 cursor-pointer transition-all ${chosen ? 'border-brand-red bg-brand-red-muted' : 'border-gray-200 bg-white hover:border-gray-300'
+                      }`}
+                  >
+                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${chosen ? 'border-brand-red' : 'border-gray-300'
+                      }`}>
+                      {chosen && <div className="w-2.5 h-2.5 rounded-full bg-brand-red" />}
+                    </div>
+                    <input
+                      type="radio"
+                      name={q._id}
+                      checked={chosen}
+                      onChange={() => handleAnswer(q._id, opt)}
+                      className="hidden"
+                    />
+                    <span className={`text-sm ${chosen ? 'text-brand-red-dark font-semibold' : 'text-gray-700'}`}>
+                      {opt}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        );
+
+      case 'DragDropClassification':
+        return (
+          <div className="space-y-4">
+            <p className="text-xs text-gray-500 mb-3">Classify each item into the correct category</p>
+            <div className="grid gap-3">
+              {(q.classificationItems || []).map((item, idx) => {
+                const currentCategory = (answers[q._id] || {})[item];
+                return (
+                  <div key={idx} className="flex items-center gap-3">
+                    <div className="flex-1 p-3 bg-gray-50 rounded-lg border border-gray-200 text-sm font-medium">
+                      {item}
+                    </div>
+                    <span className="text-gray-400">→</span>
+                    <select
+                      value={currentCategory || ''}
+                      onChange={(e) => {
+                        const updated = { ...(answers[q._id] || {}), [item]: e.target.value };
+                        handleAnswer(q._id, updated);
+                      }}
+                      className="flex-1 h-11 px-3 rounded-lg border border-gray-300 focus-brand text-sm"
+                    >
+                      <option value="">— Select category —</option>
+                      {(q.categoryNames || []).map((cat) => (
+                        <option key={cat} value={cat}>{cat}</option>
+                      ))}
+                    </select>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+
+      default:
+        return <p className="text-sm text-gray-500">Unsupported question type: {q.type}</p>;
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -221,7 +487,13 @@ export default function TakeAssessment() {
   if (!assessment) return null;
 
   const questions = assessment.questionIds || [];
-  const answeredCount = questions.filter((q) => answers[q._id] !== undefined && answers[q._id] !== '' && answers[q._id] !== null).length;
+  const answeredCount = questions.filter((q) => {
+    const ans = answers[q._id];
+    if (ans === undefined || ans === null || ans === '') return false;
+    if (Array.isArray(ans) && ans.length === 0) return false;
+    if (typeof ans === 'object' && Object.keys(ans).length === 0) return false;
+    return true;
+  }).length;
   const pct = questions.length > 0 ? Math.round((answeredCount / questions.length) * 100) : 0;
 
   // Security acknowledgment screen
@@ -301,7 +573,7 @@ export default function TakeAssessment() {
     );
   }
 
-  // Result display for Self Assessment (AUTOMATIC SCORING)
+  // Result display for Self Assessment (existing code remains the same)
   if (submitted && assessment.type === 'SelfAssessment') {
     if (scoringInProgress) {
       return (
@@ -327,7 +599,6 @@ export default function TakeAssessment() {
             <h2 className="text-2xl font-display font-bold text-brand-black text-center mb-2">Assessment Completed!</h2>
             <p className="text-gray-500 text-center mb-8">Your results are ready</p>
 
-            {/* Result Card */}
             <div className="bg-gradient-to-br from-brand-red/5 to-brand-red/10 rounded-2xl p-8 mb-6 border-2 border-brand-red/20">
               <div className="text-center mb-6">
                 <div className="inline-flex items-center justify-center w-24 h-24 rounded-full bg-white shadow-lg mb-4">
@@ -344,7 +615,6 @@ export default function TakeAssessment() {
                 </div>
               </div>
 
-              {/* Progress Bar */}
               <div className="mb-6">
                 <div className="flex justify-between text-xs text-gray-600 mb-2">
                   <span>Basic</span>
@@ -366,7 +636,6 @@ export default function TakeAssessment() {
                 </div>
               </div>
 
-              {/* Recommendation */}
               {result.recommendation && (
                 <div className="bg-white rounded-xl p-6 border-l-4 border-brand-red">
                   <div className="flex items-start gap-3">
@@ -384,7 +653,6 @@ export default function TakeAssessment() {
               )}
             </div>
 
-            {/* Security Summary */}
             {security.totalViolations > 0 && (
               <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
                 <div className="text-xs font-semibold text-yellow-800 uppercase mb-2">Security Summary</div>
@@ -420,7 +688,6 @@ export default function TakeAssessment() {
       );
     }
 
-    // Fallback if result not loaded yet
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
         <div className="bg-white rounded-2xl shadow-lg p-12 max-w-md text-center">
@@ -438,7 +705,6 @@ export default function TakeAssessment() {
     );
   }
 
-  // Standard confirmation for non-self assessments
   if (submitted) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
@@ -468,7 +734,6 @@ export default function TakeAssessment() {
     );
   }
 
-  // Assessment questions UI
   return (
     <div className="min-h-screen bg-gray-50">
       {showWarning && (
@@ -534,60 +799,16 @@ export default function TakeAssessment() {
             </div>
             <p className="text-base font-semibold text-brand-black mb-5 leading-relaxed">{q.text}</p>
 
-            {q.type === 'MCQ' && (
-              <div className="space-y-2">
-                {(q.options || []).map((opt) => {
-                  const chosen = answers[q._id] === opt;
-                  return (
-                    <label key={opt} className={`flex items-center gap-3 p-4 rounded-lg border-2 cursor-pointer transition-all ${chosen ? 'border-brand-red bg-brand-red-muted' : 'border-gray-200 bg-white hover:border-gray-300'
-                      }`}>
-                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${chosen ? 'border-brand-red' : 'border-gray-300'}`}>
-                        {chosen && <div className="w-2.5 h-2.5 rounded-full bg-brand-red" />}
-                      </div>
-                      <input type="radio" name={q._id} checked={chosen} onChange={() => handleAnswer(q._id, opt)} className="hidden" />
-                      <span className={`text-sm ${chosen ? 'text-brand-red-dark font-semibold' : 'text-gray-700'}`}>{opt}</span>
-                    </label>
-                  );
-                })}
-              </div>
-            )}
-
-            {q.type === 'TrueFalse' && (
-              <div className="grid grid-cols-2 gap-3">
-                {['True', 'False'].map((opt) => {
-                  const chosen = answers[q._id] === opt;
-                  return (
-                    <button key={opt} onClick={() => handleAnswer(q._id, opt)} className={`p-4 rounded-lg border-2 font-semibold text-sm transition-all ${chosen ? 'border-brand-red bg-brand-red-muted text-brand-red-dark' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
-                      }`}>
-                      {opt}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-
-            {q.type === 'Rating' && (
-              <div className="flex items-center gap-2">
-                {[1, 2, 3, 4, 5].map((val) => {
-                  const chosen = answers[q._id] >= val;
-                  return (
-                    <button key={val} onClick={() => handleAnswer(q._id, val)} className="p-1 hover:scale-110 transition-transform">
-                      <Star className="w-8 h-8" fill={chosen ? '#EA580C' : 'none'} color={chosen ? '#EA580C' : '#D1D5DB'} />
-                    </button>
-                  );
-                })}
-                {answers[q._id] && <span className="text-sm text-gray-500 ml-2">{answers[q._id]} / 5</span>}
-              </div>
-            )}
-
-            {q.type === 'ShortAnswer' && (
-              <textarea rows={4} value={answers[q._id] || ''} onChange={(e) => handleAnswer(q._id, e.target.value)} placeholder="Write your answer here..." className="w-full px-4 py-3 rounded-lg border border-gray-300 focus-brand text-sm resize-none" />
-            )}
+            {renderQuestion(q)}
           </div>
         ))}
 
         <div className="text-center pt-6 pb-12">
-          <button onClick={handleSubmit} disabled={security.timeRemaining === 0 && answeredCount < questions.length} className="px-8 py-4 bg-brand-red text-white rounded-xl font-bold text-base hover:bg-brand-red-dark transition-colors shadow-lg shadow-brand-red/20 disabled:opacity-50 disabled:cursor-not-allowed">
+          <button
+            onClick={handleSubmit}
+            disabled={security.timeRemaining === 0 && answeredCount < questions.length}
+            className="px-8 py-4 bg-brand-red text-white rounded-xl font-bold text-base hover:bg-brand-red-dark transition-colors shadow-lg shadow-brand-red/20 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
             {security.timeExpired ? 'Time Expired - Auto-submitting...' : 'Submit Assessment'}
           </button>
           {assessment.type === 'SelfAssessment' && (

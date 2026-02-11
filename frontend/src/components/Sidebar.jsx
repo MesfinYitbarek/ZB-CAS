@@ -28,7 +28,7 @@ const NAV_ITEMS = [
   { icon: ClipboardList, label: 'Assessments', path: '/assessments', roles: ['EMPLOYEE'] },
   { icon: FileText, label: 'My Results', path: '/results', roles: ['EMPLOYEE'] },
   { icon: FileText, label: 'Results', path: '/results', roles: ['HR_ADMIN'] },
-  { icon: BarChart3, label: 'Reports', path: '/reports', roles: ['EMPLOYEE', 'HR_ADMIN'] },
+  { icon: BarChart3, label: 'Reports', path: '/reports', roles: [ 'HR_ADMIN'] },
   { icon: MessageSquare, label: 'Feedback', path: '/feedback', roles: ['EMPLOYEE', 'HR_ADMIN'] },
 ];
 

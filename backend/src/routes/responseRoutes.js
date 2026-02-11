@@ -1,38 +1,33 @@
-/* routes/responseRoutes.js */
-const express    = require('express');
-const router     = express.Router();
+const express = require('express');
+const router = express.Router();
 const { protect, authorize } = require('../middleware/auth');
-const rCtrl      = require('../controllers/responseController');
+const rCtrl = require('../controllers/responseController');
 
+// All routes in this file require authentication
 router.use(protect);
 
-// ── Employee / Supervisor actions ─────────────────────────────────────────────
-router.post('/save',                   rCtrl.saveAnswer);          // auto-save single answer
-router.post('/submit',                 rCtrl.submitAssessment);    // full submission
-router.get('/progress/:assessmentId',  rCtrl.getProgress);         // progress check
+// ─── EMPLOYEE ACTIONS ────────────────────────────────────────────────────────
+// Auto-save and progress tracking for the person taking the assessment
+router.post('/save', rCtrl.saveAnswer);
+router.post('/submit', rCtrl.submitAssessment);
+router.get('/progress/:assessmentId', rCtrl.getProgress);
 
-// ── HR_ADMIN: view & manually score ──────────────────────────────────────────
-router.get('/:assessmentId/all',       authorize('HR_ADMIN'), rCtrl.getAllResponses);
-router.patch('/:id/manual',            authorize('HR_ADMIN'), rCtrl.setManualScore);
+// ─── SUPERVISOR ACTIONS ─────────────────────────────────────────────────────
+// Restricted to Supervisors only
+router.group = (prefix, cb) => {
+  const subRouter = express.Router();
+  cb(subRouter);
+  router.use(prefix, subRouter);
+};
 
-router.post(
-  '/save-supervisor-evaluation',
-  protect,
-  authorize('SUPERVISOR'),
-  rCtrl.saveSupervisorEvaluation
-);
+// Supervisor evaluation routes
+router.post('/supervisor/save', authorize('SUPERVISOR'), rCtrl.saveSupervisorEvaluation);
+router.post('/supervisor/submit', authorize('SUPERVISOR'), rCtrl.submitSupervisorEvaluation);
+router.get('/supervisor/:assessmentId/:employeeId', authorize('SUPERVISOR'), rCtrl.getSupervisorEvaluation);
 
-router.post(
-  '/submit-supervisor-evaluation',
-  protect,
-  authorize('SUPERVISOR'),
-  rCtrl.submitSupervisorEvaluation
-);
+// ─── HR_ADMIN ACTIONS ───────────────────────────────────────────────────────
+// Restricted to HR_ADMIN only
+router.get('/admin/:assessmentId/all', authorize('HR_ADMIN'), rCtrl.getAllResponses);
+router.patch('/admin/manual-score/:id', authorize('HR_ADMIN'), rCtrl.setManualScore);
 
-router.get(
-  '/supervisor-evaluation/:assessmentId/:employeeId',
-  protect,
-  authorize('SUPERVISOR'),
-  rCtrl.getSupervisorEvaluation
-);
 module.exports = router;

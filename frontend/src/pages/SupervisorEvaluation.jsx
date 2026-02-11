@@ -41,17 +41,14 @@ export default function SupervisorEvaluation() {
   const loadEvaluationData = async () => {
     try {
       setLoading(true);
-      
-      // Load assessment details
       const assessRes = await api.get(`/assessments/${assessmentId}`);
       setAssessment(assessRes.data.data.assessment);
       
-      // Load employee details
       const empRes = await api.get(`/users/${employeeId}`);
       setEmployee(empRes.data.data.user);
       
-      // Check for existing supervisor evaluation
-      const respRes = await api.get(`/responses/supervisor-evaluation/${assessmentId}/${employeeId}`);
+      // Updated Endpoint to match refactored routes
+      const respRes = await api.get(`/responses/supervisor/${assessmentId}/${employeeId}`);
       
       if (respRes.data.data.evaluation) {
         const existing = respRes.data.data.evaluation;
@@ -59,10 +56,8 @@ export default function SupervisorEvaluation() {
         setComments(existing.comments || '');
         setHasExistingEvaluation(true);
       }
-      
     } catch (err) {
-      console.error('Error loading evaluation data:', err);
-      show('Failed to load evaluation data', 'error');
+      show('Failed to load data', 'error');
     } finally {
       setLoading(false);
     }
@@ -94,58 +89,40 @@ export default function SupervisorEvaluation() {
   const saveDraft = async () => {
     try {
       setSaving(true);
-      
-      await api.post('/responses/save-supervisor-evaluation', {
+      // Updated Endpoint
+      await api.post('/responses/supervisor/save', {
         assessmentId,
         employeeId,
         score,
-        comments,
-        respondentType: 'supervisor'
+        comments
       });
-      
-      show('Evaluation draft saved successfully', 'success');
-      
+      show('Draft saved', 'success');
+      setHasExistingEvaluation(true);
     } catch (err) {
-      console.error('Error saving draft:', err);
-      show('Failed to save draft', 'error');
+      show('Save failed', 'error');
     } finally {
       setSaving(false);
     }
   };
 
   const submitEvaluation = async () => {
-    // Validate score is provided
-    if (score === null || score === undefined || score === '') {
-      show('Please provide a score between 0-100', 'error');
-      return;
-    }
-
-    // Confirm submission
-    if (!window.confirm('Are you sure you want to submit this evaluation? This action cannot be undone.')) {
-      return;
-    }
+    if (!window.confirm('Submit this evaluation? This cannot be undone.')) return;
 
     try {
       setSubmitting(true);
-      
-      await api.post('/responses/submit-supervisor-evaluation', {
+ 
+      await api.post('/responses/supervisor/submit', {
         assessmentId,
         employeeId,
         score,
-        comments,
-        respondentType: 'supervisor'
+        comments
       });
       
       show('Evaluation submitted successfully!', 'success');
       
-      // Navigate back to pending evaluations
-      setTimeout(() => {
-        navigate('/supervisor/pending');
-      }, 1500);
-      
+      setTimeout(() => navigate('/supervisor/pending'), 1500);
     } catch (err) {
-      console.error('Error submitting evaluation:', err);
-      show('Failed to submit evaluation', 'error');
+      show(err.response?.data?.message || 'Submission failed', 'error');
     } finally {
       setSubmitting(false);
     }
