@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Calendar, Clock, ChevronLeft, ChevronRight, Target, Users, Eye, AlertCircle, Check, X } from 'lucide-react';
+import { Plus, Calendar, Clock, ChevronLeft, ChevronRight, Target, Users, Eye, AlertCircle, Check, X, Shuffle, Edit2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import Modal from '../components/Modal';
@@ -18,6 +18,20 @@ export default function Assessments() {
   const [questions, setQuestions] = useState([]);
   const [filterStatus, setFilterStatus] = useState('');
   const [modal, setModal] = useState(null);
+
+  // Question selection mode
+  const [questionSelectionMode, setQuestionSelectionMode] = useState('auto'); // 'auto' or 'manual'
+  const [autoSelectionConfig, setAutoSelectionConfig] = useState({
+    totalQuestions: 10,
+    questionTypes: {
+      MCQ: 3,
+      Rating: 2,
+      TrueFalse: 2,
+      MultiSelect: 1,
+      ScenarioMCQ: 1,
+      ShortAnswer: 1
+    }
+  });
 
   // Pagination state
   const [pagination, setPagination] = useState({
@@ -39,7 +53,9 @@ export default function Assessments() {
     target: { department: '', position: '' },
     questionIds: [],
     startDate: '',
+    startTime: '09:00',
     endDate: '',
+    endTime: '17:00',
     timeLimit: '',
     type: 'SelfAssessment',
     weight: { selfAssessment: 20, supervisor: 80 },
@@ -49,7 +65,6 @@ export default function Assessments() {
   useEffect(() => {
     api.get('/competencies').then(({ data }) => setCompetencies(data.data.competencies)).catch(() => { });
 
-    // Load supervisor stats if supervisor
     if (user?.role === 'SUPERVISOR') {
       loadSupervisorStats();
     }
@@ -59,7 +74,12 @@ export default function Assessments() {
     if (form.competencyId) {
       api
         .get('/questions', { params: { competencyId: form.competencyId } })
-        .then(({ data }) => setQuestions(data.data.questions))
+        .then(({ data }) => {
+          setQuestions(data.data.questions);
+          // Reset question selection when competency changes
+          setForm(prev => ({ ...prev, questionIds: [] }));
+          setQuestionSelectionMode('auto');
+        })
         .catch(() => { });
     } else {
       setQuestions([]);
@@ -71,7 +91,6 @@ export default function Assessments() {
       const res = await api.get('/supervisor/pending');
       const pendingCount = res.data.data.pendingEvaluations?.length || 0;
 
-      // Get completed evaluations count (you might need to add this endpoint)
       const completedRes = await api.get('/supervisor/completed-count');
       const completedCount = completedRes.data.data.count || 0;
 
@@ -95,10 +114,8 @@ export default function Assessments() {
 
       if (filterStatus) params.status = filterStatus;
 
-      // If supervisor, they should see active assessments they need to evaluate
       if (user?.role === 'SUPERVISOR') {
         endpoint = '/assessments/active';
-        // Add supervisor filter to show assessments they need to evaluate
         params.supervisorView = true;
       } else if (user?.role === 'EMPLOYEE') {
         endpoint = '/assessments/active';
@@ -107,7 +124,6 @@ export default function Assessments() {
       const { data } = await api.get(endpoint, { params });
       setItems(data.data.assessments || []);
 
-      // Update pagination from API response
       if (data.data.pagination) {
         setPagination(prev => ({
           ...prev,
@@ -128,12 +144,99 @@ export default function Assessments() {
 
   const openCreate = () => {
     setForm(initForm());
+    setQuestionSelectionMode('auto');
     setModal('create');
+  };
+
+  // Auto-select questions with shuffling
+  const autoSelectQuestions = () => {
+    if (!questions.length) {
+      show('No questions available for this competency.', 'warning');
+      return;
+    }
+
+    const selected = [];
+    const availableByType = {};
+
+    // Group questions by type
+    questions.forEach(q => {
+      if (!availableByType[q.type]) availableByType[q.type] = [];
+      availableByType[q.type].push(q);
+    });
+
+    // Shuffle each type array
+    Object.keys(availableByType).forEach(type => {
+      availableByType[type] = shuffleArray(availableByType[type]);
+    });
+
+    // Select questions according to config
+    Object.entries(autoSelectionConfig.questionTypes).forEach(([type, count]) => {
+      if (count > 0 && availableByType[type]) {
+        const picked = availableByType[type].slice(0, count);
+        selected.push(...picked.map(q => q._id));
+      }
+    });
+
+    if (selected.length === 0) {
+      show('No questions match your selection criteria. Please adjust the configuration.', 'warning');
+      return;
+    }
+
+    setForm(prev => ({ ...prev, questionIds: selected }));
+    show(`${selected.length} questions automatically selected and shuffled.`, 'success');
+  };
+
+  // Fisher-Yates shuffle
+  const shuffleArray = (array) => {
+    const arr = [...array];
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  };
+
+  // Validate date and time
+  const validateDateTime = () => {
+    const start = new Date(`${form.startDate}T${form.startTime}`);
+    const end = new Date(`${form.endDate}T${form.endTime}`);
+    const now = new Date();
+
+    if (!form.startDate || !form.endDate) {
+      show('Start date and end date are required.', 'error');
+      return false;
+    }
+
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      show('Invalid date or time format.', 'error');
+      return false;
+    }
+
+    if (start <= now) {
+      show('Start date and time must be in the future.', 'error');
+      return false;
+    }
+
+    if (end <= start) {
+      show('End date and time must be after start date and time.', 'error');
+      return false;
+    }
+
+    const duration = (end - start) / (1000 * 60 * 60); // hours
+    if (duration < 1) {
+      show('Assessment duration must be at least 1 hour.', 'error');
+      return false;
+    }
+
+    return true;
   };
 
   const handleSave = async () => {
     try {
-      // Validate Combined assessment weights sum to 100
+      // Validate date/time
+      if (!validateDateTime()) return;
+
+      // Validate Combined assessment weights
       if (form.type === 'Combined') {
         const totalWeight = form.weight.selfAssessment + form.weight.supervisor;
         if (totalWeight !== 100) {
@@ -142,17 +245,27 @@ export default function Assessments() {
         }
       }
 
+      // For SupervisorOnly, questions are optional (used for OD reference only)
+      if (form.type !== 'SupervisorOnly' && form.questionIds.length === 0) {
+        show('Please select at least one question for this assessment.', 'error');
+        return;
+      }
+
+      // Combine date and time into ISO string
+      const startDateTime = new Date(`${form.startDate}T${form.startTime}`).toISOString();
+      const endDateTime = new Date(`${form.endDate}T${form.endTime}`).toISOString();
+
       const payload = {
         ...form,
         questionIds: form.questionIds,
-        startDate: form.startDate,
-        endDate: form.endDate,
+        startDate: startDateTime,
+        endDate: endDateTime,
         timeLimit: form.timeLimit ? Number(form.timeLimit) : null,
       };
+
       await api.post('/assessments', payload);
       show('Assessment created successfully.', 'success');
       setModal(null);
-      // Reset to first page after creating new assessment
       setPagination(prev => ({ ...prev, page: 1 }));
       fetch();
     } catch (err) {
@@ -215,7 +328,6 @@ export default function Assessments() {
     return colors[type] || 'bg-gray-100 text-gray-800';
   };
 
-  // Pagination handlers
   const goToPage = (page) => {
     if (page >= 1 && page <= pagination.totalPages) {
       setPagination(prev => ({ ...prev, page }));
@@ -225,7 +337,7 @@ export default function Assessments() {
   const handlePageSizeChange = (e) => {
     const newLimit = parseInt(e.target.value, 10);
     setPagination({
-      page: 1, // Reset to first page when changing limit
+      page: 1,
       limit: newLimit,
       total: pagination.total,
       totalPages: Math.ceil(pagination.total / newLimit)
@@ -236,7 +348,6 @@ export default function Assessments() {
     nav('/supervisor/pending');
   };
 
-  // Check if assessment requires supervisor evaluation
   const requiresSupervisorEvaluation = (assessment) => {
     return assessment.type === 'SupervisorOnly' || assessment.type === 'Combined';
   };
@@ -249,10 +360,20 @@ export default function Assessments() {
     try {
       const res = await api.post(`/results/score/${assessmentId}`);
       show(res.data.message || 'Results scored successfully.', 'success');
-      fetch(); // Refresh assessments
+      fetch();
     } catch (err) {
       show(err.response?.data?.message || 'Failed to score results.', 'error');
     }
+  };
+
+  // Get available question types count
+  const getQuestionTypeCount = (type) => {
+    return questions.filter(q => q.type === type).length;
+  };
+
+  // Calculate total auto-selected questions
+  const getTotalAutoQuestions = () => {
+    return Object.values(autoSelectionConfig.questionTypes).reduce((sum, count) => sum + count, 0);
   };
 
   return (
@@ -271,7 +392,6 @@ export default function Assessments() {
         </div>
 
         <div className="flex gap-3">
-          {/* Supervisor Pending Evaluations Badge */}
           {user?.role === 'SUPERVISOR' && supervisorStats.pendingEvaluations > 0 && (
             <button
               onClick={viewPendingEvaluations}
@@ -293,7 +413,6 @@ export default function Assessments() {
         </div>
       </div>
 
-      {/* Supervisor Stats Cards */}
       {user?.role === 'SUPERVISOR' && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           <div className="bg-white rounded-xl p-5 shadow-card border border-gray-100">
@@ -340,7 +459,6 @@ export default function Assessments() {
         </div>
       )}
 
-      {/* Filters (admin only) */}
       {isAdmin && (
         <div className="flex justify-between items-center mb-6">
           <div className="flex gap-2 flex-wrap">
@@ -369,7 +487,6 @@ export default function Assessments() {
             ))}
           </div>
 
-          {/* Page size selector */}
           <div className="flex items-center gap-2">
             <span className="text-sm text-gray-600">Show:</span>
             <select
@@ -386,7 +503,6 @@ export default function Assessments() {
         </div>
       )}
 
-      {/* Cards */}
       {loading ? (
         <div className="flex items-center justify-center p-16">
           <div className="w-10 h-10 border-4 border-brand-red border-t-transparent rounded-full animate-spin" />
@@ -486,7 +602,6 @@ export default function Assessments() {
                       </button>
                     )}
 
-                    {/* Supervisor can evaluate */}
                     {user?.role === 'SUPERVISOR' && isActive && requiresSupervisor && (
                       <button
                         onClick={() => nav(`/assessments/${a._id}/evaluate`)}
@@ -496,7 +611,6 @@ export default function Assessments() {
                       </button>
                     )}
 
-                    {/* Employee can start self-assessment for Combined */}
                     {user?.role === 'EMPLOYEE' && isActive && a.type === 'Combined' && (
                       <button
                         onClick={() => nav(`/assessments/${a._id}/take`)}
@@ -506,7 +620,6 @@ export default function Assessments() {
                       </button>
                     )}
 
-                    {/* Score Results for admin */}
                     {isAdmin && a.status === 'COMPLETED' && a.type === 'Combined' && (
                       <button
                         onClick={() => handleScoreResults(a._id)}
@@ -529,7 +642,6 @@ export default function Assessments() {
             })}
           </div>
 
-          {/* Pagination Controls */}
           {pagination.total > pagination.limit && (
             <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mt-8 pt-6 border-t border-gray-200">
               <div className="text-sm text-gray-600">
@@ -549,7 +661,6 @@ export default function Assessments() {
 
                 <div className="flex items-center gap-1">
                   {Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
-                    // Show pages around current page
                     let pageNum;
                     if (pagination.totalPages <= 5) {
                       pageNum = i + 1;
@@ -591,51 +702,156 @@ export default function Assessments() {
 
       {/* Create Modal */}
       <Modal open={modal === 'create'} onClose={() => setModal(null)} title="Create Assessment" large>
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Competency *</label>
-              <select
-                value={form.competencyId}
-                onChange={(e) => setForm({ ...form, competencyId: e.target.value, questionIds: [] })}
-                className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm"
-                required
-              >
-                <option value="">— Select Competency —</option>
-                {competencies.map((c) => (
-                  <option key={c._id} value={c._id}>
-                    {c.name} ({c.category})
-                  </option>
-                ))}
-              </select>
+        <div className="space-y-5">
+          {/* Basic Info Section */}
+          <div className="bg-gray-50 p-4 rounded-lg">
+            <h3 className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-2">
+              <Target className="w-4 h-4" />
+              Basic Information
+            </h3>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Competency *</label>
+                <select
+                  value={form.competencyId}
+                  onChange={(e) => setForm({ ...form, competencyId: e.target.value, questionIds: [] })}
+                  className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm"
+                  required
+                >
+                  <option value="">— Select Competency —</option>
+                  {competencies.map((c) => (
+                    <option key={c._id} value={c._id}>
+                      {c.name} ({c.category})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Assessment Type *</label>
+                <select
+                  value={form.type}
+                  onChange={(e) => setForm({ ...form, type: e.target.value })}
+                  className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm"
+                >
+                  <option value="SelfAssessment">Self Assessment</option>
+                  <option value="SupervisorOnly">Supervisor Only</option>
+                  <option value="Combined">Combined (Self + Supervisor)</option>
+                </select>
+              </div>
             </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Assessment Type *</label>
-              <select
-                value={form.type}
-                onChange={(e) => setForm({ ...form, type: e.target.value })}
+
+            <div className="mt-4">
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Description</label>
+              <input
+                value={form.description}
+                onChange={(e) => setForm({ ...form, description: e.target.value })}
+                placeholder="e.g., Communication Skills Assessment - Q1 2024"
                 className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm"
-              >
-                <option value="SelfAssessment">Self Assessment</option>
-                <option value="SupervisorOnly">Supervisor Only</option>
-                <option value="Combined">Combined (Self + Supervisor)</option>
-              </select>
+              />
             </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Description</label>
-            <input
-              value={form.description}
-              onChange={(e) => setForm({ ...form, description: e.target.value })}
-              placeholder="e.g., Communication Skills Assessment - Q1 2024"
-              className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm"
-            />
+          {/* Date & Time Section */}
+          <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
+            <h3 className="text-sm font-bold text-blue-800 mb-3 flex items-center gap-2">
+              <Calendar className="w-4 h-4" />
+              Schedule & Duration
+            </h3>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Start Date *</label>
+                <input
+                  type="date"
+                  value={form.startDate}
+                  onChange={(e) => setForm({ ...form, startDate: e.target.value })}
+                  min={new Date().toISOString().split('T')[0]}
+                  className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Start Time *</label>
+                <input
+                  type="time"
+                  value={form.startTime}
+                  onChange={(e) => setForm({ ...form, startTime: e.target.value })}
+                  className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">End Date *</label>
+                <input
+                  type="date"
+                  value={form.endDate}
+                  onChange={(e) => setForm({ ...form, endDate: e.target.value })}
+                  min={form.startDate || new Date().toISOString().split('T')[0]}
+                  className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">End Time *</label>
+                <input
+                  type="time"
+                  value={form.endTime}
+                  onChange={(e) => setForm({ ...form, endTime: e.target.value })}
+                  className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm"
+                  required
+                />
+              </div>
+            </div>
+            <div className="mt-4">
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Time Limit per Attempt (minutes, Optional)</label>
+              <input
+                type="number"
+                value={form.timeLimit}
+                onChange={(e) => setForm({ ...form, timeLimit: e.target.value })}
+                placeholder="e.g., 60 (leave empty for no limit)"
+                min={1}
+                className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm max-w-xs"
+              />
+              <div className="text-xs text-gray-500 mt-1">
+                Leave empty for unlimited time per attempt
+              </div>
+            </div>
           </div>
 
+          {/* Target Section */}
+          <div className="bg-purple-50 p-4 rounded-lg border border-purple-100">
+            <h3 className="text-sm font-bold text-purple-800 mb-3 flex items-center gap-2">
+              <Users className="w-4 h-4" />
+              Target Audience (Optional)
+            </h3>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Department</label>
+                <input
+                  value={form.target.department}
+                  onChange={(e) => setForm({ ...form, target: { ...form.target, department: e.target.value } })}
+                  placeholder="e.g., IT Department"
+                  className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Position</label>
+                <input
+                  value={form.target.position}
+                  onChange={(e) => setForm({ ...form, target: { ...form.target, position: e.target.value } })}
+                  placeholder="e.g., IT Officer 1"
+                  className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm"
+                />
+              </div>
+            </div>
+            <div className="text-xs text-gray-500 mt-2">
+              Leave empty to target all departments and positions
+            </div>
+          </div>
+
+          {/* Combined Assessment Weights */}
           {form.type === 'Combined' && (
-            <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
-              <h4 className="text-sm font-semibold text-blue-800 mb-2">Combined Assessment Weights</h4>
+            <div className="bg-amber-50 p-4 rounded-lg border border-amber-100">
+              <h3 className="text-sm font-bold text-amber-800 mb-3">Combined Assessment Weights</h3>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-1.5">Self-Assessment Weight (%) *</label>
@@ -657,9 +873,6 @@ export default function Assessments() {
                     max={100}
                     className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm"
                   />
-                  <div className="text-xs text-gray-500 mt-1">
-                    Weight for employee's self-assessment score
-                  </div>
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-1.5">Supervisor Weight (%)</label>
@@ -669,129 +882,184 @@ export default function Assessments() {
                     readOnly
                     className="w-full h-10 px-3 rounded-lg border border-gray-300 bg-gray-100 text-sm"
                   />
-                  <div className="text-xs text-gray-500 mt-1">
-                    Automatically calculated
-                  </div>
                 </div>
               </div>
               {form.weight.selfAssessment + form.weight.supervisor !== 100 && (
-                <div className="text-red-600 text-xs mt-2">
-                  ⚠️ Weights must sum to 100%. Current total: {form.weight.selfAssessment + form.weight.supervisor}%
+                <div className="flex items-center gap-2 text-red-600 text-xs mt-2">
+                  <AlertCircle className="w-4 h-4" />
+                  Weights must sum to 100%. Current: {form.weight.selfAssessment + form.weight.supervisor}%
                 </div>
               )}
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Target Department (Optional)</label>
-              <input
-                value={form.target.department}
-                onChange={(e) => setForm({ ...form, target: { ...form.target, department: e.target.value } })}
-                placeholder="e.g., IT Department"
-                className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm"
-              />
-              <div className="text-xs text-gray-500 mt-1">
-                Leave empty to target all departments
-              </div>
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Target Position (Optional)</label>
-              <input
-                value={form.target.position}
-                onChange={(e) => setForm({ ...form, target: { ...form.target, position: e.target.value } })}
-                placeholder="e.g., IT Officer 1"
-                className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm"
-              />
-              <div className="text-xs text-gray-500 mt-1">
-                Leave empty to target all positions
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Start Date *</label>
-              <input
-                type="date"
-                value={form.startDate}
-                onChange={(e) => setForm({ ...form, startDate: e.target.value })}
-                className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5">End Date *</label>
-              <input
-                type="date"
-                value={form.endDate}
-                onChange={(e) => setForm({ ...form, endDate: e.target.value })}
-                className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm"
-                required
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Time Limit (minutes, Optional)</label>
-            <input
-              type="number"
-              value={form.timeLimit}
-              onChange={(e) => setForm({ ...form, timeLimit: e.target.value })}
-              placeholder="e.g., 60 (leave empty for no limit)"
-              min={1}
-              className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm max-w-xs"
-            />
-            <div className="text-xs text-gray-500 mt-1">
-              Time limit per attempt. Leave empty for unlimited time.
-            </div>
-          </div>
-
-          {questions.length > 0 && (
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Select Questions</label>
-              <div className="text-xs text-gray-500 mb-2">
-                {form.type === 'SupervisorOnly'
-                  ? 'Supervisor evaluations use a single score (not per-question). Questions selected here are for reference only.'
-                  : 'Select questions for this assessment.'
-                }
-              </div>
-              <div className="border border-gray-200 rounded-lg max-h-48 overflow-y-auto custom-scrollbar p-2 space-y-1">
-                {questions.map((q) => (
-                  <label
-                    key={q._id}
-                    className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer text-sm"
+          {/* Question Selection Section */}
+          {questions.length > 0 && form.type !== 'SupervisorOnly' && (
+            <div className="bg-green-50 p-4 rounded-lg border border-green-100">
+              <div className="flex justify-between items-center mb-3">
+                <h3 className="text-sm font-bold text-green-800 flex items-center gap-2">
+                  <Check className="w-4 h-4" />
+                  Question Selection
+                </h3>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setQuestionSelectionMode('auto')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${questionSelectionMode === 'auto' ? 'bg-green-600 text-white' : 'bg-white text-green-700 border border-green-300'}`}
                   >
-                    <input
-                      type="checkbox"
-                      checked={form.questionIds.includes(q._id)}
-                      onChange={() => toggleQuestion(q._id)}
-                      className="w-4 h-4 text-brand-red focus:ring-brand-red rounded"
-                    />
-                    <span className="flex-1 line-clamp-1">{q.text}</span>
-                    <span className="text-xs text-gray-400">{q.type}</span>
-                  </label>
-                ))}
+                    <Shuffle className="w-3 h-3 inline mr-1" />
+                    Auto Select
+                  </button>
+                  <button
+                    onClick={() => setQuestionSelectionMode('manual')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${questionSelectionMode === 'manual' ? 'bg-green-600 text-white' : 'bg-white text-green-700 border border-green-300'}`}
+                  >
+                    <Edit2 className="w-3 h-3 inline mr-1" />
+                    Manual Select
+                  </button>
+                </div>
               </div>
-              <p className="text-xs text-gray-500 mt-1.5">
+
+              {questionSelectionMode === 'auto' && (
+                <div className="space-y-3">
+                  <div className="bg-white p-3 rounded-lg border border-green-200">
+                    <div className="text-xs text-gray-600 mb-2">
+                      Configure how many questions of each type to randomly select. Questions will be shuffled for fairness.
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      {['MCQ', 'Rating', 'TrueFalse', 'MultiSelect', 'ScenarioMCQ', 'ShortAnswer', 'Matching', 'Ordering', 'DragDropClassification'].map(type => {
+                        const available = getQuestionTypeCount(type);
+                        return (
+                          <div key={type} className="flex items-center gap-2">
+                            <label className="text-xs font-medium text-gray-700 flex-1">
+                              {type}
+                              <span className="text-gray-400 ml-1">({available} available)</span>
+                            </label>
+                            <input
+                              type="number"
+                              min={0}
+                              max={available}
+                              value={autoSelectionConfig.questionTypes[type] || 0}
+                              onChange={(e) => {
+                                const val = Math.min(Number(e.target.value), available);
+                                setAutoSelectionConfig(prev => ({
+                                  ...prev,
+                                  questionTypes: {
+                                    ...prev.questionTypes,
+                                    [type]: val
+                                  }
+                                }));
+                              }}
+                              className="w-16 h-8 px-2 rounded border border-gray-300 text-sm"
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="flex justify-between items-center mt-3 pt-3 border-t border-gray-200">
+                      <span className="text-xs font-semibold text-gray-700">
+                        Total Questions: {getTotalAutoQuestions()}
+                      </span>
+                      <button
+                        onClick={autoSelectQuestions}
+                        disabled={getTotalAutoQuestions() === 0}
+                        className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-semibold hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                      >
+                        <Shuffle className="w-3 h-3" />
+                        Shuffle & Select
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {questionSelectionMode === 'manual' && (
+                <div className="border border-green-200 rounded-lg bg-white max-h-64 overflow-y-auto p-2 space-y-1">
+                  {questions.map((q) => (
+                    <label
+                      key={q._id}
+                      className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer text-sm"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={form.questionIds.includes(q._id)}
+                        onChange={() => toggleQuestion(q._id)}
+                        className="w-4 h-4 text-brand-red focus:ring-brand-red rounded"
+                      />
+                      <span className="flex-1 line-clamp-1">{q.text}</span>
+                      <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded">
+                        {q.type}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              )}
+
+              <div className="text-xs text-gray-600 mt-2 flex items-center gap-1">
+                <Check className="w-3 h-3 text-green-600" />
                 {form.questionIds.length} question(s) selected
-                {form.type === 'SupervisorOnly' && ' (for reference only)'}
-              </p>
+              </div>
+            </div>
+          )}
+
+          {/* SupervisorOnly OD Note */}
+          {form.type === 'SupervisorOnly' && questions.length > 0 && (
+            <div className="bg-orange-50 p-4 rounded-lg border border-orange-200">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="w-5 h-5 text-orange-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="text-sm font-semibold text-orange-800 mb-1">
+                    OD Question Selection (Optional)
+                  </h4>
+                  <p className="text-xs text-orange-700 mb-3">
+                    For Supervisor-Only assessments, supervisors provide a single overall score per employee (not per question). Questions selected here are for OD reference purposes only and will not be used in scoring.
+                  </p>
+                  <div className="border border-orange-200 rounded-lg bg-white max-h-48 overflow-y-auto p-2 space-y-1">
+                    {questions.map((q) => (
+                      <label
+                        key={q._id}
+                        className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer text-sm"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={form.questionIds.includes(q._id)}
+                          onChange={() => toggleQuestion(q._id)}
+                          className="w-4 h-4 text-orange-500 focus:ring-orange-500 rounded"
+                        />
+                        <span className="flex-1 line-clamp-1">{q.text}</span>
+                        <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded">
+                          {q.type}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                  <div className="text-xs text-orange-600 mt-2">
+                    {form.questionIds.length} reference question(s) selected
+                  </div>
+                </div>
+              </div>
             </div>
           )}
         </div>
-        <div className="flex justify-end gap-3 mt-6">
+
+        <div className="flex justify-end gap-3 mt-6 pt-6 border-t border-gray-200">
           <button
             onClick={() => setModal(null)}
-            className="px-4 py-2 border border-gray-300 rounded-lg font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+            className="px-5 py-2.5 border border-gray-300 rounded-lg font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
           >
             Cancel
           </button>
           <button
             onClick={handleSave}
-            disabled={form.type === 'Combined' && (form.weight.selfAssessment + form.weight.supervisor !== 100)}
-            className="px-4 py-2 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={
+              (form.type === 'Combined' && form.weight.selfAssessment + form.weight.supervisor !== 100) ||
+              !form.competencyId ||
+              !form.startDate ||
+              !form.endDate ||
+              (form.type !== 'SupervisorOnly' && form.questionIds.length === 0)
+            }
+            className="px-5 py-2.5 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
+            <Plus className="w-4 h-4" />
             Create Assessment
           </button>
         </div>

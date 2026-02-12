@@ -1,8 +1,4 @@
-/* models/Response.js
- * Mongoose schema for storing assessment responses
- * Converted to ES Modules
- */
-
+/* models/Response.js */
 import mongoose from 'mongoose';
 
 export const RESPONDENT_TYPES = ['self', 'supervisor'];
@@ -15,21 +11,18 @@ const responseSchema = new mongoose.Schema(
       required: true,
     },
 
-    // ONLY used for SELF assessments
     questionId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Question',
       default: null,
     },
 
-    // Person who is answering (employee or supervisor)
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
       required: true,
     },
 
-    // Employee being evaluated
     employeeId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
@@ -69,7 +62,6 @@ const responseSchema = new mongoose.Schema(
       default: '',
     },
 
-    // Marks single-score supervisor evaluation
     isSupervisorEvaluation: {
       type: Boolean,
       default: false,
@@ -78,27 +70,29 @@ const responseSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-/* ─── INDEXES ─────────────────────────────────────────────────────────────── */
+/* ─── UPDATED INDEXES ─────────────────────────────────────────────────────────────── */
 
-// SELF: one answer per question
+// SELF: one answer per question per employee
 responseSchema.index(
-  { assessmentId: 1, questionId: 1, userId: 1 },
+  { assessmentId: 1, questionId: 1, employeeId: 1, respondentType: 1 },
   {
     unique: true,
     partialFilterExpression: {
       respondentType: 'self',
-      questionId: { $ne: null },
+      questionId: { $exists: true },
     },
   }
 );
 
-// SUPERVISOR: one evaluation per employee
+// SUPERVISOR: one evaluation per assessment per employee per supervisor
+// This allows the SAME supervisor to evaluate DIFFERENT employees for DIFFERENT assessments
 responseSchema.index(
-  { assessmentId: 1, employeeId: 1, userId: 1 },
+  { assessmentId: 1, employeeId: 1, userId: 1, respondentType: 1 },
   {
     unique: true,
     partialFilterExpression: {
       respondentType: 'supervisor',
+      isSupervisorEvaluation: true,
     },
   }
 );
@@ -106,5 +100,6 @@ responseSchema.index(
 // Query helpers
 responseSchema.index({ assessmentId: 1, userId: 1 });
 responseSchema.index({ assessmentId: 1, employeeId: 1 });
+responseSchema.index({ userId: 1, respondentType: 1 });
 
 export default mongoose.model('Response', responseSchema);

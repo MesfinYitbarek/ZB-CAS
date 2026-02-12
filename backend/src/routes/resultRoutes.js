@@ -1,4 +1,3 @@
-/* routes/resultRoutes.js */
 import express from 'express';
 import { protect, authorize } from '../middleware/auth.js';
 import * as resCtrl from '../controllers/resultController.js';
@@ -10,6 +9,10 @@ router.use(protect);
 // ── Scoring Triggers ───────────────────────────────────────────────────────
 router.post('/score/:assessmentId', authorize('HR_ADMIN'), resCtrl.scoreAssessment);
 router.post('/auto-score', resCtrl.autoScoreEmployee); // Used by FE on submit
+
+// ── Assessment-specific endpoints ──────────────────────────────────────────
+router.get('/assessments/available', resCtrl.getAvailableAssessments);
+router.get('/by-assessment/:assessmentId', resCtrl.getResultsByAssessment);
 
 // ── Data Retrieval ─────────────────────────────────────────────────────────
 router.get('/', resCtrl.getResults);

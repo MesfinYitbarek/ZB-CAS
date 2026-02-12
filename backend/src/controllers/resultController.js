@@ -41,7 +41,171 @@ export const autoScoreEmployee = asyncHandler(async (req, res, next) => {
   res.status(200).json({ status: 'success', data: { result } });
 });
 
-// Paginated and Filtered Reads
+// Get available assessments for filtering
+export const getAvailableAssessments = asyncHandler(async (req, res) => {
+  let filter = {};
+  
+  // For employees, only show assessments they have results for
+  if (req.user.role === 'EMPLOYEE') {
+    const userResults = await Result.find({ userId: req.user.id })
+      .distinct('assessmentId')
+      .lean();
+    filter._id = { $in: userResults };
+  }
+  
+  // For supervisors, show assessments from their subordinates' results
+  if (req.user.role === 'SUPERVISOR') {
+    const subordinates = await User.find({ supervisorId: req.user.id }).select('_id').lean();
+    const subordinateIds = subordinates.map(s => s._id);
+    const assessmentIds = await Result.find({ userId: { $in: subordinateIds } })
+      .distinct('assessmentId')
+      .lean();
+    filter._id = { $in: assessmentIds };
+  }
+
+  const assessments = await Assessment.find(filter)
+    .select('_id title description type createdAt')
+    .sort({ createdAt: -1 })
+    .lean();
+
+  res.status(200).json({ 
+    status: 'success', 
+    data: { assessments } 
+  });
+});
+
+// Get results by assessment
+// Get results by assessment - FIXED for admin view
+export const getResultsByAssessment = asyncHandler(async (req, res, next) => {
+  const { assessmentId } = req.params;
+  const { page = 1, limit = 20 } = req.query;
+  
+  if (!assessmentId) {
+    return next(new AppError('Assessment ID is required', 400));
+  }
+
+  let filter = { assessmentId };
+
+  // Apply role-based filtering
+  if (req.user.role === 'EMPLOYEE') {
+    filter.userId = req.user.id;
+  }
+  if (req.user.role === 'SUPERVISOR') {
+    const subordinates = await User.find({ supervisorId: req.user.id }).select('_id').lean();
+    filter.userId = { $in: subordinates.map(s => s._id) };
+  }
+  // ADMIN - no additional filter, see all users
+
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+  
+  const [results, total, assessment] = await Promise.all([
+    Result.find(filter)
+      .populate('userId', 'name email department position employeeId')
+      .populate('competencyId', 'name category')
+      .populate('assessmentId', 'description type title weight')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit))
+      .lean(),
+    Result.countDocuments(filter),
+    Assessment.findById(assessmentId).select('title description type').lean()
+  ]);
+
+  // Process results differently based on role
+  let processedResults;
+  
+  if (req.user.role === 'ADMIN' || req.user.role === 'HR_ADMIN') {
+    // For admin: DON'T group by competency - show each result individually
+    // This ensures all employees and all competencies appear
+    processedResults = results.map(result => ({
+      _id: result._id,
+      competencyId: result.competencyId,
+      competencyName: result.competencyId?.name || 'N/A',
+      competencyCategory: result.competencyId?.category || 'N/A',
+      assessmentId: result.assessmentId,
+      assessmentDescription: result.assessmentId?.description || 'N/A',
+      assessmentType: result.assessmentId?.type || 'N/A',
+      userId: result.userId,
+      userName: result.userId?.name || 'N/A',
+      userEmail: result.userId?.email || 'N/A',
+      userDepartment: result.userId?.department || 'N/A',
+      userPosition: result.userId?.position || 'N/A',
+      employeeId: result.userId?.employeeId || result.userId?._id || 'N/A',
+      selfScore: result.scoreDetails?.selfScore || null,
+      supervisorScore: result.scoreDetails?.supervisorScore || null,
+      finalScore: result.finalScore,
+      level: result.level,
+      recommendation: result.recommendation,
+      status: result.status || 'FINAL',
+      weightUsed: result.scoreDetails?.weightUsed || null,
+      calculation: result.scoreDetails?.calculation || null,
+      date: result.createdAt,
+      formattedDate: new Date(result.createdAt).toLocaleDateString(),
+      hasBoth: result.scoreDetails?.selfScore !== null && result.scoreDetails?.supervisorScore !== null,
+      isCombined: result.assessmentId?.type === 'Combined'
+    }));
+  } else {
+    // For employees and supervisors: group by competency to avoid duplicates
+    processedResults = processResults(results);
+  }
+
+  res.status(200).json({ 
+    status: 'success', 
+    data: { 
+      results: processedResults,
+      assessment,
+      pagination: { 
+        total, 
+        page: parseInt(page), 
+        limit: parseInt(limit),
+        totalPages: Math.ceil(total / parseInt(limit))
+      } 
+    } 
+  });
+});
+
+// Helper function for non-admin users (group by competency)
+const processResults = (results) => {
+  const grouped = results.reduce((acc, result) => {
+    const key = `${result.competencyId._id}-${result.assessmentId._id}`;
+    
+    if (!acc[key]) {
+      acc[key] = {
+        _id: result._id,
+        competencyId: result.competencyId,
+        competencyName: result.competencyId.name,
+        competencyCategory: result.competencyId.category,
+        assessmentId: result.assessmentId,
+        assessmentDescription: result.assessmentId.description,
+        assessmentType: result.assessmentId.type,
+        userId: result.userId,
+        userName: result.userId?.name || 'N/A',
+        userEmail: result.userId?.email || 'N/A',
+        userDepartment: result.userId?.department || 'N/A',
+        userPosition: result.userId?.position || 'N/A',
+        employeeId: result.userId?.employeeId || result.userId?._id || 'N/A',
+        selfScore: result.scoreDetails?.selfScore || null,
+        supervisorScore: result.scoreDetails?.supervisorScore || null,
+        finalScore: result.finalScore,
+        level: result.level,
+        recommendation: result.recommendation,
+        status: result.status || 'FINAL',
+        weightUsed: result.scoreDetails?.weightUsed || null,
+        calculation: result.scoreDetails?.calculation || null,
+        date: result.createdAt,
+        formattedDate: new Date(result.createdAt).toLocaleDateString(),
+        hasBoth: result.scoreDetails?.selfScore !== null && result.scoreDetails?.supervisorScore !== null,
+        isCombined: result.assessmentId.type === 'Combined'
+      };
+    }
+    
+    return acc;
+  }, {});
+
+  return Object.values(grouped);
+};
+
+// Paginated and Filtered Reads (keep original for backward compatibility)
 export const getResults = asyncHandler(async (req, res) => {
   const { userId, competencyId, assessmentId, status, page = 1, limit = 20 } = req.query;
   const filter = {};
@@ -66,7 +230,15 @@ export const getResults = asyncHandler(async (req, res) => {
     Result.countDocuments(filter)
   ]);
 
-  res.status(200).json({ status: 'success', data: { results, pagination: { total, page, limit } } });
+  const processedResults = processResults(results);
+
+  res.status(200).json({ 
+    status: 'success', 
+    data: { 
+      results: processedResults, 
+      pagination: { total, page: parseInt(page), limit: parseInt(limit) } 
+    } 
+  });
 });
 
 export const getResult = asyncHandler(async (req, res, next) => {

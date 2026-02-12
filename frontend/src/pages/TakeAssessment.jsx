@@ -4,8 +4,8 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import useAssessmentSecurity from '../hooks/useAssessmentSecurity';
 import {
-  CheckCircle, ArrowLeft, Star, AlertTriangle, Clock, Shield,
-  TrendingUp, Award, Download, FileText, GripVertical, Check
+  CheckCircle, ArrowLeft, ArrowRight, Star, AlertTriangle, Clock, Shield,
+  TrendingUp, Award, FileText, Check, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import SecurityMonitor from '../components/SecurityMonitor';
 import { exportToPDF, generateFilename } from '../utils/exportUtils';
@@ -25,6 +25,7 @@ export default function TakeAssessment() {
   const [scoringInProgress, setScoringInProgress] = useState(false);
   const [showWarning, setShowWarning] = useState(false);
   const [securityAcknowledged, setSecurityAcknowledged] = useState(false);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const debounceRef = useRef({});
 
   const respondentType = user?.role === 'SUPERVISOR' ? 'supervisor' : 'self';
@@ -213,23 +214,63 @@ export default function TakeAssessment() {
     security.requestFullscreen();
   };
 
-  // Render question based on type
+  // Navigation functions
+  const goToQuestion = (index) => {
+    setCurrentQuestionIndex(index);
+  };
+
+  const goNext = () => {
+    if (currentQuestionIndex < questions.length - 1) {
+      setCurrentQuestionIndex(currentQuestionIndex + 1);
+    }
+  };
+
+  const goPrevious = () => {
+    if (currentQuestionIndex > 0) {
+      setCurrentQuestionIndex(currentQuestionIndex - 1);
+    }
+  };
+
+  // Check if current question is answered
+  const isCurrentQuestionAnswered = () => {
+    const currentQ = questions[currentQuestionIndex];
+    if (!currentQ) return false;
+    
+    const ans = answers[currentQ._id];
+    if (ans === undefined || ans === null || ans === '') return false;
+    if (Array.isArray(ans) && ans.length === 0) return false;
+    if (typeof ans === 'object' && Object.keys(ans).length === 0) return false;
+    return true;
+  };
+
+  // Render question based on type - COMPRESSED VERSION
   const renderQuestion = (q) => {
     switch (q.type) {
       case 'MCQ':
+      case 'ScenarioMCQ':
         return (
           <div className="space-y-2">
-            {(q.options || []).map((opt) => {
+            {q.scenario && q.type === 'ScenarioMCQ' && (
+              <div className="p-3 bg-blue-50 border-l-4 border-blue-500 rounded mb-4">
+                <div className="text-[10px] font-bold text-blue-800 uppercase tracking-wide mb-1">Scenario</div>
+                <p className="text-xs text-blue-900 leading-relaxed whitespace-pre-wrap">{q.scenario}</p>
+              </div>
+            )}
+            {(q.options || []).map((opt, idx) => {
               const chosen = answers[q._id] === opt;
               return (
                 <label
-                  key={opt}
-                  className={`flex items-center gap-3 p-4 rounded-lg border-2 cursor-pointer transition-all ${chosen ? 'border-brand-red bg-brand-red-muted' : 'border-gray-200 bg-white hover:border-gray-300'
-                    }`}
+                  key={idx}
+                  className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
+                    chosen 
+                      ? 'border-brand-red bg-brand-red/5' 
+                      : 'border-gray-200 bg-white hover:border-gray-300'
+                  }`}
                 >
-                  <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${chosen ? 'border-brand-red' : 'border-gray-300'
-                    }`}>
-                    {chosen && <div className="w-2.5 h-2.5 rounded-full bg-brand-red" />}
+                  <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 mt-0.5 transition-all ${
+                    chosen ? 'border-brand-red bg-brand-red' : 'border-gray-300'
+                  }`}>
+                    {chosen && <div className="w-2 h-2 rounded-full bg-white" />}
                   </div>
                   <input
                     type="radio"
@@ -238,7 +279,7 @@ export default function TakeAssessment() {
                     onChange={() => handleAnswer(q._id, opt)}
                     className="hidden"
                   />
-                  <span className={`text-sm ${chosen ? 'text-brand-red-dark font-semibold' : 'text-gray-700'}`}>
+                  <span className={`text-xs flex-1 ${chosen ? 'text-brand-red-dark font-medium' : 'text-gray-700'}`}>
                     {opt}
                   </span>
                 </label>
@@ -256,8 +297,11 @@ export default function TakeAssessment() {
                 <button
                   key={opt}
                   onClick={() => handleAnswer(q._id, opt)}
-                  className={`p-4 rounded-lg border-2 font-semibold text-sm transition-all ${chosen ? 'border-brand-red bg-brand-red-muted text-brand-red-dark' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
-                    }`}
+                  className={`py-3 rounded-lg border font-semibold text-sm transition-all ${
+                    chosen 
+                      ? 'border-brand-red bg-brand-red text-white shadow' 
+                      : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                  }`}
                 >
                   {opt}
                 </button>
@@ -268,24 +312,30 @@ export default function TakeAssessment() {
 
       case 'Rating':
         return (
-          <div className="flex items-center gap-2">
-            {[1, 2, 3, 4, 5].map((val) => {
-              const chosen = answers[q._id] >= val;
-              return (
-                <button
-                  key={val}
-                  onClick={() => handleAnswer(q._id, val)}
-                  className="p-1 hover:scale-110 transition-transform"
-                >
-                  <Star
-                    className="w-8 h-8"
-                    fill={chosen ? '#EA580C' : 'none'}
-                    color={chosen ? '#EA580C' : '#D1D5DB'}
-                  />
-                </button>
-              );
-            })}
-            {answers[q._id] && <span className="text-sm text-gray-500 ml-2">{answers[q._id]} / 5</span>}
+          <div className="flex flex-col items-center gap-2 py-2">
+            <div className="flex items-center gap-1">
+              {[1, 2, 3, 4, 5].map((val) => {
+                const chosen = answers[q._id] >= val;
+                return (
+                  <button
+                    key={val}
+                    onClick={() => handleAnswer(q._id, val)}
+                    className="p-1 hover:scale-110 transition-transform"
+                  >
+                    <Star
+                      className="w-6 h-6"
+                      fill={chosen ? '#EA580C' : 'none'}
+                      color={chosen ? '#EA580C' : '#D1D5DB'}
+                    />
+                  </button>
+                );
+              })}
+            </div>
+            {answers[q._id] && (
+              <span className="text-xs font-semibold text-gray-700">
+                {answers[q._id]} / 5
+              </span>
+            )}
           </div>
         );
 
@@ -295,24 +345,28 @@ export default function TakeAssessment() {
             rows={4}
             value={answers[q._id] || ''}
             onChange={(e) => handleAnswer(q._id, e.target.value)}
-            placeholder="Write your answer here..."
-            className="w-full px-4 py-3 rounded-lg border border-gray-300 focus-brand text-sm resize-none"
+            placeholder="Type your answer here..."
+            className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:border-brand-red focus:ring focus:ring-brand-red/20 text-xs resize-none"
           />
         );
 
       case 'MultiSelect':
         return (
           <div className="space-y-2">
-            {(q.options || []).map((opt) => {
+            {(q.options || []).map((opt, idx) => {
               const selected = (answers[q._id] || []).includes(opt);
               return (
                 <label
-                  key={opt}
-                  className={`flex items-center gap-3 p-4 rounded-lg border-2 cursor-pointer transition-all ${selected ? 'border-brand-red bg-brand-red-muted' : 'border-gray-200 bg-white hover:border-gray-300'
-                    }`}
+                  key={idx}
+                  className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
+                    selected 
+                      ? 'border-brand-red bg-brand-red/5' 
+                      : 'border-gray-200 bg-white hover:border-gray-300'
+                  }`}
                 >
-                  <div className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all ${selected ? 'border-brand-red bg-brand-red' : 'border-gray-300'
-                    }`}>
+                  <div className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 mt-0.5 transition-all ${
+                    selected ? 'border-brand-red bg-brand-red' : 'border-gray-300'
+                  }`}>
                     {selected && <Check className="w-3 h-3 text-white" />}
                   </div>
                   <input
@@ -327,37 +381,37 @@ export default function TakeAssessment() {
                     }}
                     className="hidden"
                   />
-                  <span className={`text-sm ${selected ? 'text-brand-red-dark font-semibold' : 'text-gray-700'}`}>
+                  <span className={`text-xs flex-1 ${selected ? 'text-brand-red-dark font-medium' : 'text-gray-700'}`}>
                     {opt}
                   </span>
                 </label>
               );
             })}
-            <p className="text-xs text-gray-500 mt-2">Select all that apply</p>
+            <p className="text-[10px] text-gray-500">Select all that apply</p>
           </div>
         );
 
       case 'Matching':
         return (
-          <div className="space-y-4">
-            <p className="text-xs text-gray-500 mb-3">Match each item on the left with the correct item on the right</p>
+          <div className="space-y-2">
+            <p className="text-[10px] text-gray-600 mb-2">Match items from left to right</p>
             {(q.matchingLeft || []).map((leftItem, idx) => {
               const currentMatch = (answers[q._id] || {})[leftItem];
               return (
-                <div key={idx} className="flex items-center gap-3">
-                  <div className="flex-1 p-3 bg-gray-50 rounded-lg border border-gray-200 text-sm font-medium">
+                <div key={idx} className="flex items-center gap-2">
+                  <div className="flex-1 p-2 bg-gray-50 rounded border border-gray-200 text-xs">
                     {leftItem}
                   </div>
-                  <span className="text-gray-400">↔</span>
+                  <span className="text-gray-400 text-sm">↔</span>
                   <select
                     value={currentMatch || ''}
                     onChange={(e) => {
                       const updated = { ...(answers[q._id] || {}), [leftItem]: e.target.value };
                       handleAnswer(q._id, updated);
                     }}
-                    className="flex-1 h-11 px-3 rounded-lg border border-gray-300 focus-brand text-sm"
+                    className="flex-1 h-8 px-2 rounded border border-gray-200 focus:border-brand-red focus:ring focus:ring-brand-red/20 text-xs"
                   >
-                    <option value="">— Select match —</option>
+                    <option value="">— Select —</option>
                     {(q.matchingRight || []).map((rightItem) => (
                       <option key={rightItem} value={rightItem}>{rightItem}</option>
                     ))}
@@ -370,27 +424,26 @@ export default function TakeAssessment() {
 
       case 'Ordering':
         return (
-          <div className="space-y-3">
-            <p className="text-xs text-gray-500 mb-3">Arrange the items in the correct order (1 = first, {q.orderItems?.length || 0} = last)</p>
+          <div className="space-y-2">
+            <p className="text-[10px] text-gray-600 mb-2">Arrange in correct order (1 = first)</p>
             {(q.orderItems || []).map((item, idx) => {
               const currentOrder = (answers[q._id] || {})[item];
               return (
-                <div key={idx} className="flex items-center gap-3">
+                <div key={idx} className="flex items-center gap-2">
                   <select
                     value={currentOrder || ''}
                     onChange={(e) => {
                       const updated = { ...(answers[q._id] || {}), [item]: parseInt(e.target.value, 10) };
                       handleAnswer(q._id, updated);
                     }}
-                    className="w-20 h-11 px-3 rounded-lg border border-gray-300 focus-brand text-sm font-semibold"
+                    className="w-16 h-8 px-2 rounded border border-gray-200 focus:border-brand-red focus:ring focus:ring-brand-red/20 text-xs text-center"
                   >
                     <option value="">—</option>
                     {(q.orderItems || []).map((_, i) => (
                       <option key={i} value={i + 1}>{i + 1}</option>
                     ))}
                   </select>
-                  <GripVertical className="w-4 h-4 text-gray-300" />
-                  <div className="flex-1 p-3 bg-gray-50 rounded-lg border border-gray-200 text-sm">
+                  <div className="flex-1 p-2 bg-gray-50 rounded border border-gray-200 text-xs">
                     {item}
                   </div>
                 </div>
@@ -399,87 +452,46 @@ export default function TakeAssessment() {
           </div>
         );
 
-      case 'ScenarioMCQ':
-        return (
-          <div className="space-y-4">
-            {q.scenario && (
-              <div className="p-4 bg-blue-50 border-l-4 border-blue-500 rounded-lg mb-4">
-                <div className="text-xs font-bold text-blue-800 uppercase mb-2">Scenario</div>
-                <p className="text-sm text-blue-900 leading-relaxed whitespace-pre-wrap">{q.scenario}</p>
-              </div>
-            )}
-            <div className="space-y-2">
-              {(q.options || []).map((opt) => {
-                const chosen = answers[q._id] === opt;
-                return (
-                  <label
-                    key={opt}
-                    className={`flex items-center gap-3 p-4 rounded-lg border-2 cursor-pointer transition-all ${chosen ? 'border-brand-red bg-brand-red-muted' : 'border-gray-200 bg-white hover:border-gray-300'
-                      }`}
-                  >
-                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${chosen ? 'border-brand-red' : 'border-gray-300'
-                      }`}>
-                      {chosen && <div className="w-2.5 h-2.5 rounded-full bg-brand-red" />}
-                    </div>
-                    <input
-                      type="radio"
-                      name={q._id}
-                      checked={chosen}
-                      onChange={() => handleAnswer(q._id, opt)}
-                      className="hidden"
-                    />
-                    <span className={`text-sm ${chosen ? 'text-brand-red-dark font-semibold' : 'text-gray-700'}`}>
-                      {opt}
-                    </span>
-                  </label>
-                );
-              })}
-            </div>
-          </div>
-        );
-
       case 'DragDropClassification':
         return (
-          <div className="space-y-4">
-            <p className="text-xs text-gray-500 mb-3">Classify each item into the correct category</p>
-            <div className="grid gap-3">
-              {(q.classificationItems || []).map((item, idx) => {
-                const currentCategory = (answers[q._id] || {})[item];
-                return (
-                  <div key={idx} className="flex items-center gap-3">
-                    <div className="flex-1 p-3 bg-gray-50 rounded-lg border border-gray-200 text-sm font-medium">
-                      {item}
-                    </div>
-                    <span className="text-gray-400">→</span>
-                    <select
-                      value={currentCategory || ''}
-                      onChange={(e) => {
-                        const updated = { ...(answers[q._id] || {}), [item]: e.target.value };
-                        handleAnswer(q._id, updated);
-                      }}
-                      className="flex-1 h-11 px-3 rounded-lg border border-gray-300 focus-brand text-sm"
-                    >
-                      <option value="">— Select category —</option>
-                      {(q.categoryNames || []).map((cat) => (
-                        <option key={cat} value={cat}>{cat}</option>
-                      ))}
-                    </select>
+          <div className="space-y-2">
+            <p className="text-[10px] text-gray-600 mb-2">Classify each item</p>
+            {(q.classificationItems || []).map((item, idx) => {
+              const currentCategory = (answers[q._id] || {})[item];
+              return (
+                <div key={idx} className="flex items-center gap-2">
+                  <div className="flex-1 p-2 bg-gray-50 rounded border border-gray-200 text-xs">
+                    {item}
                   </div>
-                );
-              })}
-            </div>
+                  <span className="text-gray-400 text-sm">→</span>
+                  <select
+                    value={currentCategory || ''}
+                    onChange={(e) => {
+                      const updated = { ...(answers[q._id] || {}), [item]: e.target.value };
+                      handleAnswer(q._id, updated);
+                    }}
+                    className="flex-1 h-8 px-2 rounded border border-gray-200 focus:border-brand-red focus:ring focus:ring-brand-red/20 text-xs"
+                  >
+                    <option value="">— Select —</option>
+                    {(q.categoryNames || []).map((cat) => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </div>
+              );
+            })}
           </div>
         );
 
       default:
-        return <p className="text-sm text-gray-500">Unsupported question type: {q.type}</p>;
+        return <p className="text-xs text-gray-500">Unsupported question type: {q.type}</p>;
     }
   };
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="w-12 h-12 border-4 border-brand-red border-t-transparent rounded-full animate-spin" />
+      <div className="flex items-center justify-center min-h-screen bg-gray-50">
+        <div className="w-10 h-10 border-4 border-brand-red border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
@@ -487,6 +499,8 @@ export default function TakeAssessment() {
   if (!assessment) return null;
 
   const questions = assessment.questionIds || [];
+  const currentQuestion = questions[currentQuestionIndex];
+  
   const answeredCount = questions.filter((q) => {
     const ans = answers[q._id];
     if (ans === undefined || ans === null || ans === '') return false;
@@ -494,78 +508,80 @@ export default function TakeAssessment() {
     if (typeof ans === 'object' && Object.keys(ans).length === 0) return false;
     return true;
   }).length;
-  const pct = questions.length > 0 ? Math.round((answeredCount / questions.length) * 100) : 0;
+  
+  const progressPercent = questions.length > 0 ? Math.round((answeredCount / questions.length) * 100) : 0;
+  const isLastQuestion = currentQuestionIndex === questions.length - 1;
 
-  // Security acknowledgment screen
+  // Security acknowledgment screen - COMPRESSED
   if (!securityAcknowledged && !submitted) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
-        <div className="bg-white rounded-2xl shadow-xl p-10 max-w-2xl">
-          <div className="w-16 h-16 rounded-full bg-brand-red/10 flex items-center justify-center mx-auto mb-6">
-            <Shield className="w-8 h-8 text-brand-red" />
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+        <div className="bg-white rounded-xl shadow-lg p-6 max-w-md w-full">
+          <div className="w-12 h-12 rounded-full bg-brand-red/10 flex items-center justify-center mx-auto mb-4">
+            <Shield className="w-6 h-6 text-brand-red" />
           </div>
 
-          <h2 className="text-2xl font-display font-bold text-brand-black text-center mb-4">
+          <h2 className="text-xl font-display font-bold text-brand-black text-center mb-3">
             Assessment Security Notice
           </h2>
 
-          <div className="space-y-4 mb-8 text-gray-600">
-            <p className="text-center text-sm">
-              This assessment is monitored for integrity. The following security measures are in place:
+          <div className="space-y-3 mb-6 text-gray-600">
+            <p className="text-xs text-center">
+              This assessment is monitored for integrity:
             </p>
 
-            <div className="bg-gray-50 rounded-xl p-6 space-y-3">
-              <div className="flex items-start gap-3">
-                <Shield className="w-5 h-5 text-brand-red flex-shrink-0 mt-0.5" />
+            <div className="bg-gray-50 rounded-lg p-4 space-y-3">
+              <div className="flex items-start gap-2">
+                <Shield className="w-4 h-4 text-brand-red flex-shrink-0 mt-0.5" />
                 <div>
-                  <div className="font-semibold text-brand-black">Tab Monitoring</div>
-                  <div className="text-sm">Switching tabs or windows will be recorded</div>
+                  <div className="font-semibold text-brand-black text-sm">Tab Monitoring</div>
+                  <div className="text-[10px] mt-0.5">Switching tabs will be recorded</div>
                 </div>
               </div>
 
-              <div className="flex items-start gap-3">
-                <Clock className="w-5 h-5 text-brand-red flex-shrink-0 mt-0.5" />
+              <div className="flex items-start gap-2">
+                <Clock className="w-4 h-4 text-brand-red flex-shrink-0 mt-0.5" />
                 <div>
-                  <div className="font-semibold text-brand-black">Time Limit</div>
-                  <div className="text-sm">
-                    {assessment.timeLimit ? `${assessment.timeLimit} minutes - Auto-submit when expired` : 'No time limit'}
+                  <div className="font-semibold text-brand-black text-sm">Time Limit</div>
+                  <div className="text-[10px] mt-0.5">
+                    {assessment.timeLimit ? `${assessment.timeLimit} minutes` : 'No time limit'}
                   </div>
                 </div>
               </div>
 
               {assessment.type === 'SelfAssessment' && (
-                <div className="flex items-start gap-3">
-                  <TrendingUp className="w-5 h-5 text-brand-red flex-shrink-0 mt-0.5" />
+                <div className="flex items-start gap-2">
+                  <TrendingUp className="w-4 h-4 text-brand-red flex-shrink-0 mt-0.5" />
                   <div>
-                    <div className="font-semibold text-brand-black">Immediate Results</div>
-                    <div className="text-sm">Your score and recommendations will be shown automatically</div>
+                    <div className="font-semibold text-brand-black text-sm">Immediate Results</div>
+                    <div className="text-[10px] mt-0.5">Score shown after submission</div>
                   </div>
                 </div>
               )}
             </div>
 
-            <div className="bg-yellow-50 border-l-4 border-yellow-500 p-4 rounded">
-              <div className="flex gap-3">
-                <AlertTriangle className="w-5 h-5 text-yellow-600 flex-shrink-0" />
-                <div className="text-sm text-yellow-800">
-                  <strong>Important:</strong> Excessive violations will be flagged for review.
+            <div className="bg-yellow-50 border-l-4 border-yellow-500 p-3 rounded">
+              <div className="flex gap-2">
+                <AlertTriangle className="w-4 h-4 text-yellow-600 flex-shrink-0 mt-0.5" />
+                <div className="text-[10px] text-yellow-800">
+                  <strong>Note:</strong> Multiple violations will be flagged.
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="flex gap-4">
+          <div className="flex gap-3">
             <button
               onClick={() => nav('/assessments')}
-              className="flex-1 px-6 py-3 border border-gray-300 rounded-lg font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+              className="flex-1 py-2 border border-gray-300 rounded-lg text-xs font-semibold text-gray-700 hover:bg-gray-50"
             >
               Cancel
             </button>
             <button
               onClick={handleStartSecure}
-              className="flex-1 px-6 py-3 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors"
+              className="flex-1 py-2 bg-brand-red text-white rounded-lg text-xs font-semibold hover:bg-brand-red-dark"
             >
-              I Understand - Start Assessment
+              Start Assessment
             </button>
           </div>
         </div>
@@ -573,17 +589,17 @@ export default function TakeAssessment() {
     );
   }
 
-  // Result display for Self Assessment (existing code remains the same)
+  // Result display screens - COMPRESSED
   if (submitted && assessment.type === 'SelfAssessment') {
     if (scoringInProgress) {
       return (
-        <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
-          <div className="bg-white rounded-2xl shadow-lg p-12 max-w-md text-center">
-            <div className="w-20 h-20 rounded-full bg-brand-red/10 flex items-center justify-center mx-auto mb-6">
-              <div className="w-12 h-12 border-4 border-brand-red border-t-transparent rounded-full animate-spin" />
+        <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+          <div className="bg-white rounded-xl shadow-lg p-8 max-w-sm text-center">
+            <div className="w-16 h-16 rounded-full bg-brand-red/10 flex items-center justify-center mx-auto mb-4">
+              <div className="w-10 h-10 border-4 border-brand-red border-t-transparent rounded-full animate-spin" />
             </div>
-            <h2 className="text-2xl font-display font-bold text-brand-black mb-2">Scoring Your Assessment...</h2>
-            <p className="text-gray-500">Please wait while we calculate your results.</p>
+            <h2 className="text-xl font-display font-bold text-brand-black mb-2">Scoring...</h2>
+            <p className="text-xs text-gray-500">Please wait while we calculate your results.</p>
           </div>
         </div>
       );
@@ -591,60 +607,52 @@ export default function TakeAssessment() {
 
     if (result) {
       return (
-        <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
-          <div className="bg-white rounded-2xl shadow-lg p-12 max-w-2xl w-full">
-            <div className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-6">
-              <CheckCircle className="w-10 h-10 text-green-600" />
+        <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+          <div className="bg-white rounded-xl shadow-lg p-6 max-w-lg w-full">
+            <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
+              <CheckCircle className="w-8 h-8 text-green-600" />
             </div>
-            <h2 className="text-2xl font-display font-bold text-brand-black text-center mb-2">Assessment Completed!</h2>
-            <p className="text-gray-500 text-center mb-8">Your results are ready</p>
+            <h2 className="text-xl font-display font-bold text-brand-black text-center mb-1">Assessment Completed!</h2>
+            <p className="text-xs text-gray-500 text-center mb-4">Your results are ready</p>
 
-            <div className="bg-gradient-to-br from-brand-red/5 to-brand-red/10 rounded-2xl p-8 mb-6 border-2 border-brand-red/20">
-              <div className="text-center mb-6">
-                <div className="inline-flex items-center justify-center w-24 h-24 rounded-full bg-white shadow-lg mb-4">
-                  <div className="text-4xl font-display font-bold text-brand-red">{result.finalScore}%</div>
+            <div className="bg-gradient-to-br from-brand-red/5 to-brand-red/10 rounded-xl p-5 mb-4 border border-brand-red/20">
+              <div className="text-center mb-4">
+                <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-white shadow mb-2">
+                  <div className="text-3xl font-display font-bold text-brand-red">{result.finalScore}%</div>
                 </div>
-                <div className="flex items-center justify-center gap-2 mb-2">
-                  <Award className="w-5 h-5 text-brand-red" />
-                  <span className={`px-4 py-2 rounded-full text-sm font-bold uppercase tracking-wider badge badge-${result.level.toLowerCase()}`}>
+                <div className="flex items-center justify-center gap-2 mb-1">
+                  <Award className="w-4 h-4 text-brand-red" />
+                  <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase badge badge-${result.level.toLowerCase()}`}>
                     {result.level}
                   </span>
                 </div>
-                <div className="text-sm text-gray-600">
-                  {result.competencyId?.name} Competency
+                <div className="text-xs text-gray-600">
+                  {result.competencyId?.name}
                 </div>
               </div>
 
-              <div className="mb-6">
-                <div className="flex justify-between text-xs text-gray-600 mb-2">
+              <div className="mb-4">
+                <div className="flex justify-between text-[9px] text-gray-600 mb-1">
                   <span>Basic</span>
-                  <span>Intermediate</span>
-                  <span>Advanced</span>
-                  <span>Expert</span>
+                  <span>Int.</span>
+                  <span>Adv.</span>
+                  <span>Exp.</span>
                 </div>
-                <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
+                <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
                   <div
-                    className="h-full bg-gradient-to-r from-brand-red to-brand-red-dark rounded-full transition-all duration-1000"
+                    className="h-full bg-gradient-to-r from-brand-red to-brand-red-dark rounded-full"
                     style={{ width: `${result.finalScore}%` }}
                   />
-                </div>
-                <div className="flex justify-between text-xs text-gray-500 mt-1">
-                  <span>0-39%</span>
-                  <span>40-59%</span>
-                  <span>60-79%</span>
-                  <span>80-100%</span>
                 </div>
               </div>
 
               {result.recommendation && (
-                <div className="bg-white rounded-xl p-6 border-l-4 border-brand-red">
-                  <div className="flex items-start gap-3">
-                    <TrendingUp className="w-5 h-5 text-brand-red flex-shrink-0 mt-1" />
+                <div className="bg-white rounded-lg p-3 border-l-4 border-brand-red">
+                  <div className="flex items-start gap-2">
+                    <TrendingUp className="w-4 h-4 text-brand-red flex-shrink-0 mt-0.5" />
                     <div>
-                      <div className="text-xs font-bold text-brand-red uppercase tracking-wider mb-2">
-                        Development Recommendation
-                      </div>
-                      <p className="text-sm text-gray-700 leading-relaxed">
+                      <div className="text-[9px] font-bold text-brand-red uppercase mb-1">Recommendation</div>
+                      <p className="text-xs text-gray-700 leading-relaxed">
                         {result.recommendation}
                       </p>
                     </div>
@@ -654,33 +662,30 @@ export default function TakeAssessment() {
             </div>
 
             {security.totalViolations > 0 && (
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
-                <div className="text-xs font-semibold text-yellow-800 uppercase mb-2">Security Summary</div>
-                <div className="text-sm text-yellow-700 space-y-1">
-                  <div>Tab switches: {security.tabSwitchCount}</div>
-                  <div>Total violations: {security.totalViolations}</div>
-                </div>
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-2 mb-4">
+                <div className="text-[9px] font-semibold text-yellow-800 uppercase mb-1">Security</div>
+                <div className="text-[9px] text-yellow-700">Tab switches: {security.tabSwitchCount}</div>
               </div>
             )}
 
-            <div className="flex gap-4">
+            <div className="flex gap-2">
               <button
                 onClick={handleExportResult}
-                className="flex-1 px-6 py-3 border border-brand-red text-brand-red rounded-lg font-semibold hover:bg-brand-red-muted transition-colors flex items-center justify-center gap-2"
+                className="flex-1 py-2 border border-brand-red text-brand-red rounded-lg text-xs font-semibold hover:bg-brand-red-muted flex items-center justify-center gap-1"
               >
-                <FileText className="w-4 h-4" /> Export PDF
+                <FileText className="w-3 h-3" /> Export
               </button>
               <button
                 onClick={() => nav('/results')}
-                className="flex-1 px-6 py-3 border border-brand-red text-brand-red rounded-lg font-semibold hover:bg-brand-red-muted transition-colors"
+                className="flex-1 py-2 border border-brand-red text-brand-red rounded-lg text-xs font-semibold hover:bg-brand-red-muted"
               >
-                View All Results
+                View All
               </button>
               <button
                 onClick={() => nav('/assessments')}
-                className="flex-1 px-6 py-3 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors"
+                className="flex-1 py-2 bg-brand-red text-white rounded-lg text-xs font-semibold hover:bg-brand-red-dark"
               >
-                Back to Assessments
+                Back
               </button>
             </div>
           </div>
@@ -689,15 +694,14 @@ export default function TakeAssessment() {
     }
 
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
-        <div className="bg-white rounded-2xl shadow-lg p-12 max-w-md text-center">
-          <div className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-6">
-            <CheckCircle className="w-10 h-10 text-green-600" />
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+        <div className="bg-white rounded-xl shadow-lg p-6 max-w-sm text-center">
+          <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
+            <CheckCircle className="w-8 h-8 text-green-600" />
           </div>
-          <h2 className="text-2xl font-display font-bold text-brand-black mb-2">Assessment Submitted</h2>
-          <p className="text-gray-500 mb-6">Your assessment has been submitted successfully. Results are being generated...</p>
-
-          <button onClick={() => nav('/results')} className="px-6 py-3 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors">
+          <h2 className="text-xl font-display font-bold text-brand-black mb-1">Submitted!</h2>
+          <p className="text-xs text-gray-500 mb-4">Assessment submitted successfully.</p>
+          <button onClick={() => nav('/results')} className="px-6 py-2 bg-brand-red text-white rounded-lg text-xs font-semibold">
             View Results
           </button>
         </div>
@@ -707,26 +711,21 @@ export default function TakeAssessment() {
 
   if (submitted) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
-        <div className="bg-white rounded-2xl shadow-lg p-12 max-w-md text-center">
-          <div className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-6">
-            <CheckCircle className="w-10 h-10 text-green-600" />
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+        <div className="bg-white rounded-xl shadow-lg p-6 max-w-sm text-center">
+          <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
+            <CheckCircle className="w-8 h-8 text-green-600" />
           </div>
-          <h2 className="text-2xl font-display font-bold text-brand-black mb-2">Assessment Submitted</h2>
-          <p className="text-gray-500 mb-2">Your responses have been recorded successfully.</p>
-          <p className="text-sm text-gray-400 mb-6">Results will be available after evaluation by your supervisor and HR.</p>
-
+          <h2 className="text-xl font-display font-bold text-brand-black mb-1">Assessment Submitted</h2>
+          <p className="text-xs text-gray-500 mb-3">Your responses have been recorded.</p>
+          
           {security.totalViolations > 0 && (
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6 text-left">
-              <div className="text-xs font-semibold text-yellow-800 uppercase mb-2">Security Summary</div>
-              <div className="text-sm text-yellow-700 space-y-1">
-                <div>Tab switches: {security.tabSwitchCount}</div>
-                <div>Total violations: {security.totalViolations}</div>
-              </div>
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-2 mb-4 text-left">
+              <div className="text-[9px] font-semibold text-yellow-800">Security: {security.totalViolations} violations</div>
             </div>
           )}
 
-          <button onClick={() => nav('/assessments')} className="px-6 py-3 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors">
+          <button onClick={() => nav('/assessments')} className="px-6 py-2 bg-brand-red text-white rounded-lg text-xs font-semibold">
             Back to Assessments
           </button>
         </div>
@@ -734,17 +733,16 @@ export default function TakeAssessment() {
     );
   }
 
+  // Main assessment interface - COMPRESSED
   return (
     <div className="min-h-screen bg-gray-50">
       {showWarning && (
-        <div className="fixed top-0 left-0 right-0 bg-yellow-500 text-white px-4 py-3 z-50 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <AlertTriangle className="w-5 h-5" />
-            <span className="font-semibold">
-              Warning: Multiple security violations detected ({security.totalViolations}).
-            </span>
+        <div className="fixed top-0 left-0 right-0 bg-yellow-500 text-white px-4 py-2 z-50 flex items-center justify-between text-xs">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4" />
+            <span className="font-medium">Warning: {security.totalViolations} security violations</span>
           </div>
-          <button onClick={() => setShowWarning(false)} className="hover:bg-yellow-600 px-3 py-1 rounded">
+          <button onClick={() => setShowWarning(false)} className="hover:bg-yellow-600 px-2 py-1 rounded">
             Dismiss
           </button>
         </div>
@@ -752,69 +750,172 @@ export default function TakeAssessment() {
 
       <SecurityMonitor violations={security.violations} isHighRisk={security.isHighRisk} />
 
-      <div className={`sticky ${showWarning ? 'top-12' : 'top-0'} z-40 bg-white border-b border-gray-200 shadow-sm`}>
-        <div className="max-w-3xl mx-auto px-6 py-4">
-          <div className="flex justify-between items-center mb-3">
-            <button onClick={() => nav('/assessments')} className="flex items-center gap-2 text-gray-600 hover:text-brand-red transition-colors text-sm font-semibold">
-              <ArrowLeft className="w-4 h-4" /> Back
+      {/* Header - COMPRESSED */}
+      <div className={`sticky ${showWarning ? 'top-8' : 'top-0'} z-40 bg-white border-b border-gray-200 shadow-sm`}>
+        <div className="max-w-4xl mx-auto px-4 py-2">
+          <div className="flex justify-between items-center mb-2">
+            <button 
+              onClick={() => nav('/assessments')} 
+              className="flex items-center gap-1 text-xs text-gray-600 hover:text-brand-red"
+            >
+              <ArrowLeft className="w-3 h-3" /> Back
             </button>
 
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
               {security.timeRemaining !== null && (
-                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg ${security.timeRemaining < 300 ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-700'
-                  }`}>
-                  <Clock className="w-4 h-4" />
-                  <span className="font-mono font-bold">{security.formatTime(security.timeRemaining)}</span>
+                <div className={`flex items-center gap-1 px-2 py-1 rounded-lg font-semibold text-xs ${
+                  security.timeRemaining < 300 
+                    ? 'bg-red-100 text-red-700' 
+                    : 'bg-gray-100 text-gray-700'
+                }`}>
+                  <Clock className="w-3 h-3" />
+                  <span className="font-mono">{security.formatTime(security.timeRemaining)}</span>
                 </div>
               )}
-              <span className="text-sm text-gray-500">{answeredCount} / {questions.length}</span>
+              <span className="text-xs text-gray-500">
+                {answeredCount}/{questions.length}
+              </span>
             </div>
           </div>
 
-          <h2 className="text-xl font-display font-bold text-brand-black mb-1">{assessment.description || 'Assessment'}</h2>
-          <p className="text-sm text-gray-500 mb-3">{assessment.competencyId?.name} · {assessment.type}</p>
+          <h2 className="text-lg font-display font-bold text-brand-black mb-1">
+            {assessment.description || 'Assessment'}
+          </h2>
+          <p className="text-xs text-gray-500 mb-2">
+            {assessment.competencyId?.name} · {assessment.type}
+          </p>
 
-          <div className="flex items-center gap-3">
-            <div className="flex-1">
-              <div className="progress-bar">
-                <div className="progress-fill" style={{ width: `${pct}%` }} />
-              </div>
+          <div className="flex items-center gap-2">
+            <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
+              <div 
+                className="h-full bg-brand-red rounded-full transition-all" 
+                style={{ width: `${progressPercent}%` }}
+              />
             </div>
-            {security.totalViolations > 0 && (
-              <div className="flex items-center gap-1 text-xs text-yellow-600">
-                <AlertTriangle className="w-3 h-3" />
-                <span>{security.totalViolations}</span>
-              </div>
-            )}
+            <span className="text-xs font-semibold text-brand-red">
+              {progressPercent}%
+            </span>
           </div>
         </div>
       </div>
 
-      <div className="max-w-3xl mx-auto px-6 py-8 space-y-5">
-        {questions.map((q, idx) => (
-          <div key={q._id} className="bg-white rounded-xl p-6 shadow-card border border-gray-100">
-            <div className="flex justify-between items-start mb-4">
-              <span className="text-xs text-gray-400 font-semibold">Q{idx + 1} of {questions.length}</span>
-              <span className="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs font-semibold">{q.type}</span>
+      {/* Question Display - COMPRESSED */}
+      <div className="max-w-4xl mx-auto px-4 py-4">
+        <div className="bg-white rounded-xl shadow border border-gray-100 overflow-hidden">
+          {/* Question Header */}
+          <div className="bg-gradient-to-r from-brand-red/5 to-brand-red/10 px-5 py-3 border-b border-gray-200">
+            <div className="flex justify-between items-center mb-1">
+              <span className="text-[10px] font-semibold text-gray-500 uppercase">
+                Q{currentQuestionIndex + 1}/{questions.length}
+              </span>
+              <span className="px-2 py-0.5 bg-white rounded-full text-[9px] font-semibold text-gray-700 border border-gray-200">
+                {currentQuestion?.type}
+              </span>
             </div>
-            <p className="text-base font-semibold text-brand-black mb-5 leading-relaxed">{q.text}</p>
-
-            {renderQuestion(q)}
+            <p className="text-sm font-medium text-brand-black leading-relaxed">
+              {currentQuestion?.text}
+            </p>
           </div>
-        ))}
 
-        <div className="text-center pt-6 pb-12">
-          <button
-            onClick={handleSubmit}
-            disabled={security.timeRemaining === 0 && answeredCount < questions.length}
-            className="px-8 py-4 bg-brand-red text-white rounded-xl font-bold text-base hover:bg-brand-red-dark transition-colors shadow-lg shadow-brand-red/20 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {security.timeExpired ? 'Time Expired - Auto-submitting...' : 'Submit Assessment'}
-          </button>
-          {assessment.type === 'SelfAssessment' && (
-            <p className="text-xs text-gray-500 mt-3">Your results will be shown immediately after submission</p>
-          )}
+          {/* Question Body */}
+          <div className="px-5 py-4">
+            {renderQuestion(currentQuestion)}
+          </div>
+
+          {/* Navigation Footer - COMPRESSED */}
+          <div className="bg-gray-50 px-5 py-3 border-t border-gray-200">
+            <div className="flex justify-between items-center">
+              <button
+                onClick={goPrevious}
+                disabled={currentQuestionIndex === 0}
+                className="flex items-center gap-1 px-4 py-2 rounded-lg text-xs font-semibold disabled:opacity-40 disabled:cursor-not-allowed border border-gray-300 text-gray-700 hover:bg-gray-100"
+              >
+                <ChevronLeft className="w-3 h-3" />
+                Prev
+              </button>
+
+              <div className="flex items-center gap-2">
+                {isCurrentQuestionAnswered() && (
+                  <span className="flex items-center gap-1 text-green-600 text-xs">
+                    <Check className="w-3 h-3" />
+                    Answered
+                  </span>
+                )}
+              </div>
+
+              {!isLastQuestion ? (
+                <button
+                  onClick={goNext}
+                  className="flex items-center gap-1 px-4 py-2 bg-brand-red text-white rounded-lg text-xs font-semibold hover:bg-brand-red-dark"
+                >
+                  Next
+                  <ChevronRight className="w-3 h-3" />
+                </button>
+              ) : (
+                <button
+                  onClick={handleSubmit}
+                  disabled={security.timeRemaining === 0 && answeredCount < questions.length}
+                  className="px-5 py-2 bg-green-600 text-white rounded-lg text-xs font-bold hover:bg-green-700 disabled:opacity-50"
+                >
+                  {security.timeExpired ? 'Submitting...' : 'Submit'}
+                </button>
+              )}
+            </div>
+          </div>
         </div>
+
+        {/* Question Navigator - COMPRESSED */}
+        <div className="mt-4 bg-white rounded-xl shadow border border-gray-100 p-3">
+          <h3 className="text-xs font-bold text-brand-black mb-2">Navigator</h3>
+          <div className="grid grid-cols-10 gap-1">
+            {questions.map((q, idx) => {
+              const isAnswered = (() => {
+                const ans = answers[q._id];
+                if (ans === undefined || ans === null || ans === '') return false;
+                if (Array.isArray(ans) && ans.length === 0) return false;
+                if (typeof ans === 'object' && Object.keys(ans).length === 0) return false;
+                return true;
+              })();
+              const isCurrent = idx === currentQuestionIndex;
+
+              return (
+                <button
+                  key={q._id}
+                  onClick={() => goToQuestion(idx)}
+                  className={`w-full aspect-square rounded-md text-[10px] font-medium transition-all ${
+                    isCurrent
+                      ? 'bg-brand-red text-white shadow scale-105'
+                      : isAnswered
+                      ? 'bg-green-100 text-green-700 border border-green-300'
+                      : 'bg-gray-100 text-gray-600 border border-gray-200'
+                  }`}
+                >
+                  {idx + 1}
+                </button>
+              );
+            })}
+          </div>
+          <div className="flex items-center justify-center gap-4 mt-3 text-[9px]">
+            <div className="flex items-center gap-1">
+              <div className="w-4 h-4 rounded bg-brand-red" />
+              <span className="text-gray-600">Current</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <div className="w-4 h-4 rounded bg-green-100 border border-green-300" />
+              <span className="text-gray-600">Answered</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <div className="w-4 h-4 rounded bg-gray-100 border border-gray-200" />
+              <span className="text-gray-600">Unanswered</span>
+            </div>
+          </div>
+        </div>
+
+        {assessment.type === 'SelfAssessment' && (
+          <p className="text-center text-[10px] text-gray-500 mt-3">
+            Results shown immediately after submission
+          </p>
+        )}
       </div>
     </div>
   );
