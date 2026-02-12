@@ -11,7 +11,7 @@
  *
  * Status workflow:  DRAFT → SCHEDULED → ACTIVE → COMPLETED → ARCHIVED
  */
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
 const ASSESSMENT_TYPES = ['SelfAssessment', 'SupervisorOnly', 'Combined'];
 const STATUSES = ['DRAFT', 'SCHEDULED', 'ACTIVE', 'COMPLETED', 'ARCHIVED'];
@@ -29,12 +29,10 @@ const assessmentSchema = new mongoose.Schema(
       maxlength: 500,
       default: '',
     },
-    // Who this assessment targets
     target: {
       department: { type: String, trim: true, default: null },
       position: { type: String, trim: true, default: null },
     },
-    // Questions included in this assessment
     questionIds: [
       {
         type: mongoose.Schema.Types.ObjectId,
@@ -49,7 +47,6 @@ const assessmentSchema = new mongoose.Schema(
       type: Date,
       required: [true, 'End date is required.'],
     },
-    // Time limit in minutes (null = no limit)
     timeLimit: {
       type: Number,
       default: null,
@@ -60,7 +57,6 @@ const assessmentSchema = new mongoose.Schema(
       required: [true, 'Assessment type is required.'],
       enum: ASSESSMENT_TYPES,
     },
-    // Only meaningful when type === 'Combined'
     weight: {
       selfAssessment: { type: Number, default: 20 },
       supervisor: { type: Number, default: 80 },
@@ -70,13 +66,10 @@ const assessmentSchema = new mongoose.Schema(
       enum: STATUSES,
       default: 'DRAFT',
     },
-    
-    // Who created / manages this assessment
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
     },
-    // Add to assessmentSchema after the createdBy field
     supervisorEvaluations: [{
       employeeId: {
         type: mongoose.Schema.Types.ObjectId,
@@ -100,30 +93,25 @@ const assessmentSchema = new mongoose.Schema(
   { timestamps: true, strict: true }
 );
 
+// ─── Indexes ─────────────────────────────────────────────
 assessmentSchema.index({ competencyId: 1 });
 assessmentSchema.index({ status: 1 });
 assessmentSchema.index({ startDate: 1, endDate: 1 });
 assessmentSchema.index({ 'target.department': 1 });
 
-
+// ─── Post-save hook: generate reports for archived assessments ─────────────
 assessmentSchema.post('save', async function(doc) {
-
   if (doc.status === 'ARCHIVED') {
-
-    const { generateReportsForAssessment } =
-      require('../services/reportService');
-
+    const { generateReportsForAssessment } = await import('../services/reportService.js');
     await generateReportsForAssessment(doc._id);
-
   }
-
 });
-// ─── Validation: endDate must be after startDate ─────────────────────────────
-assessmentSchema.pre('save', function (next) {
+
+// ─── Validation: endDate must be after startDate & weights must sum to 100 ─
+assessmentSchema.pre('save', function(next) {
   if (this.endDate <= this.startDate) {
     return next(new Error('End date must be after start date.'));
   }
-  // Weights must sum to 100 for Combined
   if (this.type === 'Combined') {
     const sum = (this.weight.selfAssessment || 0) + (this.weight.supervisor || 0);
     if (sum !== 100) {
@@ -133,4 +121,4 @@ assessmentSchema.pre('save', function (next) {
   next();
 });
 
-module.exports = mongoose.model('Assessment', assessmentSchema);
+export default mongoose.model('Assessment', assessmentSchema);

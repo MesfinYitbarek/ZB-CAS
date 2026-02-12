@@ -10,12 +10,12 @@
  *   – The decoded payload is minimal (id + role) to limit blast radius if
  *     the secret is ever compromised.
  */
-const { verifyAccessToken } = require('../utils/jwt');
-const AppError              = require('../utils/AppError');
-const asyncHandler          = require('../utils/asyncHandler');
+import { verifyAccessToken } from '../utils/jwt.js';
+import AppError from '../utils/AppError.js';
+import asyncHandler from '../utils/asyncHandler.js';
 
 // ─── extract & verify ────────────────────────────────────────────────────────
-const protect = asyncHandler(async (req, res, next) => {
+export const protect = asyncHandler(async (req, res, next) => {
   let token;
 
   // Only accept "Bearer <token>" in the Authorization header.
@@ -39,7 +39,7 @@ const protect = asyncHandler(async (req, res, next) => {
 
 // ─── role guard ──────────────────────────────────────────────────────────────
 // Usage:  router.get('/admin', protect, authorize('HR_ADMIN'), handler)
-const authorize = (...roles) => {
+export const authorize = (...roles) => {
   return (req, res, next) => {
     if (!roles.includes(req.user.role)) {
       return next(new AppError('You do not have permission to access this resource.', 403));
@@ -47,5 +47,3 @@ const authorize = (...roles) => {
     next();
   };
 };
-
-module.exports = { protect, authorize };

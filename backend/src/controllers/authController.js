@@ -1,29 +1,13 @@
-/* controllers/authController.js
- * Handles every authentication lifecycle event:
- *   POST /auth/register        – HR admin creates a user account
- *   POST /auth/login           – credential exchange → token pair
- *   POST /auth/refresh         – swap a valid refresh token for a new pair
- *   POST /auth/logout          – invalidate the refresh token server-side
- *   POST /auth/forgot-password – issue a reset link
- *   POST /auth/reset-password  – consume the reset token and set new password
- *   POST /auth/change-password – authenticated user changes own password
- *
- * OWASP:
- *   – Passwords hashed at bcrypt cost 12 (User model pre-save hook).
- *   – Reset tokens are one-time, hashed in DB, and expire in 1 hour.
- *   – Rate-limiting is applied at the router layer (authLimiter).
- *   – Generic error messages prevent user-enumeration.
- */
-const crypto       = require('crypto');
-const User         = require('../models/User');
-const AppError     = require('../utils/AppError');
-const asyncHandler = require('../utils/asyncHandler');
-const { buildTokenPair, verifyRefreshToken } = require('../utils/jwt');
-const { sendWelcomeEmail, sendPasswordResetEmail } = require('../services/emailService');
+import crypto from 'crypto';
+import User from '../models/User.js';
+import AppError from '../utils/AppError.js';
+import asyncHandler from '../utils/asyncHandler.js';
+import { buildTokenPair, verifyRefreshToken } from '../utils/jwt.js';
+import { sendWelcomeEmail, sendPasswordResetEmail } from '../services/emailService.js';
 
 // ─── REGISTER ─────────────────────────────────────────────────────────────────
 // Only HR_ADMIN can call this (enforced at router level).
-exports.register = asyncHandler(async (req, res, next) => {
+export const register = asyncHandler(async (req, res, next) => {
   const { employeeId, name, email, role, position, department, supervisorId } = req.body;
 
   // Generate a temporary password
@@ -51,7 +35,7 @@ exports.register = asyncHandler(async (req, res, next) => {
 });
 
 // ─── LOGIN ────────────────────────────────────────────────────────────────────
-exports.login = asyncHandler(async (req, res, next) => {
+export const login = asyncHandler(async (req, res, next) => {
   const { email, password } = req.body;
 
   if (!email || !password) {
@@ -88,7 +72,7 @@ exports.login = asyncHandler(async (req, res, next) => {
 });
 
 // ─── REFRESH ──────────────────────────────────────────────────────────────────
-exports.refresh = asyncHandler(async (req, res, next) => {
+export const refresh = asyncHandler(async (req, res, next) => {
   const { refreshToken } = req.body;
   if (!refreshToken) {
     return next(new AppError('Refresh token is required.', 400));
@@ -115,7 +99,7 @@ exports.refresh = asyncHandler(async (req, res, next) => {
 });
 
 // ─── LOGOUT ───────────────────────────────────────────────────────────────────
-exports.logout = asyncHandler(async (req, res, next) => {
+export const logout = asyncHandler(async (req, res, next) => {
   // req.user is populated by protect() middleware
   const user = await User.findById(req.user.id).select('+refreshToken');
   if (user) {
@@ -126,7 +110,7 @@ exports.logout = asyncHandler(async (req, res, next) => {
 });
 
 // ─── FORGOT PASSWORD ──────────────────────────────────────────────────────────
-exports.forgotPassword = asyncHandler(async (req, res, next) => {
+export const forgotPassword = asyncHandler(async (req, res, next) => {
   const { email } = req.body;
   if (!email) return next(new AppError('Email is required.', 400));
 
@@ -157,7 +141,7 @@ exports.forgotPassword = asyncHandler(async (req, res, next) => {
 });
 
 // ─── RESET PASSWORD ──────────────────────────────────────────────────────────
-exports.resetPassword = asyncHandler(async (req, res, next) => {
+export const resetPassword = asyncHandler(async (req, res, next) => {
   const { token }    = req.params;
   const { password } = req.body;
 
@@ -184,7 +168,7 @@ exports.resetPassword = asyncHandler(async (req, res, next) => {
 });
 
 // ─── CHANGE PASSWORD (authenticated) ─────────────────────────────────────────
-exports.changePassword = asyncHandler(async (req, res, next) => {
+export const changePassword = asyncHandler(async (req, res, next) => {
   const { currentPassword, newPassword } = req.body;
 
   if (!currentPassword || !newPassword) {

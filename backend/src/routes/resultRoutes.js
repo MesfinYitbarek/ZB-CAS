@@ -1,19 +1,21 @@
-const express = require('express');
+/* routes/resultRoutes.js */
+import express from 'express';
+import { protect, authorize } from '../middleware/auth.js';
+import * as resCtrl from '../controllers/resultController.js';
+
 const router = express.Router();
-const { protect, authorize } = require('../middleware/auth');
-const resCtrl = require('../controllers/resultController');
 
 router.use(protect);
 
-// Scoring Triggers
+// ── Scoring Triggers ───────────────────────────────────────────────────────
 router.post('/score/:assessmentId', authorize('HR_ADMIN'), resCtrl.scoreAssessment);
 router.post('/auto-score', resCtrl.autoScoreEmployee); // Used by FE on submit
 
-// Data Retrieval
+// ── Data Retrieval ─────────────────────────────────────────────────────────
 router.get('/', resCtrl.getResults);
 router.get('/user/:userId', resCtrl.getResults); // Reuse getResults logic
 router.get('/pdp/:userId', resCtrl.getPDP);
 router.get('/:id', resCtrl.getResult);
 router.get('/supervisor-score/:assessmentId/:employeeId', resCtrl.getSupervisorEvaluationScores);
 
-module.exports = router;
+export default router;

@@ -1,19 +1,9 @@
-/* controllers/userController.js
- * User management endpoints.
- *
- * GET    /users              – list users (HR_ADMIN; supports filter by dept/role)
- * GET    /users/:id          – get single user
- * GET    /users/me           – current user's own profile
- * PUT    /users/:id          – update user (HR_ADMIN)
- * DELETE /users/:id          – soft-delete (set status INACTIVE) (HR_ADMIN)
- * GET    /users/supervisor/:id/employees – employees assigned to a supervisor
- */
-const User         = require('../models/User');
-const AppError     = require('../utils/AppError');
-const asyncHandler = require('../utils/asyncHandler');
+import User from '../models/User.js';
+import AppError from '../utils/AppError.js';
+import asyncHandler from '../utils/asyncHandler.js';
 
 // ─── GET ALL USERS ────────────────────────────────────────────────────────────
-exports.getUsers = asyncHandler(async (req, res) => {
+export const getUsers = asyncHandler(async (req, res) => {
   const { department, role, status, page = 1, limit = 20 } = req.query;
 
   const filter = {};
@@ -62,7 +52,7 @@ exports.getUsers = asyncHandler(async (req, res) => {
 
 
 // ─── GET SINGLE USER ─────────────────────────────────────────────────────────
-exports.getUser = asyncHandler(async (req, res, next) => {
+export const getUser = asyncHandler(async (req, res, next) => {
   const user = await User.findById(req.params.id)
     .populate('supervisorId', 'name email')
     .lean();
@@ -73,7 +63,7 @@ exports.getUser = asyncHandler(async (req, res, next) => {
 });
 
 // ─── GET MY PROFILE ─────────────────────────────────────────────────────────
-exports.getMe = asyncHandler(async (req, res, next) => {
+export const getMe = asyncHandler(async (req, res, next) => {
   const user = await User.findById(req.user.id)
     .populate('supervisorId', 'name email')
     .lean();
@@ -84,7 +74,7 @@ exports.getMe = asyncHandler(async (req, res, next) => {
 });
 
 // ─── UPDATE USER ─────────────────────────────────────────────────────────────
-exports.updateUser = asyncHandler(async (req, res, next) => {
+export const updateUser = asyncHandler(async (req, res, next) => {
   const allowedFields = [
     'name',
     'position',
@@ -133,7 +123,7 @@ exports.updateUser = asyncHandler(async (req, res, next) => {
 
 
 // ─── SOFT DELETE ──────────────────────────────────────────────────────────────
-exports.deleteUser = asyncHandler(async (req, res, next) => {
+export const deleteUser = asyncHandler(async (req, res, next) => {
   const user = await User.findByIdAndUpdate(
     req.params.id,
     { status: 'INACTIVE' },
@@ -145,8 +135,7 @@ exports.deleteUser = asyncHandler(async (req, res, next) => {
 });
 
 // ─── GET EMPLOYEES UNDER A SUPERVISOR ────────────────────────────────────────
-
-exports.getSupervisorEmployees = asyncHandler(async (req, res) => {
+export const getSupervisorEmployees = asyncHandler(async (req, res) => {
   const supervisorId = req.params.id;
 
   const employees = await User.find({ supervisorId })
@@ -158,4 +147,3 @@ exports.getSupervisorEmployees = asyncHandler(async (req, res) => {
     data: { teamMembers: employees }
   });
 });
-

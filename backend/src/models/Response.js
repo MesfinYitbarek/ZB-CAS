@@ -1,6 +1,11 @@
-const mongoose = require('mongoose');
+/* models/Response.js
+ * Mongoose schema for storing assessment responses
+ * Converted to ES Modules
+ */
 
-const RESPONDENT_TYPES = ['self', 'supervisor'];
+import mongoose from 'mongoose';
+
+export const RESPONDENT_TYPES = ['self', 'supervisor'];
 
 const responseSchema = new mongoose.Schema(
   {
@@ -73,9 +78,7 @@ const responseSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-/* ───────────────────────────────────────────────
-   INDEXES
-─────────────────────────────────────────────── */
+/* ─── INDEXES ─────────────────────────────────────────────────────────────── */
 
 // SELF: one answer per question
 responseSchema.index(
@@ -104,4 +107,4 @@ responseSchema.index(
 responseSchema.index({ assessmentId: 1, userId: 1 });
 responseSchema.index({ assessmentId: 1, employeeId: 1 });
 
-module.exports = mongoose.model('Response', responseSchema);
+export default mongoose.model('Response', responseSchema);

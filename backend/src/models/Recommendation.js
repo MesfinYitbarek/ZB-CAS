@@ -1,15 +1,10 @@
 /* models/Recommendation.js
  * Recommendation(RecommendationId, CompetencyID, Level, Recommendation)
- *
- * Each competency × level combination has exactly one recommendation text.
- * The gap-analysis / PDP service looks up the employee's result level for
- * each competency and joins this collection to build the PDP.
- *
- * Levels match the scoring engine: Basic | Intermediate | Advanced | Expert
+ * ES Module version
  */
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
-const LEVELS = ['Basic', 'Intermediate', 'Advanced', 'Expert'];
+export const LEVELS = ['Basic', 'Intermediate', 'Advanced', 'Expert'];
 
 const recommendationSchema = new mongoose.Schema(
   {
@@ -36,4 +31,4 @@ const recommendationSchema = new mongoose.Schema(
 // A competency can only have one recommendation per level.
 recommendationSchema.index({ competencyId: 1, level: 1 }, { unique: true });
 
-module.exports = mongoose.model('Recommendation', recommendationSchema);
+export default mongoose.model('Recommendation', recommendationSchema);

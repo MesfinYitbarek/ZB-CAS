@@ -1,19 +1,11 @@
-/* controllers/competencyController.js
- * Competency framework CRUD.
- *
- * GET    /competencies           – list (filterable by category)
- * GET    /competencies/:id       – single
- * POST   /competencies           – create (HR_ADMIN)
- * PUT    /competencies/:id       – update (HR_ADMIN)
- * DELETE /competencies/:id       – hard delete (HR_ADMIN)
- */
-const Competency   = require('../models/Competency');
-const Question     = require('../models/Question');
-const AppError     = require('../utils/AppError');
-const asyncHandler = require('../utils/asyncHandler');
+import Competency from '../models/Competency.js';
+import Question from '../models/Question.js';
+import Recommendation from '../models/Recommendation.js';
+import AppError from '../utils/AppError.js';
+import asyncHandler from '../utils/asyncHandler.js';
 
 // ─── LIST ─────────────────────────────────────────────────────────────────────
-exports.getCompetencies = asyncHandler(async (req, res) => {
+export const getCompetencies = asyncHandler(async (req, res) => {
   const { category, page = 1, limit = 50 } = req.query;
 
   const filter = {};
@@ -44,7 +36,7 @@ exports.getCompetencies = asyncHandler(async (req, res) => {
 });
 
 // ─── GET ONE ─────────────────────────────────────────────────────────────────
-exports.getCompetency = asyncHandler(async (req, res, next) => {
+export const getCompetency = asyncHandler(async (req, res, next) => {
   const competency = await Competency.findById(req.params.id).lean();
   if (!competency) return next(new AppError('Competency not found.', 404));
 
@@ -57,7 +49,7 @@ exports.getCompetency = asyncHandler(async (req, res, next) => {
 });
 
 // ─── CREATE ──────────────────────────────────────────────────────────────────
-exports.createCompetency = asyncHandler(async (req, res, next) => {
+export const createCompetency = asyncHandler(async (req, res, next) => {
   const { name, category, description } = req.body;
 
   const competency = await Competency.create({ name, category, description });
@@ -69,7 +61,7 @@ exports.createCompetency = asyncHandler(async (req, res, next) => {
 });
 
 // ─── UPDATE ──────────────────────────────────────────────────────────────────
-exports.updateCompetency = asyncHandler(async (req, res, next) => {
+export const updateCompetency = asyncHandler(async (req, res, next) => {
   const { name, category, description } = req.body;
   const updates = {};
   if (name !== undefined)        updates.name        = name;
@@ -91,13 +83,12 @@ exports.updateCompetency = asyncHandler(async (req, res, next) => {
 });
 
 // ─── DELETE ───────────────────────────────────────────────────────────────────
-exports.deleteCompetency = asyncHandler(async (req, res, next) => {
+export const deleteCompetency = asyncHandler(async (req, res, next) => {
   const competency = await Competency.findById(req.params.id);
   if (!competency) return next(new AppError('Competency not found.', 404));
 
   // Cascade: remove related questions and recommendations
   await Question.deleteMany({ competencyId: competency._id });
-  const Recommendation = require('../models/Recommendation');
   await Recommendation.deleteMany({ competencyId: competency._id });
   await competency.deleteOne();
 

@@ -9,7 +9,7 @@
  *   – Everything else                 → 500, and in production the message
  *                                       is hidden to avoid leaking internals.
  */
-const AppError = require('../utils/AppError');
+import AppError from '../utils/AppError.js';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 const handleValidationError = (err) => {
@@ -63,4 +63,4 @@ const errorHandler = (err, req, res, next) => { // eslint-disable-line no-unused
   });
 };
 
-module.exports = errorHandler;
+export default errorHandler;

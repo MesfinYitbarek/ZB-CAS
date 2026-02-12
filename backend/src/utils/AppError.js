@@ -3,7 +3,7 @@
  * isOperational flag so the global error handler can distinguish
  * expected errors (validation, not-found) from unexpected ones.
  */
-class AppError extends Error {
+export default class AppError extends Error {
   constructor(message, statusCode) {
     super(message);
     this.statusCode = statusCode;
@@ -13,5 +13,3 @@ class AppError extends Error {
     Error.captureStackTrace(this, this.constructor);
   }
 }
-
-module.exports = AppError;

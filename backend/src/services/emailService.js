@@ -5,7 +5,7 @@
  * Templates are kept minimal (plain + HTML) so that Outlook renders them
  * reliably.  Branding uses Zemen Bank colours: red (#C8102E) & white.
  */
-const transporter = require('../config/email');
+import transporter from '../config/email.js';
 
 const FROM = process.env.EMAIL_FROM || 'Zemen Bank CAS <no-reply@zemenbank.com>';
 
@@ -33,7 +33,7 @@ const wrap = (body) => `
 </body>
 </html>`;
 
-// ─── send helper (catches & logs errors so one bad email doesn't crash the request) ──
+// ─── send helper (catches & logs errors) ─────────────────────────────────────
 const send = async (to, subject, html, text) => {
   try {
     await transporter.sendMail({ from: FROM, to, subject, html, text });
@@ -45,7 +45,7 @@ const send = async (to, subject, html, text) => {
 };
 
 // ─── 1. Welcome / registration ──────────────────────────────────────────────
-const sendWelcomeEmail = async (user, tempPassword) => {
+export const sendWelcomeEmail = async (user, tempPassword) => {
   const subject = 'Welcome to Zemen Bank CAS';
   const text    = `Hi ${user.name},\n\nYour account has been created.\nTemporary password: ${tempPassword}\nPlease change it on first login.\n`;
   const html    = wrap(`
@@ -58,7 +58,7 @@ const sendWelcomeEmail = async (user, tempPassword) => {
 };
 
 // ─── 2. Assessment scheduled notification ───────────────────────────────────
-const sendAssessmentNotification = async (user, assessment) => {
+export const sendAssessmentNotification = async (user, assessment) => {
   const subject = `Assessment Scheduled – ${assessment.description || 'New Assessment'}`;
   const text    = `Hi ${user.name},\n\nA new assessment has been scheduled.\nStart: ${assessment.startDate}\nEnd:   ${assessment.endDate}\n`;
   const html    = wrap(`
@@ -75,7 +75,7 @@ const sendAssessmentNotification = async (user, assessment) => {
 };
 
 // ─── 3. Assessment results ready ────────────────────────────────────────────
-const sendResultsEmail = async (user, results) => {
+export const sendResultsEmail = async (user, results) => {
   const subject = 'Your Assessment Results Are Ready';
   const rows    = results.map(
     (r) => `<tr><td style="padding:8px;border:1px solid #ddd">${r.competencyName}</td>
@@ -100,7 +100,7 @@ const sendResultsEmail = async (user, results) => {
 };
 
 // ─── 4. Password reset ──────────────────────────────────────────────────────
-const sendPasswordResetEmail = async (user, resetToken) => {
+export const sendPasswordResetEmail = async (user, resetToken) => {
   const resetUrl = `${process.env.CLIENT_ORIGIN || 'http://localhost:3000'}/reset-password/${resetToken}`;
   const subject  = 'Password Reset Request';
   const text     = `Hi ${user.name},\n\nClick the link below to reset your password (expires in 1 hour):\n${resetUrl}\n`;
@@ -114,7 +114,7 @@ const sendPasswordResetEmail = async (user, resetToken) => {
 };
 
 // ─── 5. Supervisor reminder ─────────────────────────────────────────────────
-const sendSupervisorReminder = async (supervisor, employeeName, assessment) => {
+export const sendSupervisorReminder = async (supervisor, employeeName, assessment) => {
   const subject = `Reminder: Evaluate ${employeeName}`;
   const text    = `Hi ${supervisor.name},\n\nPlease evaluate ${employeeName} for "${assessment.description || 'Assessment'}". Deadline: ${assessment.endDate}\n`;
   const html    = wrap(`
@@ -125,12 +125,4 @@ const sendSupervisorReminder = async (supervisor, employeeName, assessment) => {
     <p>Please log in to complete the evaluation.</p>
   `);
   return send(supervisor.email, subject, html, text);
-};
-
-module.exports = {
-  sendWelcomeEmail,
-  sendAssessmentNotification,
-  sendResultsEmail,
-  sendPasswordResetEmail,
-  sendSupervisorReminder,
 };

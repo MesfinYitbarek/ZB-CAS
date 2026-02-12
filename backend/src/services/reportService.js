@@ -1,8 +1,8 @@
-const Result = require('../models/Result');
-const Report = require('../models/Report');
-const Assessment = require('../models/Assessment');
+import Result from '../models/Result.js';
+import Report from '../models/Report.js';
+import Assessment from '../models/Assessment.js';
 
-const generateReportsForAssessment = async (assessmentId) => {
+export const generateReportsForAssessment = async (assessmentId) => {
 
   // Get all FINAL results for this assessment
   const results = await Result.find({
@@ -48,8 +48,4 @@ const generateReportsForAssessment = async (assessmentId) => {
     if (err.code !== 11000) throw err;
   });
 
-};
-
-module.exports = {
-  generateReportsForAssessment
 };

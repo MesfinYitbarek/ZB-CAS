@@ -1,22 +1,8 @@
-/* controllers/reportController.js
- * Reporting & Analytics endpoints.
- *
- * GET  /reports                          – paginated list of all reports
- * GET  /reports/individual/:userId      – all reports for one employee
- * GET  /reports/department/:department   – department-level summary
- * GET  /reports/heatmap                  – bank-wide competency heat map data
- * GET  /reports/export/:userId          – export individual reports as JSON
- *
- * Access:
- *   HR_ADMIN – full access
- *   SUPERVISOR – own subordinates only
- *   EMPLOYEE – own reports only
- */
-const Report       = require('../models/Report');
-const User         = require('../models/User');
-const AppError     = require('../utils/AppError');
-const asyncHandler = require('../utils/asyncHandler');
-const mongoose     = require('mongoose');
+import mongoose from 'mongoose';
+import Report from '../models/Report.js';
+import User from '../models/User.js';
+import AppError from '../utils/AppError.js';
+import asyncHandler from '../utils/asyncHandler.js';
 
 // ─── helper: ObjectId from string (safe) ─────────────────────────────────────
 const toObjectId = (str) => {
@@ -25,7 +11,7 @@ const toObjectId = (str) => {
 };
 
 // ─── LIST ALL REPORTS ─────────────────────────────────────────────────────────
-exports.getReports = asyncHandler(async (req, res) => {
+export const getReports = asyncHandler(async (req, res) => {
   const { department, competencyId, level, page = 1, limit = 20 } = req.query;
 
   const filter = {};
@@ -62,7 +48,7 @@ exports.getReports = asyncHandler(async (req, res) => {
 });
 
 // ─── INDIVIDUAL REPORTS ──────────────────────────────────────────────────────
-exports.getIndividualReports = asyncHandler(async (req, res, next) => {
+export const getIndividualReports = asyncHandler(async (req, res, next) => {
   const userId = req.params.userId;
   const oid     = toObjectId(userId);
 
@@ -85,7 +71,7 @@ exports.getIndividualReports = asyncHandler(async (req, res, next) => {
 });
 
 // ─── DEPARTMENT SUMMARY ──────────────────────────────────────────────────────
-exports.getDepartmentReports = asyncHandler(async (req, res) => {
+export const getDepartmentReports = asyncHandler(async (req, res) => {
   const { department } = req.params;
 
   // Aggregate: average score per competency within the department
@@ -121,7 +107,7 @@ exports.getDepartmentReports = asyncHandler(async (req, res) => {
 
 // ─── BANK-WIDE HEATMAP ───────────────────────────────────────────────────────
 // Returns: for each competency, the avg score and level distribution across all departments.
-exports.getHeatmap = asyncHandler(async (req, res) => {
+export const getHeatmap = asyncHandler(async (req, res) => {
   const heatmap = await Report.aggregate([
     {
       $group: {
@@ -153,7 +139,7 @@ exports.getHeatmap = asyncHandler(async (req, res) => {
 });
 
 // ─── EXPORT INDIVIDUAL REPORTS ───────────────────────────────────────────────
-exports.exportReports = asyncHandler(async (req, res, next) => {
+export const exportReports = asyncHandler(async (req, res, next) => {
   const userId = req.params.userId;
   const oid     = toObjectId(userId);
 

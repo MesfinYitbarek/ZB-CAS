@@ -1,6 +1,11 @@
-const mongoose = require('mongoose');
+/* models/Result.js
+ * Mongoose schema for storing assessment results
+ * Converted to ES Modules
+ */
 
-const LEVELS = ['Basic', 'Intermediate', 'Advanced', 'Expert'];
+import mongoose from 'mongoose';
+
+export const LEVELS = ['Basic', 'Intermediate', 'Advanced', 'Expert'];
 
 const resultSchema = new mongoose.Schema(
   {
@@ -24,40 +29,38 @@ const resultSchema = new mongoose.Schema(
       required: [true, 'Final score is required.'],
       min: 0,
       max: 100,
-      default: 0
+      default: 0,
     },
     level: {
       type: String,
       required: [true, 'Level is required.'],
       enum: LEVELS,
     },
-    // Snapshot of recommendation text at time of scoring
     recommendation: {
       type: String,
       default: '',
     },
-    // Status: PENDING (manual review needed) | FINAL
     status: {
       type: String,
       enum: ['PENDING', 'FINAL'],
       default: 'FINAL',
     },
-    // Store detailed score breakdown for combined assessments
     scoreDetails: {
       selfScore: { type: Number, default: null },
       supervisorScore: { type: Number, default: null },
       weightUsed: {
         selfAssessment: { type: Number, default: 0 },
-        supervisor: { type: Number, default: 0 }
+        supervisor: { type: Number, default: 0 },
       },
-      calculation: { type: String, default: '' }
-    }
+      calculation: { type: String, default: '' },
+    },
   },
   { timestamps: true, strict: true }
 );
 
+// ─── Indexes ────────────────────────────────────────────────────────────────
 resultSchema.index({ userId: 1, competencyId: 1 });
 resultSchema.index({ assessmentId: 1 });
 resultSchema.index({ userId: 1, assessmentId: 1, competencyId: 1 }, { unique: true });
 
-module.exports = mongoose.model('Result', resultSchema);
+export default mongoose.model('Result', resultSchema);

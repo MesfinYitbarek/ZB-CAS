@@ -1,15 +1,16 @@
-const mongoose = require('mongoose');
-const Result = require('../models/Result');
-const User = require('../models/User');
-const Assessment = require('../models/Assessment');
-const asyncHandler = require('../utils/asyncHandler');
-const AppError = require('../utils/AppError');
-const scoringService = require('../services/scoringService');
-const { sendResultsEmail } = require('../services/emailService');
+import mongoose from 'mongoose';
+import Result from '../models/Result.js';
+import User from '../models/User.js';
+import Assessment from '../models/Assessment.js';
+import Response from '../models/Response.js';
+import asyncHandler from '../utils/asyncHandler.js';
+import AppError from '../utils/AppError.js';
+import { scoreFullAssessment, scoreIndividual } from '../services/scoringService.js';
+import { sendResultsEmail } from '../services/emailService.js';
 
 // Admin manually scores Combined Assessment
-exports.scoreAssessment = asyncHandler(async (req, res, next) => {
-  const results = await scoringService.scoreFullAssessment(req.params.assessmentId);
+export const scoreAssessment = asyncHandler(async (req, res, next) => {
+  const results = await scoreFullAssessment(req.params.assessmentId);
 
   // Async email notifications
   results.forEach(async (r) => {
@@ -28,7 +29,7 @@ exports.scoreAssessment = asyncHandler(async (req, res, next) => {
 });
 
 // Auto-score (SelfAssessment/SupervisorOnly)
-exports.autoScoreEmployee = asyncHandler(async (req, res, next) => {
+export const autoScoreEmployee = asyncHandler(async (req, res, next) => {
   const { assessmentId, employeeId } = req.body;
   const assessment = await Assessment.findById(assessmentId).lean();
 
@@ -36,12 +37,12 @@ exports.autoScoreEmployee = asyncHandler(async (req, res, next) => {
     return next(new AppError('Combined assessments must be scored by Admin.', 400));
   }
 
-  const result = await scoringService.scoreIndividual(assessmentId, employeeId);
+  const result = await scoreIndividual(assessmentId, employeeId);
   res.status(200).json({ status: 'success', data: { result } });
 });
 
 // Paginated and Filtered Reads
-exports.getResults = asyncHandler(async (req, res) => {
+export const getResults = asyncHandler(async (req, res) => {
   const { userId, competencyId, assessmentId, status, page = 1, limit = 20 } = req.query;
   const filter = {};
   if (userId) filter.userId = userId;
@@ -68,7 +69,7 @@ exports.getResults = asyncHandler(async (req, res) => {
   res.status(200).json({ status: 'success', data: { results, pagination: { total, page, limit } } });
 });
 
-exports.getResult = asyncHandler(async (req, res, next) => {
+export const getResult = asyncHandler(async (req, res, next) => {
   const result = await Result.findById(req.params.id)
     .populate('userId', 'name email department position')
     .populate('competencyId', 'name category')
@@ -79,7 +80,7 @@ exports.getResult = asyncHandler(async (req, res, next) => {
   res.status(200).json({ status: 'success', data: { result } });
 });
 
-exports.getPDP = asyncHandler(async (req, res) => {
+export const getPDP = asyncHandler(async (req, res) => {
   const pdp = await Result.aggregate([
     {
       $match: {
@@ -100,9 +101,14 @@ exports.getPDP = asyncHandler(async (req, res) => {
   res.status(200).json({ status: 'success', data: { pdp: populated } });
 });
 
-exports.getSupervisorEvaluationScores = asyncHandler(async (req, res) => {
+export const getSupervisorEvaluationScores = asyncHandler(async (req, res) => {
   const { assessmentId, employeeId } = req.params;
-  const resp = await Response.findOne({ assessmentId, employeeId, respondentType: 'supervisor' }).lean();
+  const resp = await Response.findOne({ 
+    assessmentId, 
+    employeeId, 
+    respondentType: 'supervisor' 
+  }).lean();
+  
   res.status(200).json({
     status: 'success',
     data: { supervisorScore: resp?.score || null, comments: resp?.comments || '' }

@@ -3,46 +3,37 @@
  *
  * Middleware order matters – security layers are applied first, then routes,
  * then the 404 catcher, then the global error handler (must be last).
- *
- * OWASP layers applied (see middleware/security.js for details):
- *   1. helmet           – hardened HTTP headers
- *   2. cors             – origin whitelist
- *   3. compression      – gzip (performance + smaller payloads)
- *   4. generalLimiter   – global rate limit
- *   5. express.json     – body parser (with size cap)
- *   7. mongoSanitize    – NoSQL injection prevention
- *   8. hpp              – HTTP parameter pollution prevention
  */
-require('dotenv').config();                     // load .env before anything else
 
-const express      = require('express');
-const connectDB    = require('./config/database');
-const errorHandler = require('./middleware/errorHandler');
-const AppError     = require('./utils/AppError');
+import 'dotenv/config';                     // load .env before anything else
+import express from 'express';
+import connectDB from './config/database.js';
+import errorHandler from './middleware/errorHandler.js';
+import AppError from './utils/AppError.js';
 
 // ── Security middleware (pre-built in security.js) ───────────────────────────
-const {
+import {
   helmet,
   cors,
   generalLimiter,
   mongoSanitize,
   hpp,
-  compression: compressMiddleware,
-} = require('./middleware/security');
+  compression as compressMiddleware,
+} from './middleware/security.js';
 
 // ── Route modules ─────────────────────────────────────────────────────────────
-const authRoutes           = require('./routes/authRoutes');
-const userRoutes           = require('./routes/userRoutes');
-const competencyRoutes     = require('./routes/competencyRoutes');
-const recommendationRoutes = require('./routes/recommendationRoutes');
-const questionRoutes       = require('./routes/questionRoutes');
-const assessmentRoutes     = require('./routes/assessmentRoutes');
-const responseRoutes       = require('./routes/responseRoutes');
-const resultRoutes         = require('./routes/resultRoutes');
-const reportRoutes         = require('./routes/reportRoutes');
-const feedbackRoutes       = require('./routes/feedbackRoutes');
-const supervisorRoutes       = require('./routes/supervisorRoutes');
-
+import authRoutes from './routes/authRoutes.js';
+import userRoutes from './routes/userRoutes.js';
+import competencyRoutes from './routes/competencyRoutes.js';
+import recommendationRoutes from './routes/recommendationRoutes.js';
+import questionRoutes from './routes/questionRoutes.js';
+import assessmentRoutes from './routes/assessmentRoutes.js';
+import responseRoutes from './routes/responseRoutes.js';
+import resultRoutes from './routes/resultRoutes.js';
+import reportRoutes from './routes/reportRoutes.js';
+import feedbackRoutes from './routes/feedbackRoutes.js';
+import supervisorRoutes from './routes/supervisorRoutes.js';
+import dashboardRoutes from './routes/dashboardRoutes.js';
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 const app = express();
 
@@ -74,17 +65,18 @@ app.get('/api/health', (req, res) => {
 });
 
 // ── Mount routes ──────────────────────────────────────────────────────────────
-app.use('/api/auth',            authRoutes);
-app.use('/api/users',           userRoutes);
-app.use('/api/competencies',    competencyRoutes);
+app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/competencies', competencyRoutes);
 app.use('/api/recommendations', recommendationRoutes);
-app.use('/api/questions',       questionRoutes);
-app.use('/api/assessments',     assessmentRoutes);
-app.use('/api/responses',       responseRoutes);
-app.use('/api/results',         resultRoutes);
-app.use('/api/reports',         reportRoutes);
-app.use('/api/feedback',        feedbackRoutes);
-app.use('/api/supervisors',        supervisorRoutes);
+app.use('/api/questions', questionRoutes);
+app.use('/api/assessments', assessmentRoutes);
+app.use('/api/responses', responseRoutes);
+app.use('/api/results', resultRoutes);
+app.use('/api/reports', reportRoutes);
+app.use('/api/feedback', feedbackRoutes);
+app.use('/api/supervisors', supervisorRoutes);
+app.use('/api/dashboard', dashboardRoutes);
 
 // ── 404 catcher (must be after all routes) ───────────────────────────────────
 app.use((req, res, next) => {
@@ -94,7 +86,7 @@ app.use((req, res, next) => {
 // ── Global error handler (must be last) ──────────────────────────────────────
 app.use(errorHandler);
 
-// ── Connect DB & start ────────────────────────────────────────────────────────
+// ── Connect DB & start ───────────────────────────────────────────────────────
 const PORT = process.env.PORT || 5000;
 
 connectDB().then(() => {
@@ -103,4 +95,5 @@ connectDB().then(() => {
   });
 });
 
-module.exports = app;   // exported for testing
+// Export for testing
+export default app;

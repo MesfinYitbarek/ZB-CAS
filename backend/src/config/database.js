@@ -2,7 +2,7 @@
  * Establishes a single Mongoose connection to MongoDB Atlas.
  * Uses connection-pooling defaults and TLS enforcement (Atlas enforces TLS anyway).
  */
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
 const connectDB = async () => {
   try {
@@ -12,8 +12,6 @@ const connectDB = async () => {
       minPoolSize: 2,
       socketTimeoutMS: 5000,  // how long the driver waits on a socket op
       serverSelectionTimeoutMS: 5000,
-
-  
     });
 
     console.log(`[DB] MongoDB connected: ${conn.connection.host}`);
@@ -23,4 +21,4 @@ const connectDB = async () => {
   }
 };
 
-module.exports = connectDB;
+export default connectDB;

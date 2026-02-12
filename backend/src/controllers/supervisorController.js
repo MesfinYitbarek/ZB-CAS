@@ -1,15 +1,14 @@
-// controllers/supervisorController.js
-const User = require('../models/User');
-const Result = require('../models/Result');
-const Assessment = require('../models/Assessment');
-const Response = require('../models/Response');
-const AppError = require('../utils/AppError');
-const asyncHandler = require('../utils/asyncHandler');
+import User from '../models/User.js';
+import Result from '../models/Result.js';
+import Assessment from '../models/Assessment.js';
+import Response from '../models/Response.js';
+import AppError from '../utils/AppError.js';
+import asyncHandler from '../utils/asyncHandler.js';
 
 /**
  * Get all statistics for a supervisor dashboard
  */
-exports.getSupervisorDashboardStats = asyncHandler(async (req, res) => {
+export const getSupervisorDashboardStats = asyncHandler(async (req, res) => {
   try {
     const supervisorId = req.user.id;
 
@@ -75,61 +74,61 @@ exports.getSupervisorDashboardStats = asyncHandler(async (req, res) => {
 });
 
 // ─── GET EVALUATION PROGRESS ────────────────────────────────────────────────
-exports.getEvaluationProgress = asyncHandler(async (req, res, next) => {
-  const { assessmentId, employeeId } = req.params;
-  const supervisorId = req.user.id;
+// export const getEvaluationProgress = asyncHandler(async (req, res, next) => {
+//   const { assessmentId, employeeId } = req.params;
+//   const supervisorId = req.user.id;
 
-  // Verify supervisor has access to this employee
-  const employee = await User.findOne({
-    _id: employeeId,
-    supervisorId: supervisorId
-  });
+//   // Verify supervisor has access to this employee
+//   const employee = await User.findOne({
+//     _id: employeeId,
+//     supervisorId: supervisorId
+//   });
 
-  if (!employee) {
-    return next(new AppError('Access denied or employee not found.', 403));
-  }
+//   if (!employee) {
+//     return next(new AppError('Access denied or employee not found.', 403));
+//   }
 
-  const assessment = await Assessment.findById(assessmentId).lean();
-  if (!assessment) {
-    return next(new AppError('Assessment not found.', 404));
-  }
+//   const assessment = await Assessment.findById(assessmentId).lean();
+//   if (!assessment) {
+//     return next(new AppError('Assessment not found.', 404));
+//   }
 
-  // Count total questions
-  const totalQuestions = assessment.questionIds.length;
+//   // Count total questions
+//   const totalQuestions = assessment.questionIds.length;
 
-  // Count supervisor's answered questions for this employee
-  const answeredCount = await Response.countDocuments({
-    assessmentId,
-    employeeId,
-    userId: supervisorId,
-    respondentType: 'supervisor',
-    selectedAnswer: { $ne: null }
-  });
+//   // Count supervisor's answered questions for this employee
+//   const answeredCount = await Response.countDocuments({
+//     assessmentId,
+//     employeeId,
+//     userId: supervisorId,
+//     respondentType: 'supervisor',
+//     selectedAnswer: { $ne: null }
+//   });
 
-  // Check if already submitted
-  const submitted = await Response.findOne({
-    assessmentId,
-    employeeId,
-    userId: supervisorId,
-    respondentType: 'supervisor',
-    submittedAt: { $ne: null }
-  });
+//   // Check if already submitted
+//   const submitted = await Response.findOne({
+//     assessmentId,
+//     employeeId,
+//     userId: supervisorId,
+//     respondentType: 'supervisor',
+//     submittedAt: { $ne: null }
+//   });
 
-  res.status(200).json({
-    status: 'success',
-    data: {
-      totalQuestions,
-      answeredCount,
-      percentage: totalQuestions > 0 
-        ? Math.round((answeredCount / totalQuestions) * 100)
-        : 0,
-      isSubmitted: !!submitted
-    }
-  });
-});
+//   res.status(200).json({
+//     status: 'success',
+//     data: {
+//       totalQuestions,
+//       answeredCount,
+//       percentage: totalQuestions > 0 
+//         ? Math.round((answeredCount / totalQuestions) * 100)
+//         : 0,
+//       isSubmitted: !!submitted
+//     }
+//   });
+// });
 
 // ─── GET PENDING EVALUATIONS ─────────────────────────────────────────────────
-exports.getPendingEvaluations = asyncHandler(async (req, res) => {
+export const getPendingEvaluations = asyncHandler(async (req, res) => {
   const supervisorId = req.user.id;
   
   // Get supervisor's team
@@ -159,13 +158,13 @@ exports.getPendingEvaluations = asyncHandler(async (req, res) => {
   .populate('supervisorEvaluations.employeeId', 'name email position')
   .lean();
 
-  // Format the response
+  // Format the response - FIXED: changed 'eval' to 'evaluation'
   const pendingEvaluations = [];
   
   activeAssessments.forEach(assessment => {
-    assessment.supervisorEvaluations.forEach(eval => {
-      if (eval.supervisorId.toString() === supervisorId.toString() && 
-          eval.status === 'PENDING') {
+    assessment.supervisorEvaluations.forEach(evaluation => {
+      if (evaluation.supervisorId.toString() === supervisorId.toString() && 
+          evaluation.status === 'PENDING') {
         
         pendingEvaluations.push({
           assessmentId: assessment._id,
@@ -174,7 +173,7 @@ exports.getPendingEvaluations = asyncHandler(async (req, res) => {
           competency: assessment.competencyId,
           startDate: assessment.startDate,
           endDate: assessment.endDate,
-          employee: eval.employeeId,
+          employee: evaluation.employeeId,
           weight: assessment.weight,
           priority: getPriority(assessment.endDate)
         });
@@ -197,35 +196,35 @@ exports.getPendingEvaluations = asyncHandler(async (req, res) => {
 });
 
 // ─── UPDATE EVALUATION STATUS ────────────────────────────────────────────────
-exports.updateEvaluationStatus = asyncHandler(async (req, res, next) => {
-  const { assessmentId, employeeId } = req.params;
-  const { status } = req.body;
+// export const updateEvaluationStatus = asyncHandler(async (req, res, next) => {
+//   const { assessmentId, employeeId } = req.params;
+//   const { status } = req.body;
 
-  const assessment = await Assessment.findById(assessmentId);
-  if (!assessment) {
-    return next(new AppError('Assessment not found.', 404));
-  }
+//   const assessment = await Assessment.findById(assessmentId);
+//   if (!assessment) {
+//     return next(new AppError('Assessment not found.', 404));
+//   }
 
-  // Find the evaluation
-  const evaluation = assessment.supervisorEvaluations.find(
-    eval => eval.employeeId.toString() === employeeId && 
-            eval.supervisorId.toString() === req.user.id
-  );
+//   // Find the evaluation
+//   const evaluation = assessment.supervisorEvaluations.find(
+//     eval => eval.employeeId.toString() === employeeId && 
+//             eval.supervisorId.toString() === req.user.id
+//   );
 
-  if (!evaluation) {
-    return next(new AppError('Evaluation not found or access denied.', 404));
-  }
+//   if (!evaluation) {
+//     return next(new AppError('Evaluation not found or access denied.', 404));
+//   }
 
-  evaluation.status = status;
-  evaluation.completedAt = status === 'COMPLETED' ? new Date() : null;
+//   evaluation.status = status;
+//   evaluation.completedAt = status === 'COMPLETED' ? new Date() : null;
   
-  await assessment.save();
+//   await assessment.save();
 
-  res.status(200).json({
-    status: 'success',
-    data: { evaluation }
-  });
-});
+//   res.status(200).json({
+//     status: 'success',
+//     data: { evaluation }
+//   });
+// });
 
 // Helper functions
 function getPriority(endDate) {
@@ -239,4 +238,3 @@ function getPriority(endDate) {
 }
 
 const priorityOrder = { HIGH: 1, MEDIUM: 2, LOW: 3 };
-

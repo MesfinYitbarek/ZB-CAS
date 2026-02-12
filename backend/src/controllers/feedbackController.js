@@ -1,17 +1,9 @@
-/* controllers/feedbackController.js
- * Feedback management.
- *
- * POST   /feedback              – employee submits feedback
- * GET    /feedback              – HR_ADMIN lists all; employees see own
- * GET    /feedback/:id          – single
- * PATCH  /feedback/:id/review   – HR_ADMIN marks as reviewed
- */
-const Feedback     = require('../models/Feedback');
-const AppError     = require('../utils/AppError');
-const asyncHandler = require('../utils/asyncHandler');
+import Feedback from '../models/Feedback.js';
+import AppError from '../utils/AppError.js';
+import asyncHandler from '../utils/asyncHandler.js';
 
 // ─── SUBMIT ──────────────────────────────────────────────────────────────────
-exports.createFeedback = asyncHandler(async (req, res, next) => {
+export const createFeedback = asyncHandler(async (req, res, next) => {
   const { assessmentId, content, rating } = req.body;
 
   if (!assessmentId || !content) {
@@ -29,7 +21,7 @@ exports.createFeedback = asyncHandler(async (req, res, next) => {
 });
 
 // ─── LIST ─────────────────────────────────────────────────────────────────────
-exports.getFeedbacks = asyncHandler(async (req, res) => {
+export const getFeedbacks = asyncHandler(async (req, res) => {
   const { assessmentId, reviewed, page = 1, limit = 20 } = req.query;
 
   const filter = {};
@@ -64,7 +56,7 @@ exports.getFeedbacks = asyncHandler(async (req, res) => {
 });
 
 // ─── GET ONE ─────────────────────────────────────────────────────────────────
-exports.getFeedback = asyncHandler(async (req, res, next) => {
+export const getFeedback = asyncHandler(async (req, res, next) => {
   const feedback = await Feedback.findById(req.params.id)
     .populate('userId',      'name email')
     .populate('assessmentId', 'description')
@@ -81,7 +73,7 @@ exports.getFeedback = asyncHandler(async (req, res, next) => {
 });
 
 // ─── REVIEW (HR_ADMIN) ───────────────────────────────────────────────────────
-exports.reviewFeedback = asyncHandler(async (req, res, next) => {
+export const reviewFeedback = asyncHandler(async (req, res, next) => {
   const feedback = await Feedback.findById(req.params.id);
   if (!feedback) return next(new AppError('Feedback not found.', 404));
 

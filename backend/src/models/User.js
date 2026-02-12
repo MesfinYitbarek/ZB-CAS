@@ -1,57 +1,44 @@
 /* models/User.js
  * Mongoose schema for the User collection.
- *
- * Maps to the document's:
- *   User(UserID, EmployeeID, Name, Email, Position, DepartmentName,
- *        SupervisorID, Status)
- *
- * Extras added for auth / security:
- *   role            – RBAC (HR_ADMIN | SUPERVISOR | EMPLOYEE)
- *   passwordHash    – bcrypt hash; select:false so it never leaks in queries
- *   refreshToken    – stored server-side for token rotation
- *   passwordResetToken / passwordResetExpires – for forgot-password flow
- *
- * OWASP:
- *   – Passwords are hashed (bcrypt, cost 12) in a pre-save hook.
- *   – passwordHash is select:false – never returned unless explicitly selected.
- *   – refreshToken is select:false.
+ * Now using ES Modules (import/export)
  */
-const mongoose = require('mongoose');
-const bcrypt   = require('bcryptjs');
 
-const ROLES = ['HR_ADMIN', 'SUPERVISOR', 'EMPLOYEE'];
-const STATUS = ['ACTIVE', 'INACTIVE'];
+import mongoose from 'mongoose';
+import bcrypt from 'bcryptjs';
+
+export const ROLES = ['HR_ADMIN', 'SUPERVISOR', 'EMPLOYEE'];
+export const STATUS = ['ACTIVE', 'INACTIVE'];
 
 const userSchema = new mongoose.Schema(
   {
     employeeId: {
-      type:     String,
+      type: String,
       required: [true, 'Employee ID is required.'],
-      unique:   true,
-      trim:     true,
+      unique: true,
+      trim: true,
     },
     name: {
-      type:     String,
+      type: String,
       required: [true, 'Name is required.'],
-      trim:     true,
+      trim: true,
       maxlength: 100,
     },
     email: {
-      type:     String,
+      type: String,
       required: [true, 'Email is required.'],
-      unique:   true,
+      unique: true,
       lowercase: true,
-      trim:     true,
-      match:    [/^[^\s@]+@[^\s@]+\.[^\s@]+$/, 'Please provide a valid email.'],
+      trim: true,
+      match: [/^[^\s@]+@[^\s@]+\.[^\s@]+$/, 'Please provide a valid email.'],
     },
     passwordHash: {
-      type:   String,
-      select: false,                          // never returned in queries
+      type: String,
+      select: false,
       required: [true, 'Password is required.'],
     },
     role: {
-      type:    String,
-      enum:    ROLES,
+      type: String,
+      enum: ROLES,
       default: 'EMPLOYEE',
     },
     position: {
@@ -66,73 +53,69 @@ const userSchema = new mongoose.Schema(
     },
     supervisorId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref:  'User',
+      ref: 'User',
       default: null,
     },
     status: {
-      type:    String,
-      enum:    STATUS,
+      type: String,
+      enum: STATUS,
       default: 'ACTIVE',
     },
-    // ── token rotation ──────────────────────────────────────────────
+    // Token rotation
     refreshToken: {
-      type:   String,
+      type: String,
       select: false,
       default: null,
     },
-    // ── password reset ──────────────────────────────────────────────
+    // Password reset
     passwordResetToken: {
-      type:   String,
+      type: String,
       select: false,
       default: null,
     },
     passwordResetExpires: {
-      type:   Date,
+      type: Date,
       select: false,
       default: null,
     },
   },
   {
-    timestamps: true,           // createdAt, updatedAt
-    // Ensure Mongoose doesn't let __proto__ / constructor / prototype through
+    timestamps: true,
     strict: true,
   }
 );
 
-// ─── indexes ─────────────────────────────────────────────────────────────────
+// ─── Indexes ────────────────────────────────────────────────────────────────
 userSchema.index({ supervisorId: 1 });
 userSchema.index({ department: 1, status: 1 });
 
-// ─── pre-save: hash password only when it has been modified ──────────────────
+// ─── Pre-save: hash password only when modified ──────────────────────────────
 userSchema.pre('save', async function hashPassword(next) {
   if (!this.isModified('passwordHash')) return next();
-  this.passwordHash = await bcrypt.hash(this.passwordHash, 12);  // cost 12
+  this.passwordHash = await bcrypt.hash(this.passwordHash, 12);
   next();
 });
 
-// ─── instance method: compare plain password to hash ─────────────────────────
+// ─── Compare plain password with hash ───────────────────────────────────────
 userSchema.methods.comparePassword = async function (candidatePlain) {
-  // select:false means passwordHash is not loaded; we must explicitly select it.
-  // But if the caller already selected it (e.g. .select('+passwordHash')),
-  // this.passwordHash will be available.
   return bcrypt.compare(candidatePlain, this.passwordHash);
 };
 
-// ─── instance method: return a safe public representation ────────────────────
+// ─── Return safe public representation ─────────────────────────────────────
 userSchema.methods.toPublic = function () {
   return {
-    _id:          this._id,
-    employeeId:   this.employeeId,
-    name:         this.name,
-    email:        this.email,
-    role:         this.role,
-    position:     this.position,
-    department:   this.department,
+    _id: this._id,
+    employeeId: this.employeeId,
+    name: this.name,
+    email: this.email,
+    role: this.role,
+    position: this.position,
+    department: this.department,
     supervisorId: this.supervisorId,
-    status:       this.status,
-    createdAt:    this.createdAt,
-    updatedAt:    this.updatedAt,
+    status: this.status,
+    createdAt: this.createdAt,
+    updatedAt: this.updatedAt,
   };
 };
 
-module.exports = mongoose.model('User', userSchema);
+export default mongoose.model('User', userSchema);

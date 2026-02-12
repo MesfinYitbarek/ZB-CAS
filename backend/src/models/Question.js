@@ -12,16 +12,15 @@
  *   ScenarioMCQ            – scenario paragraph + MCQ
  *   DragDropClassification – classify items into named categories
  *
- * Each question carries a `score` (point value, default 1).
- *
  * OWASP / integrity:
  *   correctAnswer, correctAnswers, matchingPairs, correctOrder, categories
  *   are all select:false so they are never returned to the client
  *   unless explicitly selected server-side (the scoring engine does this).
  */
-const mongoose = require('mongoose');
 
-const QUESTION_TYPES = [
+import mongoose from 'mongoose';
+
+export const QUESTION_TYPES = [
   'MCQ',
   'Rating',
   'TrueFalse',
@@ -51,98 +50,30 @@ const questionSchema = new mongoose.Schema(
       trim: true,
       maxlength: 2000,
     },
-
-    // ─── Per-question point value ──────────────────────────────────────────
     score: {
       type: Number,
       default: 1,
       min: [0, 'Score must be non-negative.'],
     },
-
-    // ─── MCQ / TrueFalse / MultiSelect / ScenarioMCQ ──────────────────────
-    options: {
-      type: [String],
-      default: [],
-    },
-
-    // ─── MCQ / TrueFalse / ScenarioMCQ: single correct answer ─────────────
-    correctAnswer: {
-      type: String,
-      select: false,
-      default: null,
-    },
-
-    // ─── MultiSelect: multiple correct answers ────────────────────────────
-    correctAnswers: {
-      type: [String],
-      select: false,
-      default: [],
-    },
-
-    // ─── ScenarioMCQ: scenario/case-study paragraph ───────────────────────
-    scenario: {
-      type: String,
-      default: '',
-      trim: true,
-      maxlength: 5000,
-    },
-
-    // ─── Matching: correct left→right pairings (hidden) ───────────────────
-    //   Stored as [{left:"Term A", right:"Def A"}, …]
+    options: { type: [String], default: [] },
+    correctAnswer: { type: String, select: false, default: null },
+    correctAnswers: { type: [String], select: false, default: [] },
+    scenario: { type: String, default: '', trim: true, maxlength: 5000 },
     matchingPairs: {
       type: [
-        {
-          left: { type: String, required: true },
-          right: { type: String, required: true },
-        },
+        { left: { type: String, required: true }, right: { type: String, required: true } },
       ],
       select: false,
       default: [],
     },
-    // Shuffled columns shown to client
-    matchingLeft: {
-      type: [String],
-      default: [],
-    },
-    matchingRight: {
-      type: [String],
-      default: [],
-    },
-
-    // ─── Ordering: correct sequence (hidden) ──────────────────────────────
-    correctOrder: {
-      type: [String],
-      select: false,
-      default: [],
-    },
-    // Items in a shuffled presentation order (client-visible)
-    orderItems: {
-      type: [String],
-      default: [],
-    },
-
-    // ─── DragDropClassification: correct mapping (hidden) ─────────────────
-    //   Stored as { "Category A": ["item1","item2"], "Category B": ["item3"] }
-    categories: {
-      type: mongoose.Schema.Types.Mixed,
-      select: false,
-      default: null,
-    },
-    // Client-visible: flat list of items + category names
-    classificationItems: {
-      type: [String],
-      default: [],
-    },
-    categoryNames: {
-      type: [String],
-      default: [],
-    },
-
-    // ─── Manual review flag ────────────────────────────────────────────────
-    manualReview: {
-      type: Boolean,
-      default: false,
-    },
+    matchingLeft: { type: [String], default: [] },
+    matchingRight: { type: [String], default: [] },
+    correctOrder: { type: [String], select: false, default: [] },
+    orderItems: { type: [String], default: [] },
+    categories: { type: mongoose.Schema.Types.Mixed, select: false, default: null },
+    classificationItems: { type: [String], default: [] },
+    categoryNames: { type: [String], default: [] },
+    manualReview: { type: Boolean, default: false },
   },
   { timestamps: true, strict: true }
 );
@@ -150,7 +81,7 @@ const questionSchema = new mongoose.Schema(
 questionSchema.index({ competencyId: 1 });
 questionSchema.index({ competencyId: 1, type: 1 });
 
-// ─── Utility: Fisher-Yates shuffle ──────────────────────────────────────────
+// ─── Utility: Fisher-Yates shuffle ─────────────────────────────
 function shuffle(arr) {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
@@ -160,87 +91,69 @@ function shuffle(arr) {
   return a;
 }
 
-// ─── pre-save validation & auto-population ──────────────────────────────────
+// ─── Pre-save validation & auto-population ─────────────────────
 questionSchema.pre('save', function (next) {
-  // --- TrueFalse ---
-  if (this.type === 'TrueFalse') {
-    this.options = ['True', 'False'];
-  }
+  // TrueFalse
+  if (this.type === 'TrueFalse') this.options = ['True', 'False'];
 
-  // --- ShortAnswer ---
+  // ShortAnswer
   if (this.type === 'ShortAnswer') {
     this.manualReview = true;
     this.correctAnswer = null;
   }
 
-  // --- MCQ / TrueFalse / ScenarioMCQ require correctAnswer ---
+  // MCQ / TrueFalse / ScenarioMCQ require correctAnswer
   if (['MCQ', 'TrueFalse', 'ScenarioMCQ'].includes(this.type) && !this.correctAnswer) {
-    return next(
-      new Error('correctAnswer is required for MCQ, TrueFalse, and ScenarioMCQ questions.')
-    );
+    return next(new Error('correctAnswer is required for MCQ, TrueFalse, and ScenarioMCQ questions.'));
   }
 
-  // --- ScenarioMCQ requires scenario text ---
+  // ScenarioMCQ requires scenario text
   if (this.type === 'ScenarioMCQ' && !this.scenario) {
     return next(new Error('scenario text is required for ScenarioMCQ questions.'));
   }
 
-  // --- MultiSelect requires correctAnswers ---
+  // MultiSelect requires correctAnswers & at least 2 options
   if (this.type === 'MultiSelect') {
-    if (!this.correctAnswers || this.correctAnswers.length === 0) {
+    if (!this.correctAnswers || this.correctAnswers.length === 0)
       return next(new Error('correctAnswers array is required for MultiSelect questions.'));
-    }
-    if (!this.options || this.options.length < 2) {
+    if (!this.options || this.options.length < 2)
       return next(new Error('MultiSelect questions must have at least 2 options.'));
-    }
   }
 
-  // --- Matching: build shuffled left/right columns ---
+  // Matching: shuffle left/right
   if (this.type === 'Matching') {
-    if (!this.matchingPairs || this.matchingPairs.length < 2) {
+    if (!this.matchingPairs || this.matchingPairs.length < 2)
       return next(new Error('Matching questions must have at least 2 pairs.'));
-    }
-    this.matchingLeft = shuffle(this.matchingPairs.map((p) => p.left));
-    this.matchingRight = shuffle(this.matchingPairs.map((p) => p.right));
+    this.matchingLeft = shuffle(this.matchingPairs.map(p => p.left));
+    this.matchingRight = shuffle(this.matchingPairs.map(p => p.right));
   }
 
-  // --- Ordering: build shuffled item list ---
+  // Ordering: shuffle items
   if (this.type === 'Ordering') {
-    if (!this.correctOrder || this.correctOrder.length < 2) {
+    if (!this.correctOrder || this.correctOrder.length < 2)
       return next(new Error('Ordering questions must have at least 2 items.'));
-    }
     this.orderItems = shuffle(this.correctOrder);
   }
 
-  // --- DragDropClassification: extract items & category names ---
+  // DragDropClassification
   if (this.type === 'DragDropClassification') {
-    if (!this.categories || typeof this.categories !== 'object') {
-      return next(
-        new Error('categories object is required for DragDropClassification questions.')
-      );
-    }
+    if (!this.categories || typeof this.categories !== 'object')
+      return next(new Error('categories object is required for DragDropClassification questions.'));
     const catNames = Object.keys(this.categories);
-    if (catNames.length < 2) {
+    if (catNames.length < 2)
       return next(new Error('DragDropClassification must have at least 2 categories.'));
-    }
     this.categoryNames = catNames;
-    // Flatten all items across categories and shuffle
-    const allItems = catNames.reduce((acc, cat) => {
-      return acc.concat(this.categories[cat] || []);
-    }, []);
-    if (allItems.length < 2) {
+
+    const allItems = catNames.reduce((acc, cat) => acc.concat(this.categories[cat] || []), []);
+    if (allItems.length < 2)
       return next(new Error('DragDropClassification must have at least 2 items.'));
-    }
     this.classificationItems = shuffle(allItems);
   }
 
-  // --- Score must be positive for auto-scored types ---
-  if (this.score <= 0 && this.type !== 'ShortAnswer') {
-    this.score = 1;
-  }
+  // Score must be positive for auto-scored types
+  if (this.score <= 0 && this.type !== 'ShortAnswer') this.score = 1;
 
   next();
 });
 
-module.exports = mongoose.model('Question', questionSchema);
-module.exports.QUESTION_TYPES = QUESTION_TYPES;
+export default mongoose.model('Question', questionSchema);

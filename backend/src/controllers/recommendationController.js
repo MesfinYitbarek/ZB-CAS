@@ -1,19 +1,9 @@
-/* controllers/recommendationController.js
- * Recommendation CRUD – HR_ADMIN manages the recommendation library.
- *
- * GET    /recommendations                     – list (filter by competencyId / level)
- * GET    /recommendations/:id                 – single
- * GET    /recommendations/competency/:compId  – all recommendations for one competency
- * POST   /recommendations                     – create
- * PUT    /recommendations/:id                 – update
- * DELETE /recommendations/:id                 – delete
- */
-const Recommendation = require('../models/Recommendation');
-const AppError       = require('../utils/AppError');
-const asyncHandler   = require('../utils/asyncHandler');
+import Recommendation from '../models/Recommendation.js';
+import AppError from '../utils/AppError.js';
+import asyncHandler from '../utils/asyncHandler.js';
 
 // ─── LIST ALL ─────────────────────────────────────────────────────────────────
-exports.getRecommendations = asyncHandler(async (req, res) => {
+export const getRecommendations = asyncHandler(async (req, res) => {
   const { competencyId, level, page = 1, limit = 50 } = req.query;
 
   const filter = {};
@@ -42,7 +32,7 @@ exports.getRecommendations = asyncHandler(async (req, res) => {
 });
 
 // ─── GET ONE ─────────────────────────────────────────────────────────────────
-exports.getRecommendation = asyncHandler(async (req, res, next) => {
+export const getRecommendation = asyncHandler(async (req, res, next) => {
   const rec = await Recommendation.findById(req.params.id)
     .populate('competencyId', 'name category')
     .lean();
@@ -53,7 +43,7 @@ exports.getRecommendation = asyncHandler(async (req, res, next) => {
 });
 
 // ─── GET BY COMPETENCY ───────────────────────────────────────────────────────
-exports.getByCompetency = asyncHandler(async (req, res) => {
+export const getByCompetency = asyncHandler(async (req, res) => {
   const recommendations = await Recommendation.find({
     competencyId: req.params.competencyId,
   })
@@ -65,7 +55,7 @@ exports.getByCompetency = asyncHandler(async (req, res) => {
 });
 
 // ─── CREATE ──────────────────────────────────────────────────────────────────
-exports.createRecommendation = asyncHandler(async (req, res, next) => {
+export const createRecommendation = asyncHandler(async (req, res, next) => {
   const { competencyId, level, recommendation } = req.body;
 
   const rec = await Recommendation.create({ competencyId, level, recommendation });
@@ -74,7 +64,7 @@ exports.createRecommendation = asyncHandler(async (req, res, next) => {
 });
 
 // ─── UPDATE ──────────────────────────────────────────────────────────────────
-exports.updateRecommendation = asyncHandler(async (req, res, next) => {
+export const updateRecommendation = asyncHandler(async (req, res, next) => {
   const { recommendation } = req.body;
 
   const rec = await Recommendation.findByIdAndUpdate(
@@ -89,7 +79,7 @@ exports.updateRecommendation = asyncHandler(async (req, res, next) => {
 });
 
 // ─── DELETE ───────────────────────────────────────────────────────────────────
-exports.deleteRecommendation = asyncHandler(async (req, res, next) => {
+export const deleteRecommendation = asyncHandler(async (req, res, next) => {
   const rec = await Recommendation.findByIdAndDelete(req.params.id);
   if (!rec) return next(new AppError('Recommendation not found.', 404));
 

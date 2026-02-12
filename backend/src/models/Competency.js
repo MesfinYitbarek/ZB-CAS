@@ -5,7 +5,7 @@
  * NoOfQuestions is a virtual that counts linked Question documents at
  * query time (avoids stale counters on insert/delete).
  */
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
 const CATEGORIES = ['Core', 'Managerial', 'Leadership', 'Technical'];
 
@@ -33,7 +33,7 @@ const competencySchema = new mongoose.Schema(
   { timestamps: true, strict: true }
 );
 
-
+// Indexes
 competencySchema.index({ category: 1 });
 
-module.exports = mongoose.model('Competency', competencySchema);
+export default mongoose.model('Competency', competencySchema);

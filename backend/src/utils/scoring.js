@@ -29,7 +29,6 @@ const scoreSingleResponse = (question, response) => {
             const selectedSet = new Set(Array.isArray(response.selectedAnswers) ? response.selectedAnswers : []);
             let hits = 0, misses = 0;
             selectedSet.forEach(s => correctSet.has(s) ? hits++ : misses++);
-            // Net score: (hits - misses) / total correct options
             awarded = (Math.max(0, hits - misses) / Math.max(correctSet.size, 1)) * maxScore;
             console.log(`      [Q-LOG] MULTI: Hits:${hits} Misses:${misses} | TotalCorrect:${correctSet.size} -> Score: ${awarded.toFixed(2)}`);
             return awarded;
@@ -121,4 +120,4 @@ const assignLevel = (percentage) => {
     return 'Basic';
 };
 
-module.exports = { scoreSingleResponse, computeRawScore, computeWeightedScore, assignLevel };
+export { scoreSingleResponse, computeRawScore, computeWeightedScore, assignLevel };

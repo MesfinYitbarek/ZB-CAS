@@ -1,11 +1,9 @@
 /* models/Feedback.js
  * Feedback management – employees can submit feedback on their assessment
  * experience. HR admins can view and mark feedback as reviewed.
- *
- * Maps to section 4: "Employee: … give feedback"
- *                     "HR Administrator: … feedback management"
+ * ES Module version
  */
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
 const feedbackSchema = new mongoose.Schema(
   {
@@ -49,8 +47,9 @@ const feedbackSchema = new mongoose.Schema(
   { timestamps: true, strict: true }
 );
 
+// Indexes
 feedbackSchema.index({ assessmentId: 1 });
 feedbackSchema.index({ userId: 1, createdAt: -1 });
 feedbackSchema.index({ reviewed: 1 });
 
-module.exports = mongoose.model('Feedback', feedbackSchema);
+export default mongoose.model('Feedback', feedbackSchema);

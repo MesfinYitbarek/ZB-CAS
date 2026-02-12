@@ -1,17 +1,10 @@
 /* models/Report.js
- * Report(ReportID, User{Name, Department, Position}, CompetencyName,
- *        FinalScore, Level, Recommendation)
- *
- * Per the doc: "the purpose is for reporting and for assessment history
- * management … in case if the UserId delete or change"
- *
- * This is an immutable snapshot created whenever a Result is finalised.
- * It duplicates the user's name/dept/position and the competency name so
- * that historical reports remain accurate even if master data changes.
+ * Immutable snapshot of assessment results for reporting/history
+ * Converted to ES Modules
  */
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
-const LEVELS = ['Basic', 'Intermediate', 'Advanced', 'Expert'];
+export const LEVELS = ['Basic', 'Intermediate', 'Advanced', 'Expert'];
 
 const reportSchema = new mongoose.Schema(
   {
@@ -65,9 +58,10 @@ const reportSchema = new mongoose.Schema(
   }
 );
 
+/* ─── INDEXES ─────────────────────────────────────────────────────────────── */
 reportSchema.index({ 'user.userId': 1 });
 reportSchema.index({ assessmentId: 1 });
 reportSchema.index({ 'user.department': 1, generatedAt: -1 });
 reportSchema.index({ competencyId: 1, generatedAt: -1 });
 
-module.exports = mongoose.model('Report', reportSchema);
+export default mongoose.model('Report', reportSchema);

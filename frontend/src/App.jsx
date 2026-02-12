@@ -41,6 +41,7 @@ import PendingEvaluations from './pages/PendingEvaluations';
 import TeamResults from './pages/TeamResults';
 import TeamReports from './pages/TeamReports';
 import SupervisorEvaluation from './pages/SupervisorEvaluation';
+import EmployeeDashboard from './pages/EmployeeDashboard';
 
 
 /* =========================================================
@@ -141,6 +142,9 @@ function SmartDashboard() {
 
   if (user.role === 'SUPERVISOR')
     return <SupervisorDashboard />;
+  
+  if (user.role === 'EMPLOYEE')
+    return <EmployeeDashboard />;
 
   return <Dashboard />;
 }

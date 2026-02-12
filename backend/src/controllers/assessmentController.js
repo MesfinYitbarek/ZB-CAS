@@ -1,26 +1,11 @@
-/* controllers/assessmentController.js
- * Assessment lifecycle management.
- *
- * POST   /assessments            – create (HR_ADMIN)
- * GET    /assessments            – list (HR_ADMIN sees all; others see relevant)
- * GET    /assessments/:id        – single
- * PUT    /assessments/:id        – update (HR_ADMIN, DRAFT only)
- * PATCH  /assessments/:id/status – transition status (HR_ADMIN)
- * GET    /assessments/active     – currently active assessments for the caller
- *
- * Status flow: DRAFT → SCHEDULED (sends notifications) → ACTIVE → COMPLETED
- *
- * When status moves to SCHEDULED, all target employees (and supervisors for
- * Combined/SupervisorOnly) are notified via email.
- */
-const Assessment     = require('../models/Assessment');
-const User           = require('../models/User');
-const AppError       = require('../utils/AppError');
-const asyncHandler   = require('../utils/asyncHandler');
-const { sendAssessmentNotification, sendSupervisorReminder } = require('../services/emailService');
+import Assessment from '../models/Assessment.js';
+import User from '../models/User.js';
+import AppError from '../utils/AppError.js';
+import asyncHandler from '../utils/asyncHandler.js';
+import { sendAssessmentNotification, sendSupervisorReminder } from '../services/emailService.js';
 
 // ─── CREATE ──────────────────────────────────────────────────────────────────
-exports.createAssessment = asyncHandler(async (req, res, next) => {
+export const createAssessment = asyncHandler(async (req, res, next) => {
   const {
     competencyId, description, target, questionIds,
     startDate, endDate, timeLimit, type, weight,
@@ -46,7 +31,7 @@ exports.createAssessment = asyncHandler(async (req, res, next) => {
 });
 
 // ─── LIST ─────────────────────────────────────────────────────────────────────
-exports.getAssessments = asyncHandler(async (req, res) => {
+export const getAssessments = asyncHandler(async (req, res) => {
   const { status, competencyId, page = 1, limit = 6 } = req.query;
 
   const filter = {};
@@ -86,7 +71,7 @@ exports.getAssessments = asyncHandler(async (req, res) => {
 });
 
 // ─── GET ONE ─────────────────────────────────────────────────────────────────
-exports.getAssessment = asyncHandler(async (req, res, next) => {
+export const getAssessment = asyncHandler(async (req, res, next) => {
   const assessment = await Assessment.findById(req.params.id)
     .populate('competencyId', 'name category')
     .populate('createdBy', 'name email')
@@ -99,7 +84,7 @@ exports.getAssessment = asyncHandler(async (req, res, next) => {
 });
 
 // ─── UPDATE (DRAFT only) ─────────────────────────────────────────────────────
-exports.updateAssessment = asyncHandler(async (req, res, next) => {
+export const updateAssessment = asyncHandler(async (req, res, next) => {
   const assessment = await Assessment.findById(req.params.id);
   if (!assessment) return next(new AppError('Assessment not found.', 404));
 
@@ -121,7 +106,7 @@ exports.updateAssessment = asyncHandler(async (req, res, next) => {
 });
 
 // ─── TRANSITION STATUS ────────────────────────────────────────────────────────
-exports.updateStatus = asyncHandler(async (req, res, next) => {
+export const updateStatus = asyncHandler(async (req, res, next) => {
   const { status } = req.body;
   const assessment = await Assessment.findById(req.params.id);
 
@@ -191,7 +176,7 @@ exports.updateStatus = asyncHandler(async (req, res, next) => {
 });
 
 // ─── GET ACTIVE ASSESSMENTS FOR CURRENT USER ────────────────────────────────
-exports.getActiveAssessments = asyncHandler(async (req, res) => {
+export const getActiveAssessments = asyncHandler(async (req, res) => {
   const me = await User.findById(req.user.id).lean();
 
   const filter = {
@@ -213,7 +198,7 @@ exports.getActiveAssessments = asyncHandler(async (req, res) => {
 });
 
 // ─── DELETE ───────────────────────────────────────────────────────────────────
-exports.deleteAssessments = asyncHandler(async (req, res, next) => {
+export const deleteAssessments = asyncHandler(async (req, res, next) => {
   const assessment = await Assessment.findByIdAndDelete(req.params.id);
   if (!assessment) return next(new AppError('Assessment not found.', 404));
 

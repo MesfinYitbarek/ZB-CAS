@@ -2,7 +2,7 @@
  * Creates and exports a pre-configured Nodemailer transporter.
  * Used by the notification service for assessment scheduling, results, etc.
  */
-const nodemailer = require('nodemailer');
+import nodemailer from 'nodemailer';
 
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
@@ -16,4 +16,4 @@ const transporter = nodemailer.createTransport({
   tls: { rejectUnauthorized: true },
 });
 
-module.exports = transporter;
+export default transporter;

@@ -1,26 +1,12 @@
-/* controllers/questionController.js
- * Question Bank management.
- *
- * GET    /questions              – list (filter by competencyId, type)
- * GET    /questions/:id          – single (correctAnswer excluded for non-admin)
- * POST   /questions              – create (HR_ADMIN)
- * PUT    /questions/:id          – update (HR_ADMIN)
- * DELETE /questions/:id          – delete (HR_ADMIN)
- *
- * OWASP / integrity:
- *   correctAnswer, correctAnswers, matchingPairs, correctOrder, categories
- *   are all select:false on the model.  Only HR_ADMIN endpoints that explicitly
- *   need them use .select('+correctAnswer +correctAnswers ...').
- */
-const Question = require('../models/Question');
-const AppError = require('../utils/AppError');
-const asyncHandler = require('../utils/asyncHandler');
+import Question from '../models/Question.js';
+import AppError from '../utils/AppError.js';
+import asyncHandler from '../utils/asyncHandler.js';
 
 // Fields that contain answer keys (hidden by default via select:false)
 const SECRET_FIELDS = '+correctAnswer +correctAnswers +matchingPairs +correctOrder +categories';
 
 // ─── LIST ─────────────────────────────────────────────────────────────────────
-exports.getQuestions = asyncHandler(async (req, res) => {
+export const getQuestions = asyncHandler(async (req, res) => {
   const { competencyId, type, page = 1, limit = 30 } = req.query;
 
   const filter = {};
@@ -51,7 +37,7 @@ exports.getQuestions = asyncHandler(async (req, res) => {
 
 // ─── GET ONE ─────────────────────────────────────────────────────────────────
 // HR_ADMIN can see all answer keys; others cannot.
-exports.getQuestion = asyncHandler(async (req, res, next) => {
+export const getQuestion = asyncHandler(async (req, res, next) => {
   let query = Question.findById(req.params.id).populate('competencyId', 'name category');
 
   // Only HR_ADMIN sees the answer keys
@@ -66,7 +52,7 @@ exports.getQuestion = asyncHandler(async (req, res, next) => {
 });
 
 // ─── CREATE ──────────────────────────────────────────────────────────────────
-exports.createQuestion = asyncHandler(async (req, res, next) => {
+export const createQuestion = asyncHandler(async (req, res, next) => {
   const {
     competencyId,
     type,
@@ -99,7 +85,7 @@ exports.createQuestion = asyncHandler(async (req, res, next) => {
 });
 
 // ─── UPDATE ──────────────────────────────────────────────────────────────────
-exports.updateQuestion = asyncHandler(async (req, res, next) => {
+export const updateQuestion = asyncHandler(async (req, res, next) => {
   const allowedFields = [
     'text',
     'type',
@@ -133,7 +119,7 @@ exports.updateQuestion = asyncHandler(async (req, res, next) => {
 });
 
 // ─── DELETE ───────────────────────────────────────────────────────────────────
-exports.deleteQuestion = asyncHandler(async (req, res, next) => {
+export const deleteQuestion = asyncHandler(async (req, res, next) => {
   const question = await Question.findByIdAndDelete(req.params.id);
   if (!question) return next(new AppError('Question not found.', 404));
 

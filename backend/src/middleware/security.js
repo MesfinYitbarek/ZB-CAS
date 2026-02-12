@@ -11,12 +11,12 @@
  *   hpp             – keeps only the last value of duplicate query params
  *   compression     – gzip responses (performance + smaller attack surface)
  */
-const helmet          = require('helmet');
-const cors            = require('cors');
-const { rateLimit }   = require('express-rate-limit');
-const mongoSanitize   = require('express-mongo-sanitize');
-const hpp             = require('hpp');
-const compression     = require('compression');
+import helmetPkg from 'helmet';
+import corsPkg from 'cors';
+import { rateLimit } from 'express-rate-limit';
+import mongoSanitizePkg from 'express-mongo-sanitize';
+import hppPkg from 'hpp';
+import compressionPkg from 'compression';
 
 // ─── CORS ────────────────────────────────────────────────────────────────────
 const corsOptions = {
@@ -30,7 +30,7 @@ const corsOptions = {
 // ─── Rate limiters ───────────────────────────────────────────────────────────
 const generalLimiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS, 10) || 900000,  // 15 min
-  max:      parseInt(process.env.RATE_LIMIT_MAX, 10)       || 100,
+  max: parseInt(process.env.RATE_LIMIT_MAX, 10) || 100,
   standardHeaders: true,        // X-RateLimit-* headers
   legacyHeaders: false,
   message: { status: 'fail', message: 'Too many requests. Please try again later.' },
@@ -38,37 +38,33 @@ const generalLimiter = rateLimit({
 
 const authLimiter = rateLimit({
   windowMs: 600000,             // 10 min window for auth routes
-  max:      parseInt(process.env.AUTH_RATE_LIMIT_MAX, 10) || 15,
+  max: parseInt(process.env.AUTH_RATE_LIMIT_MAX, 10) || 15,
   standardHeaders: true,
   legacyHeaders: false,
   message: { status: 'fail', message: 'Too many login attempts. Please try again later.' },
 });
 
+// ─── Mongo sanitize middleware ────────────────────────────────────────────────
 const mongoSanitizeMiddleware = (req, res, next) => {
-  // Only sanitize the fields we can safely modify
-  const sanitize = require('express-mongo-sanitize').sanitize;
-  
+  const { sanitize } = mongoSanitizePkg;
+
   if (req.body) {
     req.body = sanitize(req.body);
   }
-  
+
   if (req.params) {
     Object.keys(req.params).forEach(key => {
       req.params[key] = sanitize(req.params[key]);
     });
   }
-  
+
   // DO NOT touch req.query as it's read-only in newer Node/Express
   next();
 };
 
 // ─── Export everything so app.js can apply in order ──────────────────────────
-module.exports = {
-  helmet:           helmet(),
-  cors:             cors(corsOptions),
-  generalLimiter,
-  authLimiter,
-  mongoSanitize: mongoSanitizeMiddleware,
-  hpp:              hpp(),
-  compression:      compression(),
-};
+export const helmet = helmetPkg();
+export const cors = corsPkg(corsOptions);
+export { generalLimiter, authLimiter, mongoSanitizeMiddleware as mongoSanitize };
+export const hpp = hppPkg();
+export const compression = compressionPkg();
