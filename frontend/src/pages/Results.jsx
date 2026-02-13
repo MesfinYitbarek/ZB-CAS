@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
-import { 
-  TrendingUp, CheckCircle2, Download, ChevronLeft, ChevronRight, 
-  Award, User, Users, Scale, Calendar, Filter, X, FileText, 
+import {
+  TrendingUp, CheckCircle2, Download, ChevronLeft, ChevronRight,
+  Award, User, Users, Scale, Calendar, Filter, X, FileText,
   SlidersHorizontal, Eye, XCircle, Info, ClipboardList, ChevronDown
 } from 'lucide-react';
 import { exportToPDF, exportToExcel, generateFilename } from '../utils/exportUtils';
 import api from '../utils/api';
+import Select from 'react-select';
 
 // Detail Modal Component
 const ResultDetailModal = ({ result, isOpen, onClose, isAdmin }) => {
@@ -16,13 +17,13 @@ const ResultDetailModal = ({ result, isOpen, onClose, isAdmin }) => {
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
       <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
-        <div 
-          className="fixed inset-0 bg-gray-900 bg-opacity-50 transition-opacity" 
+        <div
+          className="fixed inset-0 bg-gray-900 bg-opacity-50 transition-opacity"
           onClick={onClose}
         />
-        
+
         <span className="hidden sm:inline-block sm:align-middle sm:h-screen">&#8203;</span>
-        
+
         <div className="inline-block align-bottom bg-white rounded-2xl text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-3xl sm:w-full">
           {/* Header */}
           <div className="bg-gradient-to-r from-brand-red to-brand-red-dark px-6 py-4 flex items-center justify-between">
@@ -39,7 +40,7 @@ const ResultDetailModal = ({ result, isOpen, onClose, isAdmin }) => {
               <XCircle className="w-5 h-5" />
             </button>
           </div>
-          
+
           {/* Content */}
           <div className="px-6 py-5 max-h-[70vh] overflow-y-auto">
             <div className="space-y-6">
@@ -50,17 +51,17 @@ const ResultDetailModal = ({ result, isOpen, onClose, isAdmin }) => {
                   <h4 className="text-sm font-semibold text-blue-900">{result.assessmentDescription}</h4>
                 </div>
                 <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium
-                  ${result.assessmentType === 'Combined' 
-                    ? 'bg-purple-100 text-purple-700' 
+                  ${result.assessmentType === 'Combined'
+                    ? 'bg-purple-100 text-purple-700'
                     : result.assessmentType === 'SelfAssessment'
                       ? 'bg-blue-100 text-blue-700'
                       : 'bg-orange-100 text-orange-700'
                   }`}>
-                  {result.assessmentType === 'SelfAssessment' ? 'Self Assessment' : 
-                   result.assessmentType === 'SupervisorOnly' ? 'Supervisor Assessment' : 'Combined Assessment'}
+                  {result.assessmentType === 'SelfAssessment' ? 'Self Assessment' :
+                    result.assessmentType === 'SupervisorOnly' ? 'Supervisor Assessment' : 'Combined Assessment'}
                 </span>
               </div>
-              
+
               {/* Employee Info (for admin) */}
               {isAdmin && (
                 <div className="bg-gray-50 rounded-xl p-4">
@@ -87,7 +88,7 @@ const ResultDetailModal = ({ result, isOpen, onClose, isAdmin }) => {
                   </div>
                 </div>
               )}
-              
+
               {/* Competency Details */}
               <div className="bg-gray-50 rounded-xl p-4">
                 <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
@@ -98,7 +99,7 @@ const ResultDetailModal = ({ result, isOpen, onClose, isAdmin }) => {
                   <p className="text-xs text-gray-500 mt-0.5">{result.competencyCategory}</p>
                 </div>
               </div>
-              
+
               {/* Score Details */}
               <div className="bg-gray-50 rounded-xl p-4">
                 <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
@@ -114,7 +115,7 @@ const ResultDetailModal = ({ result, isOpen, onClose, isAdmin }) => {
                       {result.selfScore !== null ? `${result.selfScore.toFixed(1)}%` : '—'}
                     </p>
                   </div>
-                  
+
                   <div className="bg-white rounded-lg p-3 border border-gray-200">
                     <div className="flex items-center gap-2 mb-1">
                       <Users className="w-4 h-4 text-purple-600" />
@@ -124,7 +125,7 @@ const ResultDetailModal = ({ result, isOpen, onClose, isAdmin }) => {
                       {result.supervisorScore !== null ? `${result.supervisorScore.toFixed(1)}%` : '—'}
                     </p>
                   </div>
-                  
+
                   <div className="bg-white rounded-lg p-3 border-2 border-brand-red/20 bg-brand-red/5">
                     <div className="flex items-center gap-2 mb-1">
                       <Award className="w-4 h-4 text-brand-red" />
@@ -135,7 +136,7 @@ const ResultDetailModal = ({ result, isOpen, onClose, isAdmin }) => {
                     </p>
                   </div>
                 </div>
-                
+
                 {result.isCombined && result.weightUsed && (
                   <div className="mt-3 pt-3 border-t border-gray-200">
                     <div className="flex items-center gap-2 mb-2">
@@ -154,7 +155,7 @@ const ResultDetailModal = ({ result, isOpen, onClose, isAdmin }) => {
                     </div>
                   </div>
                 )}
-                
+
                 {result.calculation && (
                   <div className="mt-3 pt-3 border-t border-gray-200">
                     <p className="text-xs text-gray-500 mb-1">Calculation Method</p>
@@ -164,7 +165,7 @@ const ResultDetailModal = ({ result, isOpen, onClose, isAdmin }) => {
                   </div>
                 )}
               </div>
-              
+
               {/* Result & Status */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="bg-gray-50 rounded-xl p-4">
@@ -177,17 +178,16 @@ const ResultDetailModal = ({ result, isOpen, onClose, isAdmin }) => {
                     </span>
                     <div className="flex-1">
                       <div className="progress-bar h-2">
-                        <div 
-                          className={`progress-fill ${
-                            result.assessmentType === 'Combined' ? 'bg-purple-600' : 'bg-brand-red'
-                          }`} 
-                          style={{ width: `${result.finalScore}%` }} 
+                        <div
+                          className={`progress-fill ${result.assessmentType === 'Combined' ? 'bg-purple-600' : 'bg-brand-red'
+                            }`}
+                          style={{ width: `${result.finalScore}%` }}
                         />
                       </div>
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="bg-gray-50 rounded-xl p-4">
                   <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
                     Status
@@ -204,7 +204,7 @@ const ResultDetailModal = ({ result, isOpen, onClose, isAdmin }) => {
                   </div>
                 </div>
               </div>
-              
+
               {/* Recommendation */}
               {result.recommendation && (
                 <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
@@ -223,7 +223,7 @@ const ResultDetailModal = ({ result, isOpen, onClose, isAdmin }) => {
               )}
             </div>
           </div>
-          
+
           {/* Footer */}
           <div className="bg-gray-50 px-6 py-4 flex justify-end">
             <button
@@ -252,7 +252,7 @@ export default function Results() {
   const [showFilters, setShowFilters] = useState(false);
   const [selectedResult, setSelectedResult] = useState(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
-  
+
   // Pagination state
   const [pagination, setPagination] = useState({
     page: 1,
@@ -281,7 +281,7 @@ export default function Results() {
         setLoadingAssessments(true);
         const { data } = await api.get('/results/assessments/available');
         setAssessments(data.data.assessments);
-        
+
         // Auto-select first assessment if available
         if (data.data.assessments.length > 0) {
           setSelectedAssessment(data.data.assessments[0]._id);
@@ -314,7 +314,7 @@ export default function Results() {
             limit: pagination.limit
           }
         });
-        
+
         setResults(data.data.results || []);
         setCurrentAssessment(data.data.assessment);
         setPagination(prev => ({
@@ -339,7 +339,7 @@ export default function Results() {
       // Search filter
       if (filters.search) {
         const searchLower = filters.search.toLowerCase();
-        const matchesSearch = 
+        const matchesSearch =
           result.competencyName?.toLowerCase().includes(searchLower) ||
           result.recommendation?.toLowerCase().includes(searchLower) ||
           result.userName?.toLowerCase().includes(searchLower) ||
@@ -372,7 +372,7 @@ export default function Results() {
         const resultDate = new Date(result.date);
         const now = new Date();
         const daysDiff = (now - resultDate) / (1000 * 60 * 60 * 24);
-        
+
         switch (filters.dateRange) {
           case 'today':
             if (daysDiff > 1) return false;
@@ -412,7 +412,7 @@ export default function Results() {
     try {
       await api.patch(`/results/${id}/finalise`);
       show('Result finalised successfully.', 'success');
-      setResults((prev) => 
+      setResults((prev) =>
         prev.map((r) => (r._id === id ? { ...r, status: 'FINAL' } : r))
       );
     } catch (err) {
@@ -479,7 +479,7 @@ export default function Results() {
         await exportToExcel(exportData, filename);
         show('Results exported to Excel successfully!', 'success');
       }
-      
+
     } catch (err) {
       console.error('Export Error:', err);
       show(`Export failed: ${err.message}`, 'error');
@@ -684,7 +684,7 @@ export default function Results() {
   return (
     <div className="p-7">
       {/* Detail Modal */}
-      <ResultDetailModal 
+      <ResultDetailModal
         result={selectedResult}
         isOpen={showDetailModal}
         onClose={closeDetailModal}
@@ -696,23 +696,22 @@ export default function Results() {
         <div>
           <h1 className="text-3xl font-display font-bold text-brand-black">Assessment Results</h1>
           <p className="text-gray-500 mt-1">
-            {isAdmin 
-              ? 'View results filtered by assessment' 
+            {isAdmin
+              ? 'View results filtered by assessment'
               : 'Your assessment history'}
           </p>
         </div>
-        
+
         <div className="flex items-center gap-2">
           <button
             onClick={() => setShowFilters(!showFilters)}
             disabled={!selectedAssessment || results.length === 0}
-            className={`flex items-center gap-2 px-4 py-2 border rounded-lg font-semibold transition-colors ${
-              !selectedAssessment || results.length === 0
+            className={`flex items-center gap-2 px-4 py-2 border rounded-lg font-semibold transition-colors ${!selectedAssessment || results.length === 0
                 ? 'opacity-50 cursor-not-allowed border-gray-200 text-gray-400'
-                : showFilters 
-                  ? 'border-brand-red bg-brand-red/10 text-brand-red' 
+                : showFilters
+                  ? 'border-brand-red bg-brand-red/10 text-brand-red'
                   : 'border-gray-300 text-gray-700 hover:bg-gray-50'
-            }`}
+              }`}
           >
             <SlidersHorizontal className="w-4 h-4" />
             Filters
@@ -722,13 +721,13 @@ export default function Results() {
               </span>
             )}
           </button>
-          
-          <button 
-            onClick={handleExport} 
+
+          <button
+            onClick={handleExport}
             disabled={exporting || filteredResults.length === 0 || !selectedAssessment}
             className="flex items-center gap-2 px-4 py-2 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <Download className="w-4 h-4" /> 
+            <Download className="w-4 h-4" />
             {exporting ? 'Exporting...' : `Export ${exportFormat.toUpperCase()}`}
           </button>
         </div>
@@ -742,22 +741,50 @@ export default function Results() {
               Select Assessment
             </label>
             <div className="relative">
-              <select
-                value={selectedAssessment}
-                onChange={handleAssessmentChange}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-red/20 focus:border-brand-red appearance-none bg-white"
-              >
-                <option value="">-- Choose an assessment --</option>
-                {assessments.map((assessment) => (
-                  <option key={assessment._id} value={assessment._id}>
-                    {assessment.title || assessment.description} ({assessment.type})
-                  </option>
-                ))}
-              </select>
+              <Select
+                options={assessments.map(a => ({
+                  value: a._id,
+                  label: `${a.title || a.description} (${a.type})`
+                }))}
+                value={
+                  assessments
+                    .map(a => ({
+                      value: a._id,
+                      label: `${a.title || a.description} (${a.type})`
+                    }))
+                    .find(opt => opt.value === selectedAssessment) || null
+                }
+                onChange={(selected) => {
+                  setSelectedAssessment(selected?.value || '');
+                  setPagination(prev => ({ ...prev, page: 1 }));
+                  clearFilters();
+                }}
+                placeholder="Search assessment..."
+                isClearable
+                className="text-sm"
+                styles={{
+                  control: (base) => ({
+                    ...base,
+                    minHeight: '40px',          // 👈 compact
+                    height: '40px',
+                    borderRadius: '8px',
+                    borderColor: '#d1d5db',
+                    boxShadow: 'none'
+                  }),
+                  valueContainer: (base) => ({
+                    ...base,
+                    padding: '0 12px'
+                  }),
+                  indicatorsContainer: (base) => ({
+                    ...base,
+                    height: '40px'
+                  })
+                }}
+              />
               <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
             </div>
           </div>
-          
+
           {currentAssessment && (
             <div className="flex items-center gap-2 px-4 py-3 bg-blue-50 rounded-lg text-blue-800">
               <ClipboardList className="w-5 h-5 flex-shrink-0" />
@@ -781,11 +808,11 @@ export default function Results() {
             <span className="font-medium">{pagination.total}</span> results
             {Object.values(filters).some(v => v && v !== '') && ' (filtered)'}
           </div>
-          
+
           <div className="flex items-center gap-2">
             <span className="text-sm text-gray-600">Show:</span>
-            <select 
-              value={pagination.limit} 
+            <select
+              value={pagination.limit}
               onChange={handlePageSizeChange}
               className="px-3 py-1.5 rounded-lg border border-gray-300 text-sm focus:ring-2 focus:ring-brand-red/20 focus:border-brand-red"
             >
@@ -882,25 +909,24 @@ export default function Results() {
                           </td>
                           <td className="px-6 py-4">
                             <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium
-                              ${result.assessmentType === 'Combined' 
-                                ? 'bg-purple-100 text-purple-700' 
+                              ${result.assessmentType === 'Combined'
+                                ? 'bg-purple-100 text-purple-700'
                                 : result.assessmentType === 'SelfAssessment'
                                   ? 'bg-blue-100 text-blue-700'
                                   : 'bg-orange-100 text-orange-700'
                               }`}>
-                              {result.assessmentType === 'SelfAssessment' ? 'Self' : 
-                               result.assessmentType === 'SupervisorOnly' ? 'Supervisor' : 'Combined'}
+                              {result.assessmentType === 'SelfAssessment' ? 'Self' :
+                                result.assessmentType === 'SupervisorOnly' ? 'Supervisor' : 'Combined'}
                             </span>
                           </td>
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-3">
                               <div className="w-16">
                                 <div className="progress-bar">
-                                  <div 
-                                    className={`progress-fill ${
-                                      result.assessmentType === 'Combined' ? 'bg-purple-600' : 'bg-brand-red'
-                                    }`} 
-                                    style={{ width: `${result.finalScore}%` }} 
+                                  <div
+                                    className={`progress-fill ${result.assessmentType === 'Combined' ? 'bg-purple-600' : 'bg-brand-red'
+                                      }`}
+                                    style={{ width: `${result.finalScore}%` }}
                                   />
                                 </div>
                               </div>
@@ -939,11 +965,11 @@ export default function Results() {
                           {isAdmin && (
                             <td className="px-6 py-4">
                               {result.status === 'PENDING' && (
-                                <button 
-                                  onClick={() => finalise(result._id)} 
+                                <button
+                                  onClick={() => finalise(result._id)}
                                   className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-brand-red text-white rounded-lg hover:bg-brand-red-dark transition-colors"
                                 >
-                                  <CheckCircle2 className="w-3.5 h-3.5" /> 
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
                                   Finalise
                                 </button>
                               )}
@@ -966,7 +992,7 @@ export default function Results() {
                 {Math.min(pagination.page * pagination.limit, pagination.total)} of{' '}
                 <span className="font-medium">{pagination.total}</span> results
               </div>
-              
+
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => goToPage(pagination.page - 1)}
@@ -975,7 +1001,7 @@ export default function Results() {
                 >
                   <ChevronLeft className="w-4 h-4" /> Previous
                 </button>
-                
+
                 <div className="flex items-center gap-1">
                   {Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
                     let pageNum;
@@ -985,23 +1011,22 @@ export default function Results() {
                       const start = Math.max(1, Math.min(pagination.page - 2, pagination.totalPages - 4));
                       pageNum = start + i;
                     }
-                    
+
                     return (
                       <button
                         key={pageNum}
                         onClick={() => goToPage(pageNum)}
-                        className={`w-9 h-9 rounded-lg text-sm font-medium transition-colors ${
-                          pagination.page === pageNum
+                        className={`w-9 h-9 rounded-lg text-sm font-medium transition-colors ${pagination.page === pageNum
                             ? 'bg-brand-red text-white'
                             : 'border border-gray-300 text-gray-700 hover:bg-gray-50'
-                        }`}
+                          }`}
                       >
                         {pageNum}
                       </button>
                     );
                   })}
                 </div>
-                
+
                 <button
                   onClick={() => goToPage(pagination.page + 1)}
                   disabled={pagination.page === pagination.totalPages}
@@ -1029,13 +1054,13 @@ export default function Results() {
               </div>
             </div>
           </div>
-          
+
           <div className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs text-gray-500 uppercase font-medium">Average Score</p>
                 <p className="text-2xl font-bold text-gray-900 mt-1">
-                  {results.length > 0 
+                  {results.length > 0
                     ? Math.round(results.reduce((acc, r) => acc + r.finalScore, 0) / results.length)
                     : 0}%
                 </p>
@@ -1045,7 +1070,7 @@ export default function Results() {
               </div>
             </div>
           </div>
-          
+
           <div className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm">
             <div className="flex items-center justify-between">
               <div>
@@ -1059,7 +1084,7 @@ export default function Results() {
               </div>
             </div>
           </div>
-          
+
           <div className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm">
             <div className="flex items-center justify-between">
               <div>
