@@ -4,8 +4,8 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import useAssessmentSecurity from '../hooks/useAssessmentSecurity';
 import {
-  CheckCircle, ArrowLeft, ArrowRight, Star, AlertTriangle, Clock, Shield,
-  TrendingUp, Award, FileText, Check, ChevronLeft, ChevronRight
+  CheckCircle, ArrowLeft, Star, AlertTriangle, Clock, Shield,
+  TrendingUp, Award, FileText, Check, ChevronLeft, ChevronRight, X
 } from 'lucide-react';
 import SecurityMonitor from '../components/SecurityMonitor';
 import { exportToPDF, generateFilename } from '../utils/exportUtils';
@@ -26,6 +26,7 @@ export default function TakeAssessment() {
   const [showWarning, setShowWarning] = useState(false);
   const [securityAcknowledged, setSecurityAcknowledged] = useState(false);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [showSubmitWarning, setShowSubmitWarning] = useState(false);
   const debounceRef = useRef({});
 
   const respondentType = user?.role === 'SUPERVISOR' ? 'supervisor' : 'self';
@@ -69,6 +70,31 @@ export default function TakeAssessment() {
     load();
   }, [assessmentId]);
 
+  // Handle browser back button
+  useEffect(() => {
+    const handleBeforeUnload = (e) => {
+      if (!submitted) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+
+    const handlePopState = async (e) => {
+      if (!submitted) {
+        e.preventDefault();
+        await handleSubmit(true); // Auto-submit on back
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('popstate', handlePopState);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [submitted, answers]);
+
   const checkResult = async () => {
     try {
       const { data } = await api.get(`/results/user/${user._id}`);
@@ -81,7 +107,7 @@ export default function TakeAssessment() {
 
   useEffect(() => {
     if (security.timeExpired && !submitted) {
-      handleSubmit();
+      handleSubmit(true);
     }
   }, [security.timeExpired]);
 
@@ -112,7 +138,7 @@ export default function TakeAssessment() {
     autoSave(questionId, value);
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (forceSubmit = false) => {
     const questions = assessment?.questionIds || [];
     const unanswered = questions.filter((q) => {
       const ans = answers[q._id];
@@ -122,8 +148,8 @@ export default function TakeAssessment() {
       return false;
     });
 
-    if (unanswered.length > 0 && !security.timeExpired) {
-      show(`Please answer all ${unanswered.length} remaining question(s).`, 'warning');
+    if (unanswered.length > 0 && !security.timeExpired && !forceSubmit) {
+      setShowSubmitWarning(true);
       return;
     }
 
@@ -137,6 +163,7 @@ export default function TakeAssessment() {
       });
 
       setSubmitted(true);
+      setShowSubmitWarning(false);
       show('Assessment submitted successfully!', 'success');
 
       if (assessment.type === 'SelfAssessment') {
@@ -214,7 +241,6 @@ export default function TakeAssessment() {
     security.requestFullscreen();
   };
 
-  // Navigation functions
   const goToQuestion = (index) => {
     setCurrentQuestionIndex(index);
   };
@@ -231,7 +257,6 @@ export default function TakeAssessment() {
     }
   };
 
-  // Check if current question is answered
   const isCurrentQuestionAnswered = () => {
     const currentQ = questions[currentQuestionIndex];
     if (!currentQ) return false;
@@ -243,7 +268,7 @@ export default function TakeAssessment() {
     return true;
   };
 
-  // Render question based on type - COMPRESSED VERSION
+  // Render question based on type
   const renderQuestion = (q) => {
     switch (q.type) {
       case 'MCQ':
@@ -393,93 +418,125 @@ export default function TakeAssessment() {
 
       case 'Matching':
         return (
-          <div className="space-y-2">
-            <p className="text-[10px] text-gray-600 mb-2">Match items from left to right</p>
-            {(q.matchingLeft || []).map((leftItem, idx) => {
-              const currentMatch = (answers[q._id] || {})[leftItem];
-              return (
-                <div key={idx} className="flex items-center gap-2">
-                  <div className="flex-1 p-2 bg-gray-50 rounded border border-gray-200 text-xs">
-                    {leftItem}
+          <div className="space-y-3">
+            <p className="text-[10px] text-gray-600 mb-2 flex items-center gap-2">
+              <span className="font-semibold">Match items from left to right</span>
+              <span className="text-gray-400">•</span>
+              <span>Items will be shuffled for security</span>
+            </p>
+            <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+              {(q.matchingLeft || []).map((leftItem, idx) => {
+                const currentMatch = (answers[q._id] || {})[leftItem];
+                return (
+                  <div key={idx} className="flex items-center gap-2 mb-2 last:mb-0">
+                    <div className="flex-1 p-2.5 bg-white rounded border border-gray-300 text-xs font-medium text-gray-800">
+                      {leftItem}
+                    </div>
+                    <span className="text-gray-400 text-lg">↔</span>
+                    <select
+                      value={currentMatch || ''}
+                      onChange={(e) => {
+                        const updated = { ...(answers[q._id] || {}), [leftItem]: e.target.value };
+                        handleAnswer(q._id, updated);
+                      }}
+                      className="flex-1 h-10 px-3 rounded border border-gray-300 focus:border-brand-red focus:ring focus:ring-brand-red/20 text-xs bg-white"
+                    >
+                      <option value="">— Select match —</option>
+                      {(q.matchingRight || []).map((rightItem) => (
+                        <option key={rightItem} value={rightItem}>{rightItem}</option>
+                      ))}
+                    </select>
                   </div>
-                  <span className="text-gray-400 text-sm">↔</span>
-                  <select
-                    value={currentMatch || ''}
-                    onChange={(e) => {
-                      const updated = { ...(answers[q._id] || {}), [leftItem]: e.target.value };
-                      handleAnswer(q._id, updated);
-                    }}
-                    className="flex-1 h-8 px-2 rounded border border-gray-200 focus:border-brand-red focus:ring focus:ring-brand-red/20 text-xs"
-                  >
-                    <option value="">— Select —</option>
-                    {(q.matchingRight || []).map((rightItem) => (
-                      <option key={rightItem} value={rightItem}>{rightItem}</option>
-                    ))}
-                  </select>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
+            <p className="text-[10px] text-gray-500 italic">
+              Match each item on the left with its corresponding item on the right
+            </p>
           </div>
         );
 
       case 'Ordering':
         return (
-          <div className="space-y-2">
-            <p className="text-[10px] text-gray-600 mb-2">Arrange in correct order (1 = first)</p>
-            {(q.orderItems || []).map((item, idx) => {
-              const currentOrder = (answers[q._id] || {})[item];
-              return (
-                <div key={idx} className="flex items-center gap-2">
-                  <select
-                    value={currentOrder || ''}
-                    onChange={(e) => {
-                      const updated = { ...(answers[q._id] || {}), [item]: parseInt(e.target.value, 10) };
-                      handleAnswer(q._id, updated);
-                    }}
-                    className="w-16 h-8 px-2 rounded border border-gray-200 focus:border-brand-red focus:ring focus:ring-brand-red/20 text-xs text-center"
-                  >
-                    <option value="">—</option>
-                    {(q.orderItems || []).map((_, i) => (
-                      <option key={i} value={i + 1}>{i + 1}</option>
-                    ))}
-                  </select>
-                  <div className="flex-1 p-2 bg-gray-50 rounded border border-gray-200 text-xs">
-                    {item}
+          <div className="space-y-3">
+            <p className="text-[10px] text-gray-600 mb-2 flex items-center gap-2">
+              <span className="font-semibold">Arrange items in correct order</span>
+              <span className="text-gray-400">•</span>
+              <span>1 = first, {(q.orderItems || []).length} = last</span>
+            </p>
+            <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+              {(q.orderItems || []).map((item, idx) => {
+                const currentOrder = (answers[q._id] || {})[item];
+                return (
+                  <div key={idx} className="flex items-center gap-2 mb-2 last:mb-0">
+                    <select
+                      value={currentOrder || ''}
+                      onChange={(e) => {
+                        const updated = { ...(answers[q._id] || {}), [item]: parseInt(e.target.value, 10) };
+                        handleAnswer(q._id, updated);
+                      }}
+                      className="w-20 h-10 px-2 rounded border border-gray-300 focus:border-brand-red focus:ring focus:ring-brand-red/20 text-xs text-center font-semibold bg-white"
+                    >
+                      <option value="">—</option>
+                      {(q.orderItems || []).map((_, i) => (
+                        <option key={i} value={i + 1}>{i + 1}</option>
+                      ))}
+                    </select>
+                    <div className="flex-1 p-2.5 bg-white rounded border border-gray-300 text-xs font-medium text-gray-800">
+                      {item}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
+            <p className="text-[10px] text-gray-500 italic">
+              Assign a position number to each item (items are shuffled)
+            </p>
           </div>
         );
 
       case 'DragDropClassification':
         return (
-          <div className="space-y-2">
-            <p className="text-[10px] text-gray-600 mb-2">Classify each item</p>
-            {(q.classificationItems || []).map((item, idx) => {
-              const currentCategory = (answers[q._id] || {})[item];
-              return (
-                <div key={idx} className="flex items-center gap-2">
-                  <div className="flex-1 p-2 bg-gray-50 rounded border border-gray-200 text-xs">
-                    {item}
+          <div className="space-y-3">
+            <p className="text-[10px] text-gray-600 mb-2 flex items-center gap-2">
+              <span className="font-semibold">Classify each item into a category</span>
+              <span className="text-gray-400">•</span>
+              <span>Items are shuffled</span>
+            </p>
+            <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+              {(q.classificationItems || []).map((item, idx) => {
+                const currentCategory = (answers[q._id] || {})[item];
+                return (
+                  <div key={idx} className="flex items-center gap-2 mb-2 last:mb-0">
+                    <div className="flex-1 p-2.5 bg-white rounded border border-gray-300 text-xs font-medium text-gray-800">
+                      {item}
+                    </div>
+                    <span className="text-gray-400 text-lg">→</span>
+                    <select
+                      value={currentCategory || ''}
+                      onChange={(e) => {
+                        const updated = { ...(answers[q._id] || {}), [item]: e.target.value };
+                        handleAnswer(q._id, updated);
+                      }}
+                      className="flex-1 h-10 px-3 rounded border border-gray-300 focus:border-brand-red focus:ring focus:ring-brand-red/20 text-xs bg-white"
+                    >
+                      <option value="">— Select category —</option>
+                      {(q.categoryNames || []).map((cat) => (
+                        <option key={cat} value={cat}>{cat}</option>
+                      ))}
+                    </select>
                   </div>
-                  <span className="text-gray-400 text-sm">→</span>
-                  <select
-                    value={currentCategory || ''}
-                    onChange={(e) => {
-                      const updated = { ...(answers[q._id] || {}), [item]: e.target.value };
-                      handleAnswer(q._id, updated);
-                    }}
-                    className="flex-1 h-8 px-2 rounded border border-gray-200 focus:border-brand-red focus:ring focus:ring-brand-red/20 text-xs"
-                  >
-                    <option value="">— Select —</option>
-                    {(q.categoryNames || []).map((cat) => (
-                      <option key={cat} value={cat}>{cat}</option>
-                    ))}
-                  </select>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
+            <div className="flex flex-wrap gap-2 mt-2">
+              <span className="text-[10px] text-gray-500">Available categories:</span>
+              {(q.categoryNames || []).map((cat, i) => (
+                <span key={i} className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-medium">
+                  {cat}
+                </span>
+              ))}
+            </div>
           </div>
         );
 
@@ -512,7 +569,7 @@ export default function TakeAssessment() {
   const progressPercent = questions.length > 0 ? Math.round((answeredCount / questions.length) * 100) : 0;
   const isLastQuestion = currentQuestionIndex === questions.length - 1;
 
-  // Security acknowledgment screen - COMPRESSED
+  // Security acknowledgment screen
   if (!securityAcknowledged && !submitted) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
@@ -564,7 +621,7 @@ export default function TakeAssessment() {
               <div className="flex gap-2">
                 <AlertTriangle className="w-4 h-4 text-yellow-600 flex-shrink-0 mt-0.5" />
                 <div className="text-[10px] text-yellow-800">
-                  <strong>Note:</strong> Multiple violations will be flagged.
+                  <strong>Note:</strong> Multiple violations will be flagged. Using the back button will auto-submit your assessment.
                 </div>
               </div>
             </div>
@@ -589,7 +646,7 @@ export default function TakeAssessment() {
     );
   }
 
-  // Result display screens - COMPRESSED
+  // Result display screens
   if (submitted && assessment.type === 'SelfAssessment') {
     if (scoringInProgress) {
       return (
@@ -733,7 +790,7 @@ export default function TakeAssessment() {
     );
   }
 
-  // Main assessment interface - COMPRESSED
+  // Main assessment interface
   return (
     <div className="min-h-screen bg-gray-50">
       {showWarning && (
@@ -750,12 +807,55 @@ export default function TakeAssessment() {
 
       <SecurityMonitor violations={security.violations} isHighRisk={security.isHighRisk} />
 
-      {/* Header - COMPRESSED */}
+      {/* Submit Warning Modal */}
+      {showSubmitWarning && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-lg max-w-md w-full p-6">
+            <div className="w-12 h-12 rounded-full bg-yellow-100 flex items-center justify-center mx-auto mb-4">
+              <AlertTriangle className="w-6 h-6 text-yellow-600" />
+            </div>
+            <h3 className="text-lg font-bold text-brand-black text-center mb-2">
+              Incomplete Assessment
+            </h3>
+            <p className="text-sm text-gray-600 text-center mb-4">
+              You have {questions.length - answeredCount} unanswered question{questions.length - answeredCount !== 1 ? 's' : ''}. 
+              Unanswered questions will receive 0 points.
+            </p>
+            <div className="bg-blue-50 border-l-4 border-blue-500 p-3 rounded mb-4">
+              <p className="text-xs text-blue-900">
+                You can go back and answer remaining questions, or submit now with incomplete answers.
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowSubmitWarning(false)}
+                className="flex-1 py-2.5 border border-gray-300 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-50"
+              >
+                Go Back
+              </button>
+              <button
+                onClick={() => handleSubmit(true)}
+                className="flex-1 py-2.5 bg-brand-red text-white rounded-lg text-sm font-semibold hover:bg-brand-red-dark"
+              >
+                Submit Anyway
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Header */}
       <div className={`sticky ${showWarning ? 'top-8' : 'top-0'} z-40 bg-white border-b border-gray-200 shadow-sm`}>
         <div className="max-w-4xl mx-auto px-4 py-2">
           <div className="flex justify-between items-center mb-2">
             <button 
-              onClick={() => nav('/assessments')} 
+              onClick={async () => {
+                if (!submitted) {
+                  await handleSubmit(true);
+                } else {
+                  nav('/assessments');
+                }
+              }}
               className="flex items-center gap-1 text-xs text-gray-600 hover:text-brand-red"
             >
               <ArrowLeft className="w-3 h-3" /> Back
@@ -799,7 +899,7 @@ export default function TakeAssessment() {
         </div>
       </div>
 
-      {/* Question Display - COMPRESSED */}
+      {/* Question Display */}
       <div className="max-w-4xl mx-auto px-4 py-4">
         <div className="bg-white rounded-xl shadow border border-gray-100 overflow-hidden">
           {/* Question Header */}
@@ -822,7 +922,7 @@ export default function TakeAssessment() {
             {renderQuestion(currentQuestion)}
           </div>
 
-          {/* Navigation Footer - COMPRESSED */}
+          {/* Navigation Footer */}
           <div className="bg-gray-50 px-5 py-3 border-t border-gray-200">
             <div className="flex justify-between items-center">
               <button
@@ -853,7 +953,7 @@ export default function TakeAssessment() {
                 </button>
               ) : (
                 <button
-                  onClick={handleSubmit}
+                  onClick={() => handleSubmit(false)}
                   disabled={security.timeRemaining === 0 && answeredCount < questions.length}
                   className="px-5 py-2 bg-green-600 text-white rounded-lg text-xs font-bold hover:bg-green-700 disabled:opacity-50"
                 >
@@ -864,7 +964,7 @@ export default function TakeAssessment() {
           </div>
         </div>
 
-        {/* Question Navigator - COMPRESSED */}
+        {/* Question Navigator */}
         <div className="mt-4 bg-white rounded-xl shadow border border-gray-100 p-3">
           <h3 className="text-xs font-bold text-brand-black mb-2">Navigator</h3>
           <div className="grid grid-cols-10 gap-1">

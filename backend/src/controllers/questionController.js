@@ -1,11 +1,12 @@
+// controllers/questionController.js
 import Question from '../models/Question.js';
 import AppError from '../utils/AppError.js';
 import asyncHandler from '../utils/asyncHandler.js';
 
-// Fields that contain answer keys (hidden by default via select:false)
-const SECRET_FIELDS = '+correctAnswer +correctAnswers +matchingPairs +correctOrder +categories';
+const SECRET_FIELDS =
+  '+correctAnswer +correctAnswers +matchingPairs +correctOrder +categories';
 
-// ─── LIST ─────────────────────────────────────────────────────────────────────
+// ───────────────────────── GET LIST ─────────────────────────
 export const getQuestions = asyncHandler(async (req, res) => {
   const { competencyId, type, page = 1, limit = 30 } = req.query;
 
@@ -13,14 +14,13 @@ export const getQuestions = asyncHandler(async (req, res) => {
   if (competencyId) filter.competencyId = competencyId;
   if (type) filter.type = type;
 
-  const skip = (parseInt(page, 10) - 1) * parseInt(limit, 10);
+  const skip = (page - 1) * limit;
 
   const [questions, total] = await Promise.all([
     Question.find(filter)
       .populate('competencyId', 'name category')
-      // correctAnswer / correctAnswers / etc. are NOT selected here – safe for any role
-      .skip(skip)
-      .limit(parseInt(limit, 10))
+      .skip(parseInt(skip))
+      .limit(parseInt(limit))
       .sort({ createdAt: -1 })
       .lean(),
     Question.countDocuments(filter),
@@ -30,95 +30,78 @@ export const getQuestions = asyncHandler(async (req, res) => {
     status: 'success',
     data: {
       questions,
-      pagination: { total, page: parseInt(page, 10), limit: parseInt(limit, 10) },
+      pagination: { total, page: +page, limit: +limit },
     },
   });
 });
 
-// ─── GET ONE ─────────────────────────────────────────────────────────────────
-// HR_ADMIN can see all answer keys; others cannot.
+// ───────────────────────── GET ONE ─────────────────────────
 export const getQuestion = asyncHandler(async (req, res, next) => {
-  let query = Question.findById(req.params.id).populate('competencyId', 'name category');
+  let query = Question.findById(req.params.id).populate(
+    'competencyId',
+    'name category'
+  );
 
-  // Only HR_ADMIN sees the answer keys
   if (req.user.role === 'HR_ADMIN') {
     query = query.select(SECRET_FIELDS);
   }
 
   const question = await query.lean();
+
   if (!question) return next(new AppError('Question not found.', 404));
 
   res.status(200).json({ status: 'success', data: { question } });
 });
 
-// ─── CREATE ──────────────────────────────────────────────────────────────────
-export const createQuestion = asyncHandler(async (req, res, next) => {
-  const {
-    competencyId,
-    type,
-    text,
-    score,
-    options,
-    correctAnswer,
-    correctAnswers,
-    scenario,
-    matchingPairs,
-    correctOrder,
-    categories,
-  } = req.body;
-
-  const question = await Question.create({
-    competencyId,
-    type,
-    text,
-    score: score ?? 1,
-    options: options || [],
-    correctAnswer: correctAnswer || null,
-    correctAnswers: correctAnswers || [],
-    scenario: scenario || '',
-    matchingPairs: matchingPairs || [],
-    correctOrder: correctOrder || [],
-    categories: categories || null,
-  });
+// ───────────────────────── CREATE SINGLE ─────────────────────────
+export const createQuestion = asyncHandler(async (req, res) => {
+  const question = new Question(req.body);
+  await question.save();
 
   res.status(201).json({ status: 'success', data: { question } });
 });
 
-// ─── UPDATE ──────────────────────────────────────────────────────────────────
-export const updateQuestion = asyncHandler(async (req, res, next) => {
-  const allowedFields = [
-    'text',
-    'type',
-    'score',
-    'options',
-    'correctAnswer',
-    'correctAnswers',
-    'scenario',
-    'matchingPairs',
-    'correctOrder',
-    'categories',
-  ];
+// ───────────────────────── CREATE BATCH (FIXED) ─────────────────────────
+export const batchCreateQuestions = asyncHandler(async (req, res, next) => {
+  const { questions } = req.body;
 
-  const updates = {};
-  allowedFields.forEach((f) => {
-    if (req.body[f] !== undefined) updates[f] = req.body[f];
-  });
-
-  if (Object.keys(updates).length === 0) {
-    return next(new AppError('No valid fields to update.', 400));
+  if (!Array.isArray(questions) || questions.length === 0) {
+    return next(new AppError('Questions array required.', 400));
   }
 
-  // Use findById + save so that the pre-save hook runs (shuffles, validates)
-  const question = await Question.findById(req.params.id).select(SECRET_FIELDS);
+  const created = [];
+
+  for (const q of questions) {
+    const doc = new Question(q);
+    await doc.save(); // ✅ triggers middleware
+    created.push(doc);
+  }
+
+  res.status(201).json({
+    status: 'success',
+    data: {
+      count: created.length,
+      questions: created,
+    },
+  });
+});
+
+// ───────────────────────── UPDATE ─────────────────────────
+export const updateQuestion = asyncHandler(async (req, res, next) => {
+  const question = await Question.findById(req.params.id).select(
+    SECRET_FIELDS
+  );
+
   if (!question) return next(new AppError('Question not found.', 404));
 
-  Object.assign(question, updates);
-  await question.save();
+  Object.assign(question, req.body);
+
+  await question.save(); // ✅ triggers middleware again
 
   res.status(200).json({ status: 'success', data: { question } });
 });
 
-// ─── DELETE ───────────────────────────────────────────────────────────────────
+// ───────────────────────── DELETE ─────────────────────────
 export const deleteQuestion = asyncHandler(async (req, res, next) => {
   const question = await Question.findByIdAndDelete(req.params.id);
   if (!question) return next(new AppError('Question not found.', 404));

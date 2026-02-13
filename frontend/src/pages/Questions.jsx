@@ -1,3 +1,4 @@
+// pages/Questions.jsx
 import { useState, useEffect, useCallback } from 'react';
 import { Plus, Edit2, Trash2, ChevronLeft, ChevronRight, GripVertical, X } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
@@ -8,7 +9,6 @@ const TYPES = [
   'MCQ',
   'Rating',
   'TrueFalse',
-  'ShortAnswer',
   'MultiSelect',
   'Matching',
   'Ordering',
@@ -20,7 +20,6 @@ const TYPE_LABELS = {
   MCQ: 'Multiple Choice',
   Rating: 'Rating (1-5)',
   TrueFalse: 'True / False',
-  ShortAnswer: 'Short Answer',
   MultiSelect: 'Multi-Select',
   Matching: 'Matching',
   Ordering: 'Ordering',
@@ -32,7 +31,6 @@ const TYPE_BADGES = {
   MCQ: 'bg-blue-100 text-blue-700',
   Rating: 'bg-amber-100 text-amber-700',
   TrueFalse: 'bg-emerald-100 text-emerald-700',
-  ShortAnswer: 'bg-purple-100 text-purple-700',
   MultiSelect: 'bg-cyan-100 text-cyan-700',
   Matching: 'bg-rose-100 text-rose-700',
   Ordering: 'bg-orange-100 text-orange-700',
@@ -40,24 +38,24 @@ const TYPE_BADGES = {
   DragDropClassification: 'bg-teal-100 text-teal-700',
 };
 
-// ─── Default form state ─────────────────────────────────────────────────────
-const initForm = () => ({
-  competencyId: '',
+// ─── Default form state for a single question ──────────────────────────────
+const initQuestionForm = () => ({
   type: 'MCQ',
   text: '',
   score: 1,
   options: ['', '', '', ''],
   correctAnswer: '',
-  // MultiSelect
   correctAnswers: [],
-  // ScenarioMCQ
   scenario: '',
-  // Matching
   matchingPairs: [{ left: '', right: '' }, { left: '', right: '' }],
-  // Ordering
   correctOrder: ['', ''],
-  // DragDropClassification
   categories: { '': [''] },
+});
+
+// ─── Default batch form state ──────────────────────────────────────────────
+const initBatchForm = () => ({
+  competencyId: '',
+  questions: [initQuestionForm()],
 });
 
 export default function Questions() {
@@ -68,15 +66,15 @@ export default function Questions() {
   const [filterType, setFilterType] = useState('');
   const [modal, setModal] = useState(null);   // 'create' | 'edit' | null
   const [selected, setSelected] = useState(null);
-  const [deleteModal, setDeleteModal] = useState(null);   // question to delete
+  const [deleteModal, setDeleteModal] = useState(null);
   const { show } = useToast();
 
-  // Pagination
   const [pagination, setPagination] = useState({
     page: 1, limit: 10, total: 0, totalPages: 0,
   });
 
-  const [form, setForm] = useState(initForm());
+  const [batchForm, setBatchForm] = useState(initBatchForm());
+  const [editForm, setEditForm] = useState(null);
 
   // ─── Fetch competencies once ────────────────────────────────────────────
   useEffect(() => {
@@ -113,12 +111,12 @@ export default function Questions() {
 
   // ─── Modal helpers ──────────────────────────────────────────────────────
   const openCreate = () => {
-    setForm(initForm());
+    setBatchForm(initBatchForm());
     setModal('create');
   };
 
   const openEdit = (q) => {
-    setForm({
+    const form = {
       competencyId: q.competencyId?._id || '',
       type: q.type,
       text: q.text,
@@ -132,62 +130,57 @@ export default function Questions() {
         : [{ left: '', right: '' }, { left: '', right: '' }],
       correctOrder: q.correctOrder?.length ? [...q.correctOrder] : ['', ''],
       categories: q.categories || { '': [''] },
-    });
+    };
+    setEditForm(form);
     setSelected(q);
     setModal('edit');
   };
 
-  // ─── Build payload for create / update ──────────────────────────────────
-  const buildPayload = () => {
+  // ─── Build payload for a single question ───────────────────────────────
+  const buildQuestionPayload = (q, competencyId) => {
     const base = {
-      competencyId: form.competencyId,
-      type: form.type,
-      text: form.text,
-      score: Number(form.score) || 1,
+      competencyId,
+      type: q.type,
+      text: q.text,
+      score: Number(q.score) || 1,
     };
 
-    switch (form.type) {
+    switch (q.type) {
       case 'MCQ':
+      case 'ScenarioMCQ':
         return {
           ...base,
-          options: form.options.filter(Boolean),
-          correctAnswer: form.correctAnswer || null,
+          scenario: q.type === 'ScenarioMCQ' ? q.scenario : undefined,
+          options: q.options.filter(Boolean),
+          correctAnswer: q.correctAnswer || null,
         };
       case 'TrueFalse':
         return {
           ...base,
           options: ['True', 'False'],
-          correctAnswer: form.correctAnswer || null,
+          correctAnswer: q.correctAnswer || null,
         };
       case 'Rating':
-      case 'ShortAnswer':
         return base;
       case 'MultiSelect':
         return {
           ...base,
-          options: form.options.filter(Boolean),
-          correctAnswers: form.correctAnswers.filter(Boolean),
+          options: q.options.filter(Boolean),
+          correctAnswers: q.correctAnswers.filter(Boolean),
         };
       case 'Matching':
         return {
           ...base,
-          matchingPairs: form.matchingPairs.filter((p) => p.left && p.right),
+          matchingPairs: q.matchingPairs.filter((p) => p.left && p.right),
         };
       case 'Ordering':
         return {
           ...base,
-          correctOrder: form.correctOrder.filter(Boolean),
-        };
-      case 'ScenarioMCQ':
-        return {
-          ...base,
-          scenario: form.scenario,
-          options: form.options.filter(Boolean),
-          correctAnswer: form.correctAnswer || null,
+          correctOrder: q.correctOrder.filter(Boolean),
         };
       case 'DragDropClassification': {
         const cats = {};
-        Object.entries(form.categories).forEach(([cat, items]) => {
+        Object.entries(q.categories).forEach(([cat, items]) => {
           const trimmed = cat.trim();
           if (trimmed) cats[trimmed] = (items || []).filter((i) => i.trim());
         });
@@ -198,14 +191,25 @@ export default function Questions() {
     }
   };
 
-  // ─── Save ───────────────────────────────────────────────────────────────
+  // ─── Save (batch create or single edit) ────────────────────────────────
   const handleSave = async () => {
     try {
-      const payload = buildPayload();
       if (modal === 'create') {
-        await api.post('/questions', payload);
-        show('Question created.', 'success');
+        // Batch create
+        const questions = batchForm.questions
+          .filter(q => q.text.trim())
+          .map(q => buildQuestionPayload(q, batchForm.competencyId));
+
+        if (questions.length === 0) {
+          show('Please add at least one question.', 'error');
+          return;
+        }
+
+        await api.post('/questions/batch', { questions });
+        show(`${questions.length} question(s) created successfully.`, 'success');
       } else {
+        // Single edit
+        const payload = buildQuestionPayload(editForm, editForm.competencyId);
         await api.put(`/questions/${selected._id}`, payload);
         show('Question updated.', 'success');
       }
@@ -216,7 +220,7 @@ export default function Questions() {
     }
   };
 
-  // ─── Delete (custom confirm modal, no window.confirm) ──────────────────
+  // ─── Delete ─────────────────────────────────────────────────────────────
   const confirmDelete = (q) => setDeleteModal(q);
 
   const handleDelete = async () => {
@@ -230,6 +234,28 @@ export default function Questions() {
       show(err.response?.data?.message || 'Failed.', 'error');
       setDeleteModal(null);
     }
+  };
+
+  // ─── Batch form helpers ─────────────────────────────────────────────────
+  const addQuestion = () => {
+    setBatchForm({
+      ...batchForm,
+      questions: [...batchForm.questions, initQuestionForm()],
+    });
+  };
+
+  const removeQuestion = (index) => {
+    if (batchForm.questions.length <= 1) return;
+    setBatchForm({
+      ...batchForm,
+      questions: batchForm.questions.filter((_, i) => i !== index),
+    });
+  };
+
+  const updateQuestion = (index, updates) => {
+    const questions = [...batchForm.questions];
+    questions[index] = { ...questions[index], ...updates };
+    setBatchForm({ ...batchForm, questions });
   };
 
   // ─── Pagination ─────────────────────────────────────────────────────────
@@ -246,18 +272,34 @@ export default function Questions() {
   const handleFilterType = (v) => { setFilterType(v); setPagination((p) => ({ ...p, page: 1 })); };
 
   // ─── Type-specific form sections ────────────────────────────────────────
-  const renderOptions = () => {
+  const renderQuestionOptions = (q, index, isEdit = false) => {
+    const form = isEdit ? editForm : q;
+    const setForm = isEdit 
+      ? setEditForm 
+      : (updates) => updateQuestion(index, updates);
+
     switch (form.type) {
-      // ─── MCQ ──────────────────────────────────────────────────────────
       case 'MCQ':
+      case 'ScenarioMCQ':
         return (
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Options & Correct Answer</label>
+            {form.type === 'ScenarioMCQ' && (
+              <div className="mb-3">
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Scenario</label>
+                <textarea
+                  rows={3}
+                  value={form.scenario}
+                  onChange={(e) => setForm({ ...form, scenario: e.target.value })}
+                  placeholder="Describe the scenario..."
+                  className="w-full px-3 py-2 rounded-lg border border-gray-300 focus-brand text-sm resize-none"
+                />
+              </div>
+            )}
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Options</label>
             {form.options.map((opt, i) => (
               <div key={i} className="flex items-center gap-2 mb-2">
                 <input
                   type="radio"
-                  name="correctAnswer"
                   checked={form.correctAnswer === opt && opt !== ''}
                   onChange={() => setForm({ ...form, correctAnswer: opt })}
                   className="w-4 h-4 text-brand-red focus:ring-brand-red"
@@ -287,11 +329,9 @@ export default function Questions() {
             ))}
             <button type="button" onClick={() => setForm({ ...form, options: [...form.options, ''] })}
               className="text-sm text-brand-red hover:underline mt-1">+ Add option</button>
-            <p className="text-xs text-gray-500 mt-1">Select the radio button to mark the correct answer.</p>
           </div>
         );
 
-      // ─── TrueFalse ───────────────────────────────────────────────────
       case 'TrueFalse':
         return (
           <div>
@@ -305,19 +345,13 @@ export default function Questions() {
           </div>
         );
 
-      // ─── Rating ───────────────────────────────────────────────────────
       case 'Rating':
-        return <p className="text-sm text-gray-500">Rating questions are scored on a 1–5 scale. No correct answer needed.</p>;
+        return <p className="text-sm text-gray-500">Rating questions are auto-scored proportionally (1-5 scale).</p>;
 
-      // ─── ShortAnswer ─────────────────────────────────────────────────
-      case 'ShortAnswer':
-        return <p className="text-sm text-gray-500">Short Answer questions require manual review by HR after submission.</p>;
-
-      // ─── MultiSelect ─────────────────────────────────────────────────
       case 'MultiSelect':
         return (
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Options (check all correct answers)</label>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Options (check correct answers)</label>
             {form.options.map((opt, i) => (
               <div key={i} className="flex items-center gap-2 mb-2">
                 <input
@@ -357,19 +391,18 @@ export default function Questions() {
             ))}
             <button type="button" onClick={() => setForm({ ...form, options: [...form.options, ''] })}
               className="text-sm text-brand-red hover:underline mt-1">+ Add option</button>
-            <p className="text-xs text-gray-500 mt-1">Check all options that are correct. Partial credit is awarded.</p>
+            <p className="text-xs text-gray-500 mt-1">Partial credit: hits minus misses.</p>
           </div>
         );
 
-      // ─── Matching ────────────────────────────────────────────────────
       case 'Matching':
         return (
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">Matching Pairs</label>
             <div className="grid grid-cols-[1fr_auto_1fr_auto] gap-2 items-center">
-              <span className="text-xs font-semibold text-gray-500 uppercase">Left (Term)</span>
+              <span className="text-xs font-semibold text-gray-500 uppercase">Left</span>
               <span />
-              <span className="text-xs font-semibold text-gray-500 uppercase">Right (Match)</span>
+              <span className="text-xs font-semibold text-gray-500 uppercase">Right</span>
               <span />
               {form.matchingPairs.map((pair, i) => (
                 <>
@@ -393,15 +426,14 @@ export default function Questions() {
             </div>
             <button type="button" onClick={() => setForm({ ...form, matchingPairs: [...form.matchingPairs, { left: '', right: '' }] })}
               className="text-sm text-brand-red hover:underline mt-2">+ Add pair</button>
-            <p className="text-xs text-gray-500 mt-1">Items will be shuffled when presented to the employee.</p>
+            <p className="text-xs text-gray-500 mt-1">Partial credit per correct pair.</p>
           </div>
         );
 
-      // ─── Ordering ────────────────────────────────────────────────────
       case 'Ordering':
         return (
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Items in Correct Order (top → bottom)</label>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Items in Correct Order</label>
             {form.correctOrder.map((item, i) => (
               <div key={i} className="flex items-center gap-2 mb-2">
                 <span className="w-7 h-7 flex items-center justify-center bg-gray-100 rounded text-xs font-bold text-gray-500">{i + 1}</span>
@@ -418,51 +450,10 @@ export default function Questions() {
             ))}
             <button type="button" onClick={() => setForm({ ...form, correctOrder: [...form.correctOrder, ''] })}
               className="text-sm text-brand-red hover:underline mt-1">+ Add item</button>
-            <p className="text-xs text-gray-500 mt-1">Items will be shuffled when presented. Partial credit per correct position.</p>
+            <p className="text-xs text-gray-500 mt-1">Partial credit per correct position.</p>
           </div>
         );
 
-      // ─── ScenarioMCQ ────────────────────────────────────────────────
-      case 'ScenarioMCQ':
-        return (
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Scenario / Case Study</label>
-              <textarea rows={4} value={form.scenario}
-                onChange={(e) => setForm({ ...form, scenario: e.target.value })}
-                placeholder="Describe the scenario or case study..."
-                className="w-full px-3 py-2 rounded-lg border border-gray-300 focus-brand text-sm resize-none" />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Options & Correct Answer</label>
-              {form.options.map((opt, i) => (
-                <div key={i} className="flex items-center gap-2 mb-2">
-                  <input type="radio" name="correctAnswer"
-                    checked={form.correctAnswer === opt && opt !== ''}
-                    onChange={() => setForm({ ...form, correctAnswer: opt })}
-                    className="w-4 h-4 text-brand-red focus:ring-brand-red" />
-                  <input value={opt}
-                    onChange={(e) => {
-                      const o = [...form.options]; const prev = o[i]; o[i] = e.target.value;
-                      setForm({ ...form, options: o, correctAnswer: form.correctAnswer === prev ? e.target.value : form.correctAnswer });
-                    }}
-                    placeholder={`Option ${String.fromCharCode(65 + i)}`}
-                    className="flex-1 h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm" />
-                  {form.options.length > 2 && (
-                    <button type="button" onClick={() => {
-                      const o = form.options.filter((_, idx) => idx !== i);
-                      setForm({ ...form, options: o, correctAnswer: form.correctAnswer === opt ? '' : form.correctAnswer });
-                    }} className="p-1 text-gray-400 hover:text-red-500"><X className="w-4 h-4" /></button>
-                  )}
-                </div>
-              ))}
-              <button type="button" onClick={() => setForm({ ...form, options: [...form.options, ''] })}
-                className="text-sm text-brand-red hover:underline mt-1">+ Add option</button>
-            </div>
-          </div>
-        );
-
-      // ─── DragDropClassification ──────────────────────────────────────
       case 'DragDropClassification':
         return (
           <div>
@@ -521,7 +512,7 @@ export default function Questions() {
               const newCats = { ...form.categories, '': [''] };
               setForm({ ...form, categories: newCats });
             }} className="text-sm text-brand-red hover:underline">+ Add category</button>
-            <p className="text-xs text-gray-500 mt-1">Items will be shuffled. Partial credit per correctly classified item.</p>
+            <p className="text-xs text-gray-500 mt-1">Partial credit per correctly classified item.</p>
           </div>
         );
 
@@ -543,7 +534,7 @@ export default function Questions() {
         </div>
         <button onClick={openCreate}
           className="flex items-center gap-2 px-5 py-2.5 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors">
-          <Plus className="w-4 h-4" /> Add Question
+          <Plus className="w-4 h-4" /> Add Questions
         </button>
       </div>
 
@@ -669,55 +660,74 @@ export default function Questions() {
         </div>
       )}
 
-      {/* ── Create / Edit Modal ──────────────────────────────────────────── */}
-      <Modal open={!!modal} onClose={() => setModal(null)} title={modal === 'create' ? 'New Question' : 'Edit Question'} large>
+      {/* ── Create Modal (Batch) ─────────────────────────────────────────── */}
+      <Modal open={modal === 'create'} onClose={() => setModal(null)} title="Add Questions" large>
         <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
-          {/* Row: Competency + Type */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Competency</label>
-              <select value={form.competencyId} onChange={(e) => setForm({ ...form, competencyId: e.target.value })}
-                className="w-full h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm">
-                <option value="">— Select —</option>
-                {competencies.map((c) => <option key={c._id} value={c._id}>{c.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Question Type</label>
-              <select
-                value={form.type}
-                onChange={(e) => setForm({
-                  ...initForm(),
-                  competencyId: form.competencyId,
-                  text: form.text,
-                  score: form.score,
-                  type: e.target.value,
-                })}
-                className="w-full h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm">
-                {TYPES.map((t) => <option key={t} value={t}>{TYPE_LABELS[t]}</option>)}
-              </select>
-            </div>
-          </div>
-
-          {/* Score */}
+          {/* Competency selector */}
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Score (point value)</label>
-            <input type="number" min="0" step="0.5" value={form.score}
-              onChange={(e) => setForm({ ...form, score: e.target.value })}
-              className="w-32 h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm" />
-            <p className="text-xs text-gray-500 mt-1">Points awarded for a fully correct answer.</p>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Competency (applies to all questions)</label>
+            <select value={batchForm.competencyId} onChange={(e) => setBatchForm({ ...batchForm, competencyId: e.target.value })}
+              className="w-full h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm">
+              <option value="">— Select —</option>
+              {competencies.map((c) => <option key={c._id} value={c._id}>{c.name}</option>)}
+            </select>
           </div>
 
-          {/* Question text */}
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Question Text</label>
-            <textarea rows={3} value={form.text} onChange={(e) => setForm({ ...form, text: e.target.value })}
-              placeholder="Enter the question..."
-              className="w-full px-3 py-2 rounded-lg border border-gray-300 focus-brand text-sm resize-none" />
-          </div>
+          {/* Questions */}
+          {batchForm.questions.map((q, idx) => (
+            <div key={idx} className="p-4 border border-gray-200 rounded-lg bg-gray-50">
+              <div className="flex justify-between items-center mb-3">
+                <h4 className="font-semibold text-gray-800">Question {idx + 1}</h4>
+                {batchForm.questions.length > 1 && (
+                  <button onClick={() => removeQuestion(idx)} className="text-red-600 hover:text-red-700 text-sm font-medium">
+                    Remove
+                  </button>
+                )}
+              </div>
 
-          {/* Type-specific fields */}
-          {renderOptions()}
+              <div className="space-y-3">
+                {/* Type & Score */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">Type</label>
+                    <select
+                      value={q.type}
+                      onChange={(e) => updateQuestion(idx, {
+                        ...initQuestionForm(),
+                        type: e.target.value,
+                        text: q.text,
+                        score: q.score,
+                      })}
+                      className="w-full h-9 px-2 rounded-lg border border-gray-300 focus-brand text-sm">
+                      {TYPES.map((t) => <option key={t} value={t}>{TYPE_LABELS[t]}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">Score</label>
+                    <input type="number" min="0" step="0.5" value={q.score}
+                      onChange={(e) => updateQuestion(idx, { score: e.target.value })}
+                      className="w-full h-9 px-2 rounded-lg border border-gray-300 focus-brand text-sm" />
+                  </div>
+                </div>
+
+                {/* Question text */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Question Text</label>
+                  <textarea rows={2} value={q.text} onChange={(e) => updateQuestion(idx, { text: e.target.value })}
+                    placeholder="Enter the question..."
+                    className="w-full px-2 py-1.5 rounded-lg border border-gray-300 focus-brand text-sm resize-none" />
+                </div>
+
+                {/* Type-specific options */}
+                {renderQuestionOptions(q, idx)}
+              </div>
+            </div>
+          ))}
+
+          <button onClick={addQuestion}
+            className="w-full py-2 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-brand-red hover:text-brand-red transition-colors font-medium">
+            + Add Another Question
+          </button>
         </div>
 
         {/* Footer */}
@@ -728,7 +738,67 @@ export default function Questions() {
           </button>
           <button onClick={handleSave}
             className="px-4 py-2 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors">
-            {modal === 'create' ? 'Create' : 'Save'}
+            Create {batchForm.questions.length} Question{batchForm.questions.length !== 1 ? 's' : ''}
+          </button>
+        </div>
+      </Modal>
+
+      {/* ── Edit Modal (Single) ───────────────────────────────────────────── */}
+      <Modal open={modal === 'edit'} onClose={() => setModal(null)} title="Edit Question" large>
+        {editForm && (
+          <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Competency</label>
+                <select value={editForm.competencyId} onChange={(e) => setEditForm({ ...editForm, competencyId: e.target.value })}
+                  className="w-full h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm">
+                  <option value="">— Select —</option>
+                  {competencies.map((c) => <option key={c._id} value={c._id}>{c.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Question Type</label>
+                <select
+                  value={editForm.type}
+                  onChange={(e) => setEditForm({
+                    ...initQuestionForm(),
+                    competencyId: editForm.competencyId,
+                    text: editForm.text,
+                    score: editForm.score,
+                    type: e.target.value,
+                  })}
+                  className="w-full h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm">
+                  {TYPES.map((t) => <option key={t} value={t}>{TYPE_LABELS[t]}</option>)}
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Score</label>
+              <input type="number" min="0" step="0.5" value={editForm.score}
+                onChange={(e) => setEditForm({ ...editForm, score: e.target.value })}
+                className="w-32 h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm" />
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Question Text</label>
+              <textarea rows={3} value={editForm.text} onChange={(e) => setEditForm({ ...editForm, text: e.target.value })}
+                placeholder="Enter the question..."
+                className="w-full px-3 py-2 rounded-lg border border-gray-300 focus-brand text-sm resize-none" />
+            </div>
+
+            {renderQuestionOptions(editForm, 0, true)}
+          </div>
+        )}
+
+        <div className="flex justify-end gap-3 mt-6">
+          <button onClick={() => setModal(null)}
+            className="px-4 py-2 border border-gray-300 rounded-lg font-semibold text-gray-700 hover:bg-gray-50 transition-colors">
+            Cancel
+          </button>
+          <button onClick={handleSave}
+            className="px-4 py-2 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors">
+            Save
           </button>
         </div>
       </Modal>
