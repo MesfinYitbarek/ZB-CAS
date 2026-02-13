@@ -27,7 +27,7 @@ const scoreSingleResponse = (question, response) => {
         // --- Partial Credit: Hits minus Misses ---
         case 'multiselect': {
             const correctSet = new Set(question.correctAnswers || []);
-            
+
             // Handle both array and object formats
             let selectedArray = [];
             if (Array.isArray(response.selectedAnswer)) {
@@ -35,16 +35,16 @@ const scoreSingleResponse = (question, response) => {
             } else if (response.selectedAnswer && typeof response.selectedAnswer === 'object') {
                 selectedArray = Object.values(response.selectedAnswer).filter(Boolean);
             }
-            
+
             const selectedSet = new Set(selectedArray);
             let hits = 0, misses = 0;
-            
+
             selectedSet.forEach(s => correctSet.has(s) ? hits++ : misses++);
-            
+
             // Avoid negative scores
             const netCorrect = Math.max(0, hits - misses);
             awarded = correctSet.size > 0 ? (netCorrect / correctSet.size) * maxScore : 0;
-            
+
             console.log(`      [Q-LOG] MULTI: Hits:${hits} Misses:${misses} | TotalCorrect:${correctSet.size} -> Score: ${awarded.toFixed(2)}/${maxScore}`);
             return awarded;
         }
@@ -53,14 +53,14 @@ const scoreSingleResponse = (question, response) => {
         case 'matching': {
             const pairs = question.matchingPairs || [];
             if (pairs.length === 0) return 0;
-            
+
             let correctCount = 0;
             const userPairs = response.selectedAnswer || {};
-            
+
             pairs.forEach(({ left, right }) => {
                 if (userPairs[left] === right) correctCount++;
             });
-            
+
             awarded = (correctCount / pairs.length) * maxScore;
             console.log(`      [Q-LOG] MATCHING: ${correctCount}/${pairs.length} pairs correct -> Score: ${awarded.toFixed(2)}/${maxScore}`);
             return awarded;
@@ -70,7 +70,7 @@ const scoreSingleResponse = (question, response) => {
         case 'ordering': {
             const correctOrder = question.correctOrder || [];
             if (correctOrder.length === 0) return 0;
-            
+
             // Handle both array and object formats
             let userOrder = [];
             if (Array.isArray(response.selectedAnswer)) {
@@ -78,12 +78,12 @@ const scoreSingleResponse = (question, response) => {
             } else if (response.selectedAnswer && typeof response.selectedAnswer === 'object') {
                 userOrder = Object.values(response.selectedAnswer);
             }
-            
+
             let correctPos = 0;
             for (let i = 0; i < Math.min(correctOrder.length, userOrder.length); i++) {
                 if (userOrder[i] === correctOrder[i]) correctPos++;
             }
-            
+
             awarded = (correctPos / correctOrder.length) * maxScore;
             console.log(`      [Q-LOG] ORDERING: ${correctPos}/${correctOrder.length} in correct sequence -> Score: ${awarded.toFixed(2)}/${maxScore}`);
             return awarded;
@@ -94,23 +94,31 @@ const scoreSingleResponse = (question, response) => {
             const cats = question.categories || {};
             const categoryNames = Object.keys(cats);
             if (categoryNames.length === 0) return 0;
-            
+
             let totalItems = 0, classificationHits = 0;
-            const userCategories = response.selectedAnswer || {};
-            
+            const userAnswer = response.selectedAnswer || {};
+
+            // --- Convert {item: category} to {category: [items]} ---
+            const userCategories = {};
+            categoryNames.forEach(cat => userCategories[cat] = []);
+            Object.entries(userAnswer).forEach(([item, cat]) => {
+                if (userCategories[cat]) userCategories[cat].push(item);
+            });
+
+            // --- Score ---
             Object.entries(cats).forEach(([catName, items]) => {
                 totalItems += items.length;
                 const userItems = userCategories[catName] || [];
-                
                 userItems.forEach(item => {
                     if (items.includes(item)) classificationHits++;
                 });
             });
-            
+
             awarded = totalItems > 0 ? (classificationHits / totalItems) * maxScore : 0;
-            console.log(`      [Q-LOG] DRAGDROP: ${classificationHits}/${totalItems} items correctly classified -> Score: ${awarded.toFixed(2)}/${maxScore}`);
+            console.log(`[Q-LOG] DRAGDROP: ${classificationHits}/${totalItems} items correct -> Score: ${awarded.toFixed(2)}/${maxScore}`);
             return awarded;
         }
+
 
         case 'shortanswer':
             awarded = Math.min(Math.max(Number(response.manualScore) || 0, 0), maxScore);
@@ -125,14 +133,14 @@ const scoreSingleResponse = (question, response) => {
 
 const computeRawScore = (questions, responses) => {
     let rawScore = 0, totalPossible = 0;
-    
+
     console.log(`\n   ╔═══ Question-by-Question Breakdown ═══╗`);
-    
+
     questions.forEach((q, idx) => {
         const resp = responses.find(r => r.questionId?.toString() === q._id.toString());
         const points = Number(q.score) || 1;
         totalPossible += points;
-        
+
         if (!resp || resp.selectedAnswer === null || resp.selectedAnswer === undefined) {
             console.log(`   ║ [Q${idx + 1}] ⊘ UNANSWERED | Possible: ${points} | Awarded: 0`);
         } else {
@@ -140,34 +148,34 @@ const computeRawScore = (questions, responses) => {
             rawScore += scoreEarned;
         }
     });
-    
+
     const percentage = totalPossible === 0 ? 0 : (rawScore / totalPossible) * 100;
-    
+
     console.log(`   ╠═══════════════════════════════════════╣`);
     console.log(`   ║ TOTALS: ${rawScore.toFixed(2)} / ${totalPossible} (${percentage.toFixed(2)}%)`);
     console.log(`   ╚═══════════════════════════════════════╝\n`);
-    
+
     return { rawScore, percentage };
 };
 
 const computeWeightedScore = (selfPerc, supPerc, weights) => {
     let sW = Number(weights?.selfAssessment ?? 20);
     let vW = Number(weights?.supervisor ?? 80);
-    
+
     const total = sW + vW;
-    
+
     // Normalize if weights don't sum to 100
     if (total !== 100 && total > 0) {
         sW = (sW / total) * 100;
         vW = (vW / total) * 100;
     }
-    
+
     const final = (selfPerc * sW / 100) + (supPerc * vW / 100);
-    
+
     console.log(`   [WEIGHT] Self: ${selfPerc.toFixed(2)}% × ${sW.toFixed(0)}% = ${(selfPerc * sW / 100).toFixed(2)}`);
     console.log(`   [WEIGHT] Supervisor: ${supPerc.toFixed(2)}% × ${vW.toFixed(0)}% = ${(supPerc * vW / 100).toFixed(2)}`);
     console.log(`   [WEIGHT] Final Weighted Score: ${final.toFixed(2)}%`);
-    
+
     return Number(final.toFixed(2));
 };
 
