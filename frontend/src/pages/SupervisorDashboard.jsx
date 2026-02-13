@@ -1,23 +1,19 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Users, ClipboardCheck, TrendingUp, AlertCircle, Award, Target} from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
+import { Users,  TrendingUp, AlertCircle, Award, Target } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import api from '../utils/api';
 
 export default function SupervisorDashboard() {
-  const { user } = useAuth();
   const nav = useNavigate();
   const { showToast } = useToast();
   const [stats, setStats] = useState({
     teamSize: 0,
     pendingEvaluations: 0,
-    completedEvaluations: 0,
     teamAvgScore: 0,
   });
-  const [teamMembers, setTeamMembers] = useState([]);
+ 
   const [pendingEvaluations, setPendingEvaluations] = useState([]);
-  const [recentResults, setRecentResults] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -30,9 +26,7 @@ export default function SupervisorDashboard() {
       const res = await api.get('/dashboard/supervisor');
       const data = res.data.data;
 
-      setTeamMembers(data.teamMembers || []);
       setPendingEvaluations(data.pendingEvaluations || []);
-      setRecentResults(data.recentResults || []);
       setStats(data.stats);
     } catch (err) {
       console.error('Failed to load supervisor dashboard:', err);
@@ -91,17 +85,6 @@ export default function SupervisorDashboard() {
           <div className="text-3xl font-display font-bold text-brand-black mb-1">{stats.pendingEvaluations}</div>
           <div className="text-sm font-semibold text-gray-700">Pending Evaluations</div>
           <div className="text-xs text-gray-500 mt-1">Require your input</div>
-        </div>
-
-        <div className="bg-white rounded-xl p-5 shadow-card border border-gray-100">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-12 h-12 rounded-xl bg-green-100 flex items-center justify-center">
-              <ClipboardCheck className="w-6 h-6 text-green-600" />
-            </div>
-          </div>
-          <div className="text-3xl font-display font-bold text-brand-black mb-1">{stats.completedEvaluations}</div>
-          <div className="text-sm font-semibold text-gray-700">Completed</div>
-          <div className="text-xs text-gray-500 mt-1">Finalized assessments</div>
         </div>
 
         <div className="bg-white rounded-xl p-5 shadow-card border border-gray-100">

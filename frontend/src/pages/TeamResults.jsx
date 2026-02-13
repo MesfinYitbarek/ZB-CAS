@@ -11,7 +11,9 @@ import {
   Users,
   Target,
   BarChart as BarChartIcon,
-  Filter
+  Filter,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { exportToPDF, exportToExcel, generateFilename } from '../utils/exportUtils';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
@@ -30,6 +32,8 @@ const ASSESSMENT_TYPE_COLORS = {
   Combined: '#8B5CF6',
 };
 
+const ITEMS_PER_PAGE = 10;
+
 export default function TeamResults() {
   const { user } = useAuth();
   const nav = useNavigate();
@@ -38,6 +42,7 @@ export default function TeamResults() {
   const [teamMembers, setTeamMembers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
   const [filters, setFilters] = useState({
     assessmentType: '',
     competencyId: '',
@@ -62,6 +67,10 @@ export default function TeamResults() {
       calculateStats();
     }
   }, [teamResults, filters]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filters]);
 
   const loadTeamData = async () => {
     try {
@@ -281,6 +290,19 @@ export default function TeamResults() {
     });
   };
 
+  // Pagination logic
+  const filteredResults = applyFilters(teamResults);
+  const totalPages = Math.ceil(filteredResults.length / ITEMS_PER_PAGE);
+  const paginatedResults = filteredResults.slice(
+    (currentPage - 1) * ITEMS_PER_PAGE,
+    currentPage * ITEMS_PER_PAGE
+  );
+
+  const handlePageChange = (page) => {
+    setCurrentPage(page);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -288,8 +310,6 @@ export default function TeamResults() {
       </div>
     );
   }
-
-  const filteredResults = applyFilters(teamResults);
 
   // Prepare chart data
   const levelChartData = Object.entries(stats.byLevel).map(([level, count]) => ({
@@ -305,16 +325,16 @@ export default function TeamResults() {
   })).filter(item => item.value > 0);
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 md:p-6">
+    <div className="min-h-screen bg-gray-50 p-3 md:p-4">
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="bg-white rounded-xl shadow-card p-6 mb-6">
-          <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-6">
+        {/* Header - Reduced padding */}
+        <div className="bg-white rounded-lg shadow-card p-4 mb-3">
+          <div className="flex flex-col md:flex-row md:items-start justify-between gap-3 mb-3">
             <div>
-              <h1 className="text-2xl md:text-3xl font-bold text-brand-black mb-2">
+              <h1 className="text-xl md:text-2xl font-bold text-brand-black">
                 Team Performance Dashboard
               </h1>
-              <p className="text-gray-600">
+              <p className="text-sm text-gray-600">
                 Track and analyze performance metrics for your team
               </p>
             </div>
@@ -323,118 +343,116 @@ export default function TeamResults() {
               <button 
                 onClick={handleExportPDF} 
                 disabled={exporting || filteredResults.length === 0}
-                className="flex items-center gap-2 px-4 py-2 border border-brand-red text-brand-red rounded-lg font-semibold hover:bg-brand-red/5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-brand-red text-brand-red rounded-lg font-semibold hover:bg-brand-red/5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <FileText className="w-4 h-4" /> 
-                {exporting ? 'Exporting...' : 'PDF Report'}
+                {exporting ? 'Exporting...' : 'PDF'}
               </button>
               <button 
                 onClick={handleExportExcel} 
                 disabled={exporting || filteredResults.length === 0}
-                className="flex items-center gap-2 px-4 py-2 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Download className="w-4 h-4" /> 
-                {exporting ? 'Exporting...' : 'Excel Data'}
+                {exporting ? 'Exporting...' : 'Excel'}
               </button>
             </div>
           </div>
 
-          {/* Team Overview Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-xl border border-blue-100">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
-                  <Users className="w-5 h-5 text-blue-600" />
+          {/* Team Overview Cards - More compact */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-3 rounded-lg border border-blue-100">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                  <Users className="w-4 h-4 text-blue-600" />
                 </div>
-                <div>
-                  <div className="text-2xl font-bold text-brand-black">{teamMembers.length}</div>
-                  <div className="text-sm font-medium text-blue-700">Team Members</div>
-                </div>
-              </div>
-            </div>
-            
-            <div className="bg-gradient-to-r from-green-50 to-emerald-50 p-4 rounded-xl border border-green-100">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
-                  <Award className="w-5 h-5 text-green-600" />
-                </div>
-                <div>
-                  <div className="text-2xl font-bold text-brand-black">{stats.avgScore}%</div>
-                  <div className="text-sm font-medium text-green-700">Average Score</div>
+                <div className="min-w-0">
+                  <div className="text-lg font-bold text-brand-black">{teamMembers.length}</div>
+                  <div className="text-xs font-medium text-blue-700 truncate">Team Members</div>
                 </div>
               </div>
             </div>
             
-            <div className="bg-gradient-to-r from-purple-50 to-pink-50 p-4 rounded-xl border border-purple-100">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center">
-                  <TrendingUp className="w-5 h-5 text-purple-600" />
+            <div className="bg-gradient-to-r from-green-50 to-emerald-50 p-3 rounded-lg border border-green-100">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                  <Award className="w-4 h-4 text-green-600" />
                 </div>
-                <div>
-                  <div className="text-2xl font-bold text-brand-black truncate">
+                <div className="min-w-0">
+                  <div className="text-lg font-bold text-brand-black">{stats.avgScore}%</div>
+                  <div className="text-xs font-medium text-green-700 truncate">Average Score</div>
+                </div>
+              </div>
+            </div>
+            
+            <div className="bg-gradient-to-r from-purple-50 to-pink-50 p-3 rounded-lg border border-purple-100">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center flex-shrink-0">
+                  <TrendingUp className="w-4 h-4 text-purple-600" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-lg font-bold text-brand-black truncate">
                     {stats.topPerformer?.name || '—'}
                   </div>
-                  <div className="text-sm font-medium text-purple-700">Top Performer</div>
-                  {stats.topPerformer && (
-                    <div className="text-xs text-purple-600">{stats.topPerformer.avg}% avg</div>
-                  )}
+                  <div className="text-xs font-medium text-purple-700 truncate">
+                    {stats.topPerformer ? `${stats.topPerformer.avg}% avg` : 'Top Performer'}
+                  </div>
                 </div>
               </div>
             </div>
             
-            <div className="bg-gradient-to-r from-orange-50 to-red-50 p-4 rounded-xl border border-orange-100">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center">
-                  <TrendingDown className="w-5 h-5 text-orange-600" />
+            <div className="bg-gradient-to-r from-orange-50 to-red-50 p-3 rounded-lg border border-orange-100">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center flex-shrink-0">
+                  <TrendingDown className="w-4 h-4 text-orange-600" />
                 </div>
-                <div>
-                  <div className="text-2xl font-bold text-brand-black">{stats.needsImprovement.length}</div>
-                  <div className="text-sm font-medium text-orange-700">Need Support</div>
-                  <div className="text-xs text-orange-600">Below 60%</div>
+                <div className="min-w-0">
+                  <div className="text-lg font-bold text-brand-black">{stats.needsImprovement.length}</div>
+                  <div className="text-xs font-medium text-orange-700 truncate">Need Support</div>
                 </div>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Filters */}
-        <div className="bg-white rounded-xl shadow-card p-6 mb-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-bold text-brand-black flex items-center gap-2">
-              <Filter className="w-5 h-5" />
+        {/* Filters - More compact */}
+        <div className="bg-white rounded-lg shadow-card p-4 mb-3">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-md font-bold text-brand-black flex items-center gap-1.5">
+              <Filter className="w-4 h-4" />
               Filters
             </h3>
             <button
               onClick={clearFilters}
-              className="text-sm text-gray-600 hover:text-brand-red font-medium"
+              className="text-xs text-gray-600 hover:text-brand-red font-medium"
             >
               Clear All
             </button>
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Assessment Type</label>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Type</label>
               <select
                 value={filters.assessmentType}
                 onChange={(e) => handleFilterChange('assessmentType', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-red focus:border-transparent"
+                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-red focus:border-transparent"
               >
                 <option value="">All Types</option>
-                <option value="SelfAssessment">Self Assessment</option>
-                <option value="SupervisorOnly">Supervisor Only</option>
+                <option value="SelfAssessment">Self</option>
+                <option value="SupervisorOnly">Supervisor</option>
                 <option value="Combined">Combined</option>
               </select>
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Competency</label>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Competency</label>
               <select
                 value={filters.competencyId}
                 onChange={(e) => handleFilterChange('competencyId', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-red focus:border-transparent"
+                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-red focus:border-transparent"
               >
-                <option value="">All Competencies</option>
+                <option value="">All</option>
                 {competencies.map(comp => (
                   <option key={comp._id} value={comp._id}>
                     {comp.name}
@@ -444,11 +462,11 @@ export default function TeamResults() {
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Performance Level</label>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Level</label>
               <select
                 value={filters.level}
                 onChange={(e) => handleFilterChange('level', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-red focus:border-transparent"
+                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-red focus:border-transparent"
               >
                 <option value="">All Levels</option>
                 <option value="Basic">Basic</option>
@@ -459,65 +477,57 @@ export default function TeamResults() {
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Status</label>
               <select
                 value={filters.status}
                 onChange={(e) => handleFilterChange('status', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-red focus:border-transparent"
+                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-red focus:border-transparent"
               >
-                <option value="">All Status</option>
+                <option value="">All</option>
                 <option value="FINAL">Final</option>
                 <option value="PENDING">Pending</option>
               </select>
             </div>
           </div>
           
-          <div className="mt-4 text-sm text-gray-500">
-            Showing {filteredResults.length} of {teamResults.length} results
+          <div className="mt-2 text-xs text-gray-500">
+            Showing {paginatedResults.length} of {filteredResults.length} results
           </div>
         </div>
 
-        {/* Charts Section */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        {/* Charts Section - More compact */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-3">
           {/* Level Distribution */}
-          <div className="bg-white rounded-xl p-6 shadow-card border border-gray-100">
-            <h3 className="text-lg font-bold text-brand-black mb-4 flex items-center gap-2">
-              <BarChartIcon className="w-5 h-5" />
-              Performance Level Distribution
+          <div className="bg-white rounded-lg p-4 shadow-card border border-gray-100">
+            <h3 className="text-md font-bold text-brand-black mb-2 flex items-center gap-1.5">
+              <BarChartIcon className="w-4 h-4" />
+              Level Distribution
             </h3>
             {levelChartData.length > 0 ? (
               <>
-                <ResponsiveContainer width="100%" height={300}>
+                <ResponsiveContainer width="100%" height={200}>
                   <BarChart data={levelChartData}>
                     <XAxis 
                       dataKey="name" 
-                      tick={{ fontSize: 12, fontWeight: 500 }}
+                      tick={{ fontSize: 10 }}
                     />
-                    <YAxis />
+                    <YAxis tick={{ fontSize: 10 }} />
                     <Tooltip 
                       formatter={(value) => [`${value} results`, 'Count']}
-                      labelFormatter={(label) => `Level: ${label}`}
-                      contentStyle={{ 
-                        borderRadius: 8, 
-                        border: 'none', 
-                        boxShadow: '0 4px 12px rgba(0,0,0,0.1)' 
-                      }}
+                      contentStyle={{ fontSize: 12 }}
                     />
-                    <Bar dataKey="value" radius={[8, 8, 0, 0]}>
+                    <Bar dataKey="value" radius={[4, 4, 0, 0]}>
                       {levelChartData.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={entry.color} />
                       ))}
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
-                <div className="flex flex-wrap gap-2 mt-4">
+                <div className="flex flex-wrap gap-2 mt-2">
                   {levelChartData.map(item => (
                     <div key={item.name} className="flex items-center gap-1">
-                      <div 
-                        className="w-3 h-3 rounded-full" 
-                        style={{ backgroundColor: item.color }}
-                      />
-                      <span className="text-sm text-gray-600">
+                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }} />
+                      <span className="text-xs text-gray-600">
                         {item.name}: {item.value}
                       </span>
                     </div>
@@ -525,21 +535,21 @@ export default function TeamResults() {
                 </div>
               </>
             ) : (
-              <div className="flex flex-col items-center justify-center h-64 text-gray-400">
-                <BarChartIcon className="w-16 h-16 mb-2" />
-                <p>No data available for selected filters</p>
+              <div className="flex flex-col items-center justify-center h-48 text-gray-400">
+                <BarChartIcon className="w-12 h-12 mb-1" />
+                <p className="text-sm">No data available</p>
               </div>
             )}
           </div>
 
           {/* Assessment Type Distribution */}
-          <div className="bg-white rounded-xl p-6 shadow-card border border-gray-100">
-            <h3 className="text-lg font-bold text-brand-black mb-4">
-              Assessment Type Breakdown
+          <div className="bg-white rounded-lg p-4 shadow-card border border-gray-100">
+            <h3 className="text-md font-bold text-brand-black mb-2">
+              Assessment Types
             </h3>
             {typeChartData.length > 0 ? (
               <>
-                <ResponsiveContainer width="100%" height={300}>
+                <ResponsiveContainer width="100%" height={200}>
                   <PieChart>
                     <Pie
                       data={typeChartData}
@@ -547,8 +557,7 @@ export default function TeamResults() {
                       cy="50%"
                       labelLine={false}
                       label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                      outerRadius={80}
-                      fill="#8884d8"
+                      outerRadius={60}
                       dataKey="value"
                     >
                       {typeChartData.map((entry, index) => (
@@ -557,164 +566,188 @@ export default function TeamResults() {
                     </Pie>
                     <Tooltip 
                       formatter={(value) => [`${value} results`, 'Count']}
-                      contentStyle={{ 
-                        borderRadius: 8, 
-                        border: 'none', 
-                        boxShadow: '0 4px 12px rgba(0,0,0,0.1)' 
-                      }}
                     />
                   </PieChart>
                 </ResponsiveContainer>
-                <div className="flex flex-wrap gap-3 mt-4">
+                <div className="flex flex-wrap gap-2 mt-2">
                   {typeChartData.map(item => (
-                    <div key={item.name} className="flex items-center gap-2">
-                      <div 
-                        className="w-3 h-3 rounded-full" 
-                        style={{ backgroundColor: item.color }}
-                      />
-                      <span className="text-sm font-medium text-gray-700">{item.name}</span>
-                      <span className="text-sm text-gray-500">({item.value})</span>
+                    <div key={item.name} className="flex items-center gap-1">
+                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }} />
+                      <span className="text-xs text-gray-700">{item.name}</span>
+                      <span className="text-xs text-gray-500">({item.value})</span>
                     </div>
                   ))}
                 </div>
               </>
             ) : (
-              <div className="flex flex-col items-center justify-center h-64 text-gray-400">
-                <Target className="w-16 h-16 mb-2" />
-                <p>No assessment data available</p>
+              <div className="flex flex-col items-center justify-center h-48 text-gray-400">
+                <Target className="w-12 h-12 mb-1" />
+                <p className="text-sm">No assessment data</p>
               </div>
             )}
           </div>
         </div>
 
-        {/* Results Table */}
-        <div className="bg-white rounded-xl shadow-card border border-gray-100 overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-100 bg-gray-50">
+        {/* Results Table - More compact */}
+        <div className="bg-white rounded-lg shadow-card border border-gray-100 overflow-hidden">
+          <div className="px-4 py-2 border-b border-gray-100 bg-gray-50">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-brand-black">Detailed Results</h3>
-              <span className="text-sm text-gray-500">
+              <h3 className="text-md font-bold text-brand-black">Detailed Results</h3>
+              <span className="text-xs text-gray-500">
                 {filteredResults.length} records
               </span>
             </div>
           </div>
           
           {filteredResults.length === 0 ? (
-            <div className="text-center py-12">
-              <div className="w-16 h-16 mx-auto mb-4 text-gray-300">
+            <div className="text-center py-8">
+              <div className="w-12 h-12 mx-auto mb-2 text-gray-300">
                 <Target className="w-full h-full" />
               </div>
-              <h4 className="text-lg font-semibold text-gray-600 mb-2">No Results Found</h4>
-              <p className="text-gray-400 text-sm">
+              <h4 className="text-md font-semibold text-gray-600 mb-1">No Results Found</h4>
+              <p className="text-gray-400 text-xs">
                 {teamResults.length === 0 
                   ? 'No assessment results available for your team yet.'
                   : 'Try adjusting your filters to see more results.'}
               </p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50 border-b border-gray-100">
-                  <tr>
-                    <th className="text-left px-6 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                      Employee
-                    </th>
-                    <th className="text-left px-6 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                      Competency
-                    </th>
-                    <th className="text-left px-6 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                      Type
-                    </th>
-                    <th className="text-left px-6 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                      Score
-                    </th>
-                    <th className="text-left px-6 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                      Level
-                    </th>
-                    <th className="text-left px-6 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                      Date
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {filteredResults.map((result) => (
-                    <tr 
-                      key={result._id} 
-                      className="hover:bg-gray-50 transition-colors cursor-pointer"
-                      onClick={() => nav(`/results/${result._id}`)}
-                    >
-                      <td className="px-6 py-4">
-                        <div>
-                          <div className="font-semibold text-brand-black">
-                            {result.employeeName}
-                          </div>
-                          <div className="text-xs text-gray-500">
-                            {result.position || 'Employee'}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="text-sm text-gray-700">
-                          {result.competencyId?.name || '—'}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                          result.assessmentId?.type === 'SelfAssessment' 
-                            ? 'bg-blue-100 text-blue-800'
-                            : result.assessmentId?.type === 'SupervisorOnly'
-                            ? 'bg-green-100 text-green-800'
-                            : 'bg-purple-100 text-purple-800'
-                        }`}>
-                          {result.assessmentId?.type || '—'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-32">
-                            <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-                              <div 
-                                className="h-full rounded-full bg-brand-red"
-                                style={{ width: `${result.finalScore}%` }}
-                              />
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b border-gray-100">
+                    <tr>
+                      <th className="text-left px-3 py-2 text-xs font-semibold text-gray-600 uppercase">Employee</th>
+                      <th className="text-left px-3 py-2 text-xs font-semibold text-gray-600 uppercase">Competency</th>
+                      <th className="text-left px-3 py-2 text-xs font-semibold text-gray-600 uppercase">Type</th>
+                      <th className="text-left px-3 py-2 text-xs font-semibold text-gray-600 uppercase">Score</th>
+                      <th className="text-left px-3 py-2 text-xs font-semibold text-gray-600 uppercase">Level</th>
+                      <th className="text-left px-3 py-2 text-xs font-semibold text-gray-600 uppercase">Date</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {paginatedResults.map((result) => (
+                      <tr 
+                        key={result._id} 
+                        className="hover:bg-gray-50 transition-colors cursor-pointer"
+                        onClick={() => nav(`/results/${result._id}`)}
+                      >
+                        <td className="px-3 py-2">
+                          <div>
+                            <div className="font-medium text-brand-black text-sm">
+                              {result.employeeName}
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              {result.position || 'Employee'}
                             </div>
                           </div>
-                          <div className="flex flex-col">
-                            <span className="text-sm font-bold text-brand-black">
+                        </td>
+                        <td className="px-3 py-2 text-xs text-gray-700">
+                          {result.competencyId?.name || '—'}
+                        </td>
+                        <td className="px-3 py-2">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                            result.assessmentId?.type === 'SelfAssessment' 
+                              ? 'bg-blue-100 text-blue-800'
+                              : result.assessmentId?.type === 'SupervisorOnly'
+                              ? 'bg-green-100 text-green-800'
+                              : 'bg-purple-100 text-purple-800'
+                          }`}>
+                            {result.assessmentId?.type === 'SelfAssessment' ? 'Self' :
+                             result.assessmentId?.type === 'SupervisorOnly' ? 'Sup.' : 'Comb.'}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2">
+                          <div className="flex items-center gap-2">
+                            <div className="w-20">
+                              <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                                <div 
+                                  className="h-full rounded-full bg-brand-red"
+                                  style={{ width: `${result.finalScore}%` }}
+                                />
+                              </div>
+                            </div>
+                            <span className="text-xs font-medium text-brand-black">
                               {result.finalScore}%
                             </span>
-                            {result.scoreBreakdown && (
-                              <span className="text-xs text-gray-500">
-                                {result.scoreBreakdown.selfScore}% self + {result.scoreBreakdown.supervisorScore}% supervisor
-                              </span>
-                            )}
                           </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold ${
-                          result.level === 'Basic' 
-                            ? 'bg-yellow-100 text-yellow-800'
-                            : result.level === 'Intermediate'
-                            ? 'bg-orange-100 text-orange-800'
-                            : result.level === 'Advanced'
-                            ? 'bg-blue-100 text-blue-800'
-                            : 'bg-green-100 text-green-800'
-                        }`}>
-                          {result.level}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-500">
-                        {new Date(result.createdAt).toLocaleDateString('en-US', {
-                          year: 'numeric',
-                          month: 'short',
-                          day: 'numeric'
-                        })}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                        </td>
+                        <td className="px-3 py-2">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                            result.level === 'Basic' 
+                              ? 'bg-yellow-100 text-yellow-800'
+                              : result.level === 'Intermediate'
+                              ? 'bg-orange-100 text-orange-800'
+                              : result.level === 'Advanced'
+                              ? 'bg-blue-100 text-blue-800'
+                              : 'bg-green-100 text-green-800'
+                          }`}>
+                            {result.level}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 text-xs text-gray-500">
+                          {new Date(result.createdAt).toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric'
+                          })}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Pagination - New */}
+              {totalPages > 1 && (
+                <div className="px-4 py-3 border-t border-gray-100 bg-gray-50 flex items-center justify-between">
+                  <div className="text-xs text-gray-500">
+                    Page {currentPage} of {totalPages}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => handlePageChange(currentPage - 1)}
+                      disabled={currentPage === 1}
+                      className="p-1 rounded border border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                      let pageNum;
+                      if (totalPages <= 5) {
+                        pageNum = i + 1;
+                      } else if (currentPage <= 3) {
+                        pageNum = i + 1;
+                      } else if (currentPage >= totalPages - 2) {
+                        pageNum = totalPages - 4 + i;
+                      } else {
+                        pageNum = currentPage - 2 + i;
+                      }
+                      
+                      return (
+                        <button
+                          key={i}
+                          onClick={() => handlePageChange(pageNum)}
+                          className={`w-7 h-7 text-xs rounded border ${
+                            currentPage === pageNum
+                              ? 'bg-brand-red text-white border-brand-red'
+                              : 'border-gray-300 hover:bg-gray-100'
+                          }`}
+                        >
+                          {pageNum}
+                        </button>
+                      );
+                    })}
+                    <button
+                      onClick={() => handlePageChange(currentPage + 1)}
+                      disabled={currentPage === totalPages}
+                      className="p-1 rounded border border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

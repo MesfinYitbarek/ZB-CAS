@@ -39,7 +39,6 @@ import ActivityLog from './pages/ActivityLog';
 import MyTeam from './pages/MyTeam';
 import PendingEvaluations from './pages/PendingEvaluations';
 import TeamResults from './pages/TeamResults';
-import TeamReports from './pages/TeamReports';
 import SupervisorEvaluation from './pages/SupervisorEvaluation';
 import EmployeeDashboard from './pages/EmployeeDashboard';
 
@@ -411,16 +410,6 @@ export default function App() {
           }
         />
 
-        <Route
-          path="/my-team/reports"
-          element={
-            <ProtectedRoute supervisorOnly>
-              <AppShell>
-                <TeamReports />
-              </AppShell>
-            </ProtectedRoute>
-          }
-        />
 
 
         {/* 404 */}
