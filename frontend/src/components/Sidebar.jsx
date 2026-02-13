@@ -21,7 +21,6 @@ const NAV_ITEMS = [
   // Supervisor Only
   { icon: UserCheck, label: 'My Team', path: '/my-team', roles: ['SUPERVISOR'] },
   { icon: ClipboardCheck, label: 'Pending Evaluations', path: '/my-team/evaluations', roles: ['SUPERVISOR'] },
-  { icon: Award, label: 'Team Results', path: '/my-team/results', roles: ['SUPERVISOR'] },
 
   // All Roles
   { icon: ClipboardList, label: 'Assessments', path: '/assessments', roles: ['EMPLOYEE'] },
