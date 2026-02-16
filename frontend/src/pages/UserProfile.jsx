@@ -196,56 +196,6 @@ export default function UserProfile() {
             </div>
           </div>
         </div>
-
-        {/* Right - Results & Assessments */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* Recent Results */}
-          <div className="bg-white rounded-xl p-6 shadow-card border border-gray-100">
-            <h3 className="text-lg font-display font-bold text-brand-black mb-4">Recent Results</h3>
-            {results.length === 0 ? (
-              <p className="text-gray-400 text-center py-8">No results yet.</p>
-            ) : (
-              <div className="space-y-3">
-                {results.slice(0, 5).map((r) => (
-                  <div key={r._id} className="p-4 border border-gray-100 rounded-lg hover:bg-gray-50 transition-colors">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="font-semibold text-sm text-brand-black-soft">{r.competencyId?.name}</div>
-                      <StatusBadge status={r.level} type="level" />
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <div className="flex-1">
-                        <div className="progress-bar">
-                          <div className="progress-fill" style={{ width: `${r.finalScore}%` }} />
-                        </div>
-                      </div>
-                      <div className="text-sm font-bold text-brand-red">{r.finalScore}%</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Active Assessments */}
-          <div className="bg-white rounded-xl p-6 shadow-card border border-gray-100">
-            <h3 className="text-lg font-display font-bold text-brand-black mb-4">Active Assessments</h3>
-            {assessments.length === 0 ? (
-              <p className="text-gray-400 text-center py-8">No active assessments.</p>
-            ) : (
-              <div className="space-y-3">
-                {assessments.map((a) => (
-                  <div key={a._id} className="p-4 border border-gray-100 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => nav(`/assessments/${a._id}/take`)}>
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="font-semibold text-sm text-brand-black-soft">{a.description}</div>
-                      <StatusBadge status={a.status} type="assessment" />
-                    </div>
-                    <div className="text-xs text-gray-500">{a.competencyId?.name} · Due {new Date(a.endDate).toLocaleDateString()}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
       </div>
 
       {/* Edit Modal */}

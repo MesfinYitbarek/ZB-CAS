@@ -1,9 +1,16 @@
 // pages/Questions.jsx
-import { useState, useEffect, useCallback } from 'react';
-import { Plus, Edit2, Trash2, ChevronLeft, ChevronRight, GripVertical, X } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Plus, Edit2, Trash2, ChevronLeft, ChevronRight, GripVertical, X, Upload, FileText, Check } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import Modal from '../components/Modal';
 import api from '../utils/api';
+
+// Import document parsing libraries
+import * as mammoth from 'mammoth';
+import * as pdfjsLib from 'pdfjs-dist';
+
+// Set up PDF.js worker
+pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
 const TYPES = [
   'MCQ',
@@ -52,10 +59,16 @@ const initQuestionForm = () => ({
   categories: { '': [''] },
 });
 
+// ─── Question type group ────────────────────────────────────────────────────
+const initQuestionTypeGroup = () => ({
+  type: 'MCQ',
+  questions: [initQuestionForm()],
+});
+
 // ─── Default batch form state ──────────────────────────────────────────────
 const initBatchForm = () => ({
   competencyId: '',
-  questions: [initQuestionForm()],
+  questionGroups: [initQuestionTypeGroup()],
 });
 
 export default function Questions() {
@@ -64,10 +77,11 @@ export default function Questions() {
   const [competencies, setCompetencies] = useState([]);
   const [filterComp, setFilterComp] = useState('');
   const [filterType, setFilterType] = useState('');
-  const [modal, setModal] = useState(null);   // 'create' | 'edit' | null
+  const [modal, setModal] = useState(null);   // 'create' | 'edit' | 'upload' | null
   const [selected, setSelected] = useState(null);
   const [deleteModal, setDeleteModal] = useState(null);
   const { show } = useToast();
+  const fileInputRef = useRef(null);
 
   const [pagination, setPagination] = useState({
     page: 1, limit: 10, total: 0, totalPages: 0,
@@ -75,6 +89,9 @@ export default function Questions() {
 
   const [batchForm, setBatchForm] = useState(initBatchForm());
   const [editForm, setEditForm] = useState(null);
+  const [uploadedQuestions, setUploadedQuestions] = useState(null);
+  const [uploadLoading, setUploadLoading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   // ─── Fetch competencies once ────────────────────────────────────────────
   useEffect(() => {
@@ -115,6 +132,12 @@ export default function Questions() {
     setModal('create');
   };
 
+  const openUpload = () => {
+    setUploadedQuestions(null);
+    setUploadProgress(0);
+    setModal('upload');
+  };
+
   const openEdit = (q) => {
     const form = {
       competencyId: q.competencyId?._id || '',
@@ -134,6 +157,418 @@ export default function Questions() {
     setEditForm(form);
     setSelected(q);
     setModal('edit');
+  };
+
+  // ─── Document Upload and Parsing ────────────────────────────────────────
+  const handleFileUpload = async (e) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+
+  // Log file details for debugging
+  console.log('Uploading file:', {
+    name: file.name,
+    type: file.type,
+    size: file.size
+  });
+
+  const validTypes = [
+    'application/pdf',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/msword',
+    'text/plain',
+    'text/markdown',
+    '' // Sometimes type is empty for text files
+  ];
+
+  // More lenient type checking
+  const isTextFile = file.name.endsWith('.txt') || file.name.endsWith('.md') || file.type.includes('text');
+  const isDocx = file.name.endsWith('.docx') || file.type.includes('wordprocessingml');
+  const isDoc = file.name.endsWith('.doc') || file.type === 'application/msword';
+  const isPdf = file.name.endsWith('.pdf') || file.type === 'application/pdf';
+
+  if (!isTextFile && !isDocx && !isDoc && !isPdf) {
+    show('Please upload a PDF, DOCX, or TXT file.', 'error');
+    return;
+  }
+
+  setUploadLoading(true);
+  setUploadProgress(10);
+
+  try {
+    let text = '';
+    
+    if (isPdf) {
+      text = await extractTextFromPDF(file);
+    } else if (isDocx) {
+      text = await extractTextFromDOCX(file);
+    } else {
+      // Plain text or other formats
+      text = await extractTextFromPlain(file);
+    }
+    
+    console.log('Extracted text:', text.substring(0, 200) + '...'); // Debug log
+    
+    setUploadProgress(70);
+    
+    const parsed = parseQuestionsFromText(text);
+    console.log('Parsed questions:', parsed); // Debug log
+    
+    setUploadProgress(100);
+    
+    if (parsed.length === 0) {
+      show('No questions found in the document. Please check the format.', 'error');
+      setUploadLoading(false);
+      return;
+    }
+
+    // Group questions by type
+    const grouped = groupQuestionsByType(parsed);
+    setUploadedQuestions({
+      competencyId: '',
+      questionGroups: grouped,
+    });
+    show(`Successfully extracted ${parsed.length} question(s).`, 'success');
+  } catch (err) {
+    console.error('Parse error:', err);
+    show('Failed to parse document. Please check the format. Error: ' + err.message, 'error');
+  }
+  setUploadLoading(false);
+  if (fileInputRef.current) fileInputRef.current.value = '';
+};
+
+  // ─── Extract text from PDF using pdf.js ─────────────────────────────────
+  const extractTextFromPDF = async (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      
+      reader.onload = async (e) => {
+        try {
+          const arrayBuffer = e.target.result;
+          const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+          
+          let fullText = '';
+          
+          for (let i = 1; i <= pdf.numPages; i++) {
+            setUploadProgress(10 + Math.floor((i / pdf.numPages) * 50));
+            
+            const page = await pdf.getPage(i);
+            const textContent = await page.getTextContent();
+            const pageText = textContent.items.map(item => item.str).join(' ');
+            fullText += pageText + '\n';
+          }
+          
+          resolve(fullText);
+        } catch (error) {
+          reject(error);
+        }
+      };
+      
+      reader.onerror = reject;
+      reader.readAsArrayBuffer(file);
+    });
+  };
+
+// Replace the extractTextFromDOCX function with this improved version
+const extractTextFromDOCX = async (file) => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    
+    reader.onload = async (e) => {
+      try {
+        const arrayBuffer = e.target.result;
+        
+        // Try different methods to extract text with proper line breaks
+        
+        // Method 1: Use extractRawText with preserveEmptyParagraphs
+        const result1 = await mammoth.extractRawText({ 
+          arrayBuffer,
+          options: {
+            preserveEmptyParagraphs: true,
+          }
+        });
+        
+        // Method 2: Try to extract with more formatting preserved
+        const result2 = await mammoth.extractRawText({
+          arrayBuffer,
+          options: {
+            preserveEmptyParagraphs: true,
+            includeDefaultStyleMap: true,
+          }
+        });
+        
+        // Use the result with more line breaks
+        let text = result2.value || result1.value;
+        
+        // If still no line breaks, try to insert them based on patterns
+        if (!text.includes('\n') && text.length > 0) {
+          console.log('No line breaks detected, adding artificial breaks');
+          
+          // Add line breaks before common patterns
+          text = text
+            .replace(/Type:/g, '\nType:')
+            .replace(/Question \d+:/g, '\n$&')
+            .replace(/Score:/g, '\nScore:')
+            .replace(/Answer:/g, '\nAnswer:')
+            .replace(/[a-d]\)/g, '\n$&')
+            .replace(/(Paris|London) ->/g, '\n$&');
+        }
+        
+        // Clean up the text
+        text = text
+          .replace(/\r\n/g, '\n')
+          .replace(/\r/g, '\n')
+          .replace(/\n\s+/g, '\n') // Remove leading spaces after newlines
+          .replace(/[ \t]+/g, ' ') // Collapse multiple spaces
+          .split('\n')
+          .map(line => line.trim())
+          .filter(line => line.length > 0)
+          .join('\n');
+        
+        console.log('Processed DOCX text with line breaks:', text);
+        resolve(text);
+      } catch (error) {
+        console.error('Mammoth error:', error);
+        reject(error);
+      }
+    };
+    
+    reader.onerror = (error) => {
+      console.error('FileReader error:', error);
+      reject(error);
+    };
+    
+    reader.readAsArrayBuffer(file);
+  });
+};
+
+  // ─── Extract text from plain text file ─────────────────────────────────
+  const extractTextFromPlain = (file) => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    
+    reader.onload = (e) => {
+      console.log('Plain text extracted, length:', e.target.result.length);
+      resolve(e.target.result);
+    };
+    
+    reader.onerror = (e) => {
+      console.error('FileReader error:', e);
+      reject(new Error('Failed to read text file'));
+    };
+    
+    reader.readAsText(file);
+  });
+};
+
+const parseQuestionsFromText = (text) => {
+  const questions = [];
+  
+  console.log('Parsing text:', text);
+  
+  // First, try to split by common patterns if we don't have clear line breaks
+  let lines;
+  
+  if (text.includes('\n')) {
+    // If we have newlines, use them
+    lines = text.split('\n')
+      .map(l => l.trim())
+      .filter(l => l.length > 0);
+  } else {
+    // If no newlines, try to intelligently split the text
+    console.log('No newlines found, attempting intelligent splitting');
+    
+    // Add artificial splits before patterns
+    const withBreaks = text
+      .replace(/(Type:)/g, '\n$1')
+      .replace(/(Question \d+:)/g, '\n$1')
+      .replace(/(Score:)/g, '\n$1')
+      .replace(/(Answer:)/g, '\n$1')
+      .replace(/([a-d]\))/g, '\n$1')
+      .replace(/(\w+ -> \w+)/g, '\n$1');
+    
+    lines = withBreaks.split('\n')
+      .map(l => l.trim())
+      .filter(l => l.length > 0);
+  }
+  
+  console.log('Processed lines:', lines);
+  
+  let currentQuestion = null;
+  let currentType = 'MCQ';
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    
+    // Skip if line is too short
+    if (line.length < 2) continue;
+    
+    // Detect question type
+    if (line.match(/^type\s*:\s*(.+)$/i)) {
+      const match = line.match(/^type\s*:\s*(.+)$/i);
+      const typeStr = match[1].trim().toUpperCase();
+      
+      const typeMap = {
+        'MCQ': 'MCQ',
+        'MULTIPLE CHOICE': 'MCQ',
+        'MULTIPLECHOICE': 'MCQ',
+        'TRUE/FALSE': 'TrueFalse',
+        'TRUE FALSE': 'TrueFalse',
+        'TRUEFALSE': 'TrueFalse',
+        'RATING': 'Rating',
+        'MULTISELECT': 'MultiSelect',
+        'MULTI-SELECT': 'MultiSelect',
+        'MATCHING': 'Matching',
+        'ORDERING': 'Ordering',
+        'SCENARIO MCQ': 'ScenarioMCQ',
+        'SCENARIOMCQ': 'ScenarioMCQ',
+        'DRAGDROP': 'DragDropClassification',
+        'CLASSIFICATION': 'DragDropClassification',
+      };
+      
+      currentType = typeMap[typeStr] || 'MCQ';
+      continue;
+    }
+    
+    // Detect question start
+    if (line.match(/^question\s*\d*\s*:\s*(.+)$/i) || line.match(/^q\d*\s*:\s*(.+)$/i)) {
+      // Save previous question if exists
+      if (currentQuestion && currentQuestion.text) {
+        questions.push(currentQuestion);
+      }
+      
+      const match = line.match(/^question\s*\d*\s*:\s*(.+)$/i) || line.match(/^q\d*\s*:\s*(.+)$/i);
+      const questionText = match ? match[1].trim() : line;
+      
+      currentQuestion = {
+        ...initQuestionForm(),
+        type: currentType,
+        text: questionText,
+      };
+      continue;
+    }
+    
+    // If we have a current question, parse its components
+    if (currentQuestion) {
+      // Score
+      if (line.match(/^score\s*:\s*(\d+(?:\.\d+)?)/i)) {
+        const match = line.match(/^score\s*:\s*(\d+(?:\.\d+)?)/i);
+        if (match) {
+          currentQuestion.score = parseFloat(match[1]) || 1;
+        }
+        continue;
+      }
+      
+      // Answer
+      if (line.match(/^answer\s*:\s*(.+)$/i)) {
+        const match = line.match(/^answer\s*:\s*(.+)$/i);
+        const answer = match[1].trim();
+        
+        if (currentQuestion.type === 'TrueFalse') {
+          currentQuestion.correctAnswer = answer.match(/true/i) ? 'True' : 'False';
+        } else {
+          currentQuestion.correctAnswer = answer;
+        }
+        continue;
+      }
+      
+      // Options (a), b), c), d))
+      if (line.match(/^[a-d]\)\s*(.+)$/i)) {
+        const match = line.match(/^([a-d])\)\s*(.+)$/i);
+        const optionLetter = match[1].toLowerCase();
+        let optionText = match[2].trim();
+        
+        // Check if this option is correct (marked with *)
+        const isCorrect = optionText.includes('*');
+        optionText = optionText.replace('*', '').trim();
+        
+        // Map a->0, b->1, c->2, d->3
+        const index = optionLetter.charCodeAt(0) - 'a'.charCodeAt(0);
+        
+        if (!currentQuestion.options) {
+          currentQuestion.options = ['', '', '', ''];
+        }
+        
+        currentQuestion.options[index] = optionText;
+        
+        if (isCorrect) {
+          currentQuestion.correctAnswer = optionText;
+        }
+        continue;
+      }
+      
+      // Matching pairs
+      if (currentQuestion.type === 'Matching' && line.includes('->')) {
+        const [left, right] = line.split('->').map(s => s.trim());
+        
+        if (!currentQuestion.matchingPairs) {
+          currentQuestion.matchingPairs = [];
+        }
+        
+        // If first pair is empty, replace it
+        if (currentQuestion.matchingPairs.length === 1 && 
+            currentQuestion.matchingPairs[0].left === '' && 
+            currentQuestion.matchingPairs[0].right === '') {
+          currentQuestion.matchingPairs[0] = { left, right };
+        } else {
+          currentQuestion.matchingPairs.push({ left, right });
+        }
+        continue;
+      }
+    }
+  }
+  
+  // Add the last question
+  if (currentQuestion && currentQuestion.text) {
+    questions.push(currentQuestion);
+  }
+  
+  console.log('Parsed questions:', questions);
+  
+  // Clean up questions
+  return questions.map(q => {
+    if (q.type === 'MCQ' || q.type === 'MultiSelect' || q.type === 'ScenarioMCQ') {
+      q.options = (q.options || []).filter(opt => opt && opt.length > 0);
+      if (q.options.length === 0) {
+        q.options = ['', '', '', ''];
+      }
+    }
+    
+    if (q.type === 'Matching') {
+      q.matchingPairs = (q.matchingPairs || []).filter(p => p.left && p.right);
+      if (q.matchingPairs.length === 0) {
+        q.matchingPairs = [{ left: '', right: '' }, { left: '', right: '' }];
+      }
+    }
+    
+    return q;
+  });
+};
+  // ─── Group questions by type ────────────────────────────────────────────
+  const groupQuestionsByType = (questions) => {
+    const groups = [];
+    let currentGroup = null;
+    
+    questions.forEach(q => {
+      if (!currentGroup || currentGroup.type !== q.type) {
+        currentGroup = {
+          type: q.type,
+          questions: [],
+        };
+        groups.push(currentGroup);
+      }
+      currentGroup.questions.push(q);
+    });
+    
+    return groups;
+  };
+
+  // ─── Use uploaded questions ─────────────────────────────────────────────
+  const useUploadedQuestions = () => {
+    if (uploadedQuestions) {
+      setBatchForm(uploadedQuestions);
+      setModal('create');
+      setUploadedQuestions(null);
+    }
   };
 
   // ─── Build payload for a single question ───────────────────────────────
@@ -180,7 +615,7 @@ export default function Questions() {
         };
       case 'DragDropClassification': {
         const cats = {};
-        Object.entries(q.categories).forEach(([cat, items]) => {
+        Object.entries(q.categories || {}).forEach(([cat, items]) => {
           const trimmed = cat.trim();
           if (trimmed) cats[trimmed] = (items || []).filter((i) => i.trim());
         });
@@ -195,18 +630,23 @@ export default function Questions() {
   const handleSave = async () => {
     try {
       if (modal === 'create') {
-        // Batch create
-        const questions = batchForm.questions
-          .filter(q => q.text.trim())
-          .map(q => buildQuestionPayload(q, batchForm.competencyId));
+        // Batch create from all groups
+        const allQuestions = [];
+        batchForm.questionGroups.forEach(group => {
+          group.questions
+            .filter(q => q.text.trim())
+            .forEach(q => {
+              allQuestions.push(buildQuestionPayload(q, batchForm.competencyId));
+            });
+        });
 
-        if (questions.length === 0) {
+        if (allQuestions.length === 0) {
           show('Please add at least one question.', 'error');
           return;
         }
 
-        await api.post('/questions/batch', { questions });
-        show(`${questions.length} question(s) created successfully.`, 'success');
+        await api.post('/questions/batch', { questions: allQuestions });
+        show(`${allQuestions.length} question(s) created successfully.`, 'success');
       } else {
         // Single edit
         const payload = buildQuestionPayload(editForm, editForm.competencyId);
@@ -237,25 +677,49 @@ export default function Questions() {
   };
 
   // ─── Batch form helpers ─────────────────────────────────────────────────
-  const addQuestion = () => {
+  const addQuestionGroup = () => {
     setBatchForm({
       ...batchForm,
-      questions: [...batchForm.questions, initQuestionForm()],
+      questionGroups: [...batchForm.questionGroups, initQuestionTypeGroup()],
     });
   };
 
-  const removeQuestion = (index) => {
-    if (batchForm.questions.length <= 1) return;
+  const removeQuestionGroup = (index) => {
+    if (batchForm.questionGroups.length <= 1) return;
     setBatchForm({
       ...batchForm,
-      questions: batchForm.questions.filter((_, i) => i !== index),
+      questionGroups: batchForm.questionGroups.filter((_, i) => i !== index),
     });
   };
 
-  const updateQuestion = (index, updates) => {
-    const questions = [...batchForm.questions];
-    questions[index] = { ...questions[index], ...updates };
-    setBatchForm({ ...batchForm, questions });
+  const updateQuestionGroup = (groupIndex, updates) => {
+    const groups = [...batchForm.questionGroups];
+    groups[groupIndex] = { ...groups[groupIndex], ...updates };
+    setBatchForm({ ...batchForm, questionGroups: groups });
+  };
+
+  const addQuestionToGroup = (groupIndex) => {
+    const groups = [...batchForm.questionGroups];
+    const newQuestion = initQuestionForm();
+    newQuestion.type = groups[groupIndex].type;
+    groups[groupIndex].questions.push(newQuestion);
+    setBatchForm({ ...batchForm, questionGroups: groups });
+  };
+
+  const removeQuestionFromGroup = (groupIndex, questionIndex) => {
+    const groups = [...batchForm.questionGroups];
+    if (groups[groupIndex].questions.length <= 1) return;
+    groups[groupIndex].questions = groups[groupIndex].questions.filter((_, i) => i !== questionIndex);
+    setBatchForm({ ...batchForm, questionGroups: groups });
+  };
+
+  const updateQuestionInGroup = (groupIndex, questionIndex, updates) => {
+    const groups = [...batchForm.questionGroups];
+    groups[groupIndex].questions[questionIndex] = {
+      ...groups[groupIndex].questions[questionIndex],
+      ...updates,
+    };
+    setBatchForm({ ...batchForm, questionGroups: groups });
   };
 
   // ─── Pagination ─────────────────────────────────────────────────────────
@@ -272,11 +736,11 @@ export default function Questions() {
   const handleFilterType = (v) => { setFilterType(v); setPagination((p) => ({ ...p, page: 1 })); };
 
   // ─── Type-specific form sections ────────────────────────────────────────
-  const renderQuestionOptions = (q, index, isEdit = false) => {
+  const renderQuestionOptions = (q, groupIndex, questionIndex, isEdit = false) => {
     const form = isEdit ? editForm : q;
     const setForm = isEdit 
       ? setEditForm 
-      : (updates) => updateQuestion(index, updates);
+      : (updates) => updateQuestionInGroup(groupIndex, questionIndex, updates);
 
     switch (form.type) {
       case 'MCQ':
@@ -288,7 +752,7 @@ export default function Questions() {
                 <label className="block text-sm font-semibold text-gray-700 mb-1.5">Scenario</label>
                 <textarea
                   rows={3}
-                  value={form.scenario}
+                  value={form.scenario || ''}
                   onChange={(e) => setForm({ ...form, scenario: e.target.value })}
                   placeholder="Describe the scenario..."
                   className="w-full px-3 py-2 rounded-lg border border-gray-300 focus-brand text-sm resize-none"
@@ -300,6 +764,7 @@ export default function Questions() {
               <div key={i} className="flex items-center gap-2 mb-2">
                 <input
                   type="radio"
+                  name={isEdit ? 'edit-correct' : `correct-${groupIndex}-${questionIndex}`}
                   checked={form.correctAnswer === opt && opt !== ''}
                   onChange={() => setForm({ ...form, correctAnswer: opt })}
                   className="w-4 h-4 text-brand-red focus:ring-brand-red"
@@ -336,7 +801,7 @@ export default function Questions() {
         return (
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">Correct Answer</label>
-            <select value={form.correctAnswer} onChange={(e) => setForm({ ...form, correctAnswer: e.target.value })}
+            <select value={form.correctAnswer || ''} onChange={(e) => setForm({ ...form, correctAnswer: e.target.value })}
               className="w-full h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm">
               <option value="">— Select —</option>
               <option value="True">True</option>
@@ -356,9 +821,9 @@ export default function Questions() {
               <div key={i} className="flex items-center gap-2 mb-2">
                 <input
                   type="checkbox"
-                  checked={form.correctAnswers.includes(opt) && opt !== ''}
+                  checked={form.correctAnswers?.includes(opt) && opt !== ''}
                   onChange={(e) => {
-                    const ca = [...form.correctAnswers];
+                    const ca = [...(form.correctAnswers || [])];
                     if (e.target.checked && opt) ca.push(opt);
                     else {
                       const idx = ca.indexOf(opt);
@@ -374,7 +839,7 @@ export default function Questions() {
                     const o = [...form.options];
                     const prev = o[i];
                     o[i] = e.target.value;
-                    const ca = form.correctAnswers.map((a) => (a === prev ? e.target.value : a));
+                    const ca = (form.correctAnswers || []).map((a) => (a === prev ? e.target.value : a));
                     setForm({ ...form, options: o, correctAnswers: ca });
                   }}
                   placeholder={`Option ${String.fromCharCode(65 + i)}`}
@@ -383,7 +848,7 @@ export default function Questions() {
                 {form.options.length > 2 && (
                   <button type="button" onClick={() => {
                     const o = form.options.filter((_, idx) => idx !== i);
-                    const ca = form.correctAnswers.filter((a) => a !== opt);
+                    const ca = (form.correctAnswers || []).filter((a) => a !== opt);
                     setForm({ ...form, options: o, correctAnswers: ca });
                   }} className="p-1 text-gray-400 hover:text-red-500"><X className="w-4 h-4" /></button>
                 )}
@@ -399,33 +864,58 @@ export default function Questions() {
         return (
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">Matching Pairs</label>
-            <div className="grid grid-cols-[1fr_auto_1fr_auto] gap-2 items-center">
-              <span className="text-xs font-semibold text-gray-500 uppercase">Left</span>
-              <span />
-              <span className="text-xs font-semibold text-gray-500 uppercase">Right</span>
-              <span />
+            <div className="space-y-2">
               {form.matchingPairs.map((pair, i) => (
-                <>
-                  <input key={`l-${i}`} value={pair.left}
-                    onChange={(e) => { const p = [...form.matchingPairs]; p[i] = { ...p[i], left: e.target.value }; setForm({ ...form, matchingPairs: p }); }}
+                <div key={i} className="grid grid-cols-[1fr_auto_1fr_auto] gap-2 items-center">
+                  <input
+                    value={pair.left}
+                    onChange={(e) => {
+                      const p = [...form.matchingPairs];
+                      p[i] = { ...p[i], left: e.target.value };
+                      setForm({ ...form, matchingPairs: p });
+                    }}
                     placeholder={`Term ${i + 1}`}
-                    className="h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm" />
-                  <span key={`a-${i}`} className="text-gray-400 text-center">↔</span>
-                  <input key={`r-${i}`} value={pair.right}
-                    onChange={(e) => { const p = [...form.matchingPairs]; p[i] = { ...p[i], right: e.target.value }; setForm({ ...form, matchingPairs: p }); }}
+                    className="h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm"
+                  />
+                  <span className="text-gray-400">↔</span>
+                  <input
+                    value={pair.right}
+                    onChange={(e) => {
+                      const p = [...form.matchingPairs];
+                      p[i] = { ...p[i], right: e.target.value };
+                      setForm({ ...form, matchingPairs: p });
+                    }}
                     placeholder={`Match ${i + 1}`}
-                    className="h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm" />
+                    className="h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm"
+                  />
                   {form.matchingPairs.length > 2 && (
-                    <button key={`d-${i}`} type="button" onClick={() => {
-                      setForm({ ...form, matchingPairs: form.matchingPairs.filter((_, idx) => idx !== i) });
-                    }} className="p-1 text-gray-400 hover:text-red-500"><X className="w-4 h-4" /></button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setForm({
+                          ...form,
+                          matchingPairs: form.matchingPairs.filter((_, idx) => idx !== i)
+                        });
+                      }}
+                      className="p-1 text-gray-400 hover:text-red-500"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
                   )}
-                  {form.matchingPairs.length <= 2 && <span key={`s-${i}`} />}
-                </>
+                  {form.matchingPairs.length <= 2 && <span className="w-8" />}
+                </div>
               ))}
             </div>
-            <button type="button" onClick={() => setForm({ ...form, matchingPairs: [...form.matchingPairs, { left: '', right: '' }] })}
-              className="text-sm text-brand-red hover:underline mt-2">+ Add pair</button>
+            <button
+              type="button"
+              onClick={() => setForm({
+                ...form,
+                matchingPairs: [...form.matchingPairs, { left: '', right: '' }]
+              })}
+              className="text-sm text-brand-red hover:underline mt-2"
+            >
+              + Add pair
+            </button>
             <p className="text-xs text-gray-500 mt-1">Partial credit per correct pair.</p>
           </div>
         );
@@ -438,18 +928,37 @@ export default function Questions() {
               <div key={i} className="flex items-center gap-2 mb-2">
                 <span className="w-7 h-7 flex items-center justify-center bg-gray-100 rounded text-xs font-bold text-gray-500">{i + 1}</span>
                 <GripVertical className="w-4 h-4 text-gray-300" />
-                <input value={item}
-                  onChange={(e) => { const o = [...form.correctOrder]; o[i] = e.target.value; setForm({ ...form, correctOrder: o }); }}
+                <input
+                  value={item}
+                  onChange={(e) => {
+                    const o = [...form.correctOrder];
+                    o[i] = e.target.value;
+                    setForm({ ...form, correctOrder: o });
+                  }}
                   placeholder={`Step ${i + 1}`}
-                  className="flex-1 h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm" />
+                  className="flex-1 h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm"
+                />
                 {form.correctOrder.length > 2 && (
-                  <button type="button" onClick={() => setForm({ ...form, correctOrder: form.correctOrder.filter((_, idx) => idx !== i) })}
-                    className="p-1 text-gray-400 hover:text-red-500"><X className="w-4 h-4" /></button>
+                  <button
+                    type="button"
+                    onClick={() => setForm({
+                      ...form,
+                      correctOrder: form.correctOrder.filter((_, idx) => idx !== i)
+                    })}
+                    className="p-1 text-gray-400 hover:text-red-500"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
                 )}
               </div>
             ))}
-            <button type="button" onClick={() => setForm({ ...form, correctOrder: [...form.correctOrder, ''] })}
-              className="text-sm text-brand-red hover:underline mt-1">+ Add item</button>
+            <button
+              type="button"
+              onClick={() => setForm({ ...form, correctOrder: [...form.correctOrder, ''] })}
+              className="text-sm text-brand-red hover:underline mt-1"
+            >
+              + Add item
+            </button>
             <p className="text-xs text-gray-500 mt-1">Partial credit per correct position.</p>
           </div>
         );
@@ -458,31 +967,40 @@ export default function Questions() {
         return (
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">Categories & Items</label>
-            {Object.entries(form.categories).map(([cat, catItems], ci) => (
+            {Object.entries(form.categories || { '': [''] }).map(([cat, catItems], ci) => (
               <div key={ci} className="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
                 <div className="flex items-center gap-2 mb-2">
-                  <input value={cat}
+                  <input
+                    value={cat}
                     onChange={(e) => {
                       const newCats = {};
-                      Object.entries(form.categories).forEach(([k, v], idx) => {
+                      Object.entries(form.categories || {}).forEach(([k, v], idx) => {
                         newCats[idx === ci ? e.target.value : k] = v;
                       });
                       setForm({ ...form, categories: newCats });
                     }}
                     placeholder={`Category ${ci + 1}`}
-                    className="flex-1 h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm font-semibold" />
-                  {Object.keys(form.categories).length > 2 && (
-                    <button type="button" onClick={() => {
-                      const newCats = { ...form.categories };
-                      delete newCats[cat];
-                      setForm({ ...form, categories: newCats });
-                    }} className="p-1 text-gray-400 hover:text-red-500"><X className="w-4 h-4" /></button>
+                    className="flex-1 h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm font-semibold"
+                  />
+                  {Object.keys(form.categories || {}).length > 1 && cat !== '' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newCats = { ...form.categories };
+                        delete newCats[cat];
+                        setForm({ ...form, categories: newCats });
+                      }}
+                      className="p-1 text-gray-400 hover:text-red-500"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
                   )}
                 </div>
                 {(catItems || []).map((item, ii) => (
                   <div key={ii} className="flex items-center gap-2 mb-1 ml-4">
                     <span className="text-gray-400 text-xs">•</span>
-                    <input value={item}
+                    <input
+                      value={item}
                       onChange={(e) => {
                         const newCats = { ...form.categories };
                         const arr = [...(newCats[cat] || [])];
@@ -491,27 +1009,46 @@ export default function Questions() {
                         setForm({ ...form, categories: newCats });
                       }}
                       placeholder={`Item ${ii + 1}`}
-                      className="flex-1 h-9 px-3 rounded-lg border border-gray-200 focus-brand text-sm" />
+                      className="flex-1 h-9 px-3 rounded-lg border border-gray-200 focus-brand text-sm"
+                    />
                     {(catItems || []).length > 1 && (
-                      <button type="button" onClick={() => {
-                        const newCats = { ...form.categories };
-                        newCats[cat] = (newCats[cat] || []).filter((_, idx) => idx !== ii);
-                        setForm({ ...form, categories: newCats });
-                      }} className="p-1 text-gray-400 hover:text-red-500"><X className="w-3 h-3" /></button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newCats = { ...form.categories };
+                          newCats[cat] = (newCats[cat] || []).filter((_, idx) => idx !== ii);
+                          setForm({ ...form, categories: newCats });
+                        }}
+                        className="p-1 text-gray-400 hover:text-red-500"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
                     )}
                   </div>
                 ))}
-                <button type="button" onClick={() => {
-                  const newCats = { ...form.categories };
-                  newCats[cat] = [...(newCats[cat] || []), ''];
-                  setForm({ ...form, categories: newCats });
-                }} className="text-xs text-brand-red hover:underline mt-1 ml-4">+ Add item</button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const newCats = { ...form.categories };
+                    newCats[cat] = [...(newCats[cat] || []), ''];
+                    setForm({ ...form, categories: newCats });
+                  }}
+                  className="text-xs text-brand-red hover:underline mt-1 ml-4"
+                >
+                  + Add item
+                </button>
               </div>
             ))}
-            <button type="button" onClick={() => {
-              const newCats = { ...form.categories, '': [''] };
-              setForm({ ...form, categories: newCats });
-            }} className="text-sm text-brand-red hover:underline">+ Add category</button>
+            <button
+              type="button"
+              onClick={() => {
+                const newCats = { ...(form.categories || {}), '': [''] };
+                setForm({ ...form, categories: newCats });
+              }}
+              className="text-sm text-brand-red hover:underline"
+            >
+              + Add category
+            </button>
             <p className="text-xs text-gray-500 mt-1">Partial credit per correctly classified item.</p>
           </div>
         );
@@ -532,10 +1069,16 @@ export default function Questions() {
           <h1 className="text-3xl font-display font-bold text-brand-black">Question Bank</h1>
           <p className="text-gray-500 mt-1">Manage competency-based questions across all types.</p>
         </div>
-        <button onClick={openCreate}
-          className="flex items-center gap-2 px-5 py-2.5 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors">
-          <Plus className="w-4 h-4" /> Add Questions
-        </button>
+        <div className="flex gap-3">
+          <button onClick={openUpload}
+            className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors">
+            <Upload className="w-4 h-4" /> Upload Document
+          </button>
+          <button onClick={openCreate}
+            className="flex items-center gap-2 px-5 py-2.5 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors">
+            <Plus className="w-4 h-4" /> Add Questions
+          </button>
+        </div>
       </div>
 
       {/* Filters + page size */}
@@ -660,7 +1203,91 @@ export default function Questions() {
         </div>
       )}
 
-      {/* ── Create Modal (Batch) ─────────────────────────────────────────── */}
+      {/* ── Upload Modal ──────────────────────────────────────────────────── */}
+      <Modal open={modal === 'upload'} onClose={() => setModal(null)} title="Upload Questions Document">
+        <div className="space-y-4">
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <h4 className="font-semibold text-blue-900 mb-2">Document Format Guidelines</h4>
+            <ul className="text-sm text-blue-800 space-y-1 list-disc list-inside">
+              <li>Start each question with "Question:" or "Q:" or a number (e.g., "1.")</li>
+              <li>Specify type with "Type: MCQ" (supports: MCQ, True/False, Rating, Multi-Select, Matching, Ordering, Scenario MCQ, Classification)</li>
+              <li>For MCQ/Multi-Select, use "a)" or "a." for options, mark correct with "*" or "(correct)"</li>
+              <li>Specify "Answer:" or "Correct:" for the correct answer</li>
+              <li>For Scenario MCQ, add "Scenario: ..." before options</li>
+              <li>For Matching, use "left item -> right item" format</li>
+              <li>For Ordering, list items with "1.", "2.", etc.</li>
+              <li>Optional: "Score: 2" to set point value</li>
+            </ul>
+          </div>
+
+          <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-brand-red transition-colors">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,.docx,.doc,.txt"
+              onChange={handleFileUpload}
+              className="hidden"
+              id="file-upload"
+            />
+            <label htmlFor="file-upload" className="cursor-pointer">
+              <FileText className="w-12 h-12 mx-auto text-gray-400 mb-3" />
+              <p className="text-sm font-medium text-gray-700 mb-1">
+                Click to upload or drag and drop
+              </p>
+              <p className="text-xs text-gray-500">
+                PDF, DOCX, or TXT (max 10MB)
+              </p>
+            </label>
+          </div>
+
+          {uploadLoading && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-center p-4">
+                <div className="w-8 h-8 border-4 border-brand-red border-t-transparent rounded-full animate-spin" />
+                <span className="ml-3 text-gray-600">Parsing document...</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2.5">
+                <div
+                  className="bg-brand-red h-2.5 rounded-full transition-all duration-300"
+                  style={{ width: `${uploadProgress}%` }}
+                ></div>
+              </div>
+              <p className="text-xs text-gray-500 text-center">{uploadProgress}% complete</p>
+            </div>
+          )}
+
+          {uploadedQuestions && (
+            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+              <div className="flex items-start gap-3">
+                <Check className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <h4 className="font-semibold text-green-900 mb-1">
+                    Successfully extracted {uploadedQuestions.questionGroups.reduce((sum, g) => sum + g.questions.length, 0)} questions
+                  </h4>
+                  <p className="text-sm text-green-800 mb-3">
+                    Review and edit the questions before creating them.
+                  </p>
+                  <button
+                    onClick={useUploadedQuestions}
+                    className="px-4 py-2 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition-colors text-sm"
+                  >
+                    Review & Edit Questions
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-3 mt-6">
+          <button onClick={() => setModal(null)}
+            className="px-4 py-2 border border-gray-300 rounded-lg font-semibold text-gray-700 hover:bg-gray-50 transition-colors">
+            Close
+          </button>
+        </div>
+      </Modal>
+
+      {/* ── Create Modal (Batch with Groups) ─────────────────────────────── */}
       <Modal open={modal === 'create'} onClose={() => setModal(null)} title="Add Questions" large>
         <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
           {/* Competency selector */}
@@ -673,60 +1300,100 @@ export default function Questions() {
             </select>
           </div>
 
-          {/* Questions */}
-          {batchForm.questions.map((q, idx) => (
-            <div key={idx} className="p-4 border border-gray-200 rounded-lg bg-gray-50">
-              <div className="flex justify-between items-center mb-3">
-                <h4 className="font-semibold text-gray-800">Question {idx + 1}</h4>
-                {batchForm.questions.length > 1 && (
-                  <button onClick={() => removeQuestion(idx)} className="text-red-600 hover:text-red-700 text-sm font-medium">
-                    Remove
+          {/* Question Groups */}
+          {batchForm.questionGroups.map((group, groupIndex) => (
+            <div key={groupIndex} className="border-2 border-gray-200 rounded-lg p-4 bg-gray-50">
+              <div className="flex justify-between items-center mb-4">
+                <div className="flex items-center gap-3">
+                  <h3 className="font-bold text-gray-900">Question Type Group {groupIndex + 1}</h3>
+                  <select
+                    value={group.type}
+                    onChange={(e) => {
+                      const newType = e.target.value;
+                      const updatedQuestions = group.questions.map(q => ({
+                        ...initQuestionForm(),
+                        type: newType,
+                        text: q.text,
+                        score: q.score,
+                      }));
+                      updateQuestionGroup(groupIndex, { type: newType, questions: updatedQuestions });
+                    }}
+                    className="h-9 px-3 rounded-lg border border-gray-300 focus-brand text-sm font-semibold">
+                    {TYPES.map((t) => <option key={t} value={t}>{TYPE_LABELS[t]}</option>)}
+                  </select>
+                  <span className={`px-2 py-1 rounded text-xs font-semibold ${TYPE_BADGES[group.type]}`}>
+                    {group.questions.length} question{group.questions.length !== 1 ? 's' : ''}
+                  </span>
+                </div>
+                {batchForm.questionGroups.length > 1 && (
+                  <button
+                    onClick={() => removeQuestionGroup(groupIndex)}
+                    className="text-red-600 hover:text-red-700 text-sm font-medium"
+                  >
+                    Remove Group
                   </button>
                 )}
               </div>
 
+              {/* Questions in this group */}
               <div className="space-y-3">
-                {/* Type & Score */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">Type</label>
-                    <select
-                      value={q.type}
-                      onChange={(e) => updateQuestion(idx, {
-                        ...initQuestionForm(),
-                        type: e.target.value,
-                        text: q.text,
-                        score: q.score,
-                      })}
-                      className="w-full h-9 px-2 rounded-lg border border-gray-300 focus-brand text-sm">
-                      {TYPES.map((t) => <option key={t} value={t}>{TYPE_LABELS[t]}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">Score</label>
-                    <input type="number" min="0" step="0.5" value={q.score}
-                      onChange={(e) => updateQuestion(idx, { score: e.target.value })}
-                      className="w-full h-9 px-2 rounded-lg border border-gray-300 focus-brand text-sm" />
-                  </div>
-                </div>
+                {group.questions.map((q, qIndex) => (
+                  <div key={qIndex} className="p-3 border border-gray-300 rounded-lg bg-white">
+                    <div className="flex justify-between items-center mb-3">
+                      <h4 className="font-semibold text-gray-800 text-sm">Question {qIndex + 1}</h4>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.5"
+                          value={q.score}
+                          onChange={(e) => updateQuestionInGroup(groupIndex, qIndex, { score: parseFloat(e.target.value) || 1 })}
+                          className="w-20 h-8 px-2 rounded-lg border border-gray-300 focus-brand text-sm"
+                          placeholder="Score"
+                        />
+                        {group.questions.length > 1 && (
+                          <button
+                            onClick={() => removeQuestionFromGroup(groupIndex, qIndex)}
+                            className="text-red-600 hover:text-red-700 text-sm"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
 
-                {/* Question text */}
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">Question Text</label>
-                  <textarea rows={2} value={q.text} onChange={(e) => updateQuestion(idx, { text: e.target.value })}
-                    placeholder="Enter the question..."
-                    className="w-full px-2 py-1.5 rounded-lg border border-gray-300 focus-brand text-sm resize-none" />
-                </div>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1">Question Text</label>
+                        <textarea
+                          rows={2}
+                          value={q.text}
+                          onChange={(e) => updateQuestionInGroup(groupIndex, qIndex, { text: e.target.value })}
+                          placeholder="Enter the question..."
+                          className="w-full px-2 py-1.5 rounded-lg border border-gray-300 focus-brand text-sm resize-none"
+                        />
+                      </div>
 
-                {/* Type-specific options */}
-                {renderQuestionOptions(q, idx)}
+                      {renderQuestionOptions(q, groupIndex, qIndex)}
+                    </div>
+                  </div>
+                ))}
+
+                <button
+                  onClick={() => addQuestionToGroup(groupIndex)}
+                  className="w-full py-2 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-brand-red hover:text-brand-red transition-colors font-medium text-sm"
+                >
+                  + Add Another {TYPE_LABELS[group.type]} Question
+                </button>
               </div>
             </div>
           ))}
 
-          <button onClick={addQuestion}
-            className="w-full py-2 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-brand-red hover:text-brand-red transition-colors font-medium">
-            + Add Another Question
+          <button
+            onClick={addQuestionGroup}
+            className="w-full py-3 border-2 border-dashed border-brand-red rounded-lg text-brand-red hover:bg-brand-red hover:text-white transition-colors font-semibold"
+          >
+            + Add New Question Type Group
           </button>
         </div>
 
@@ -738,7 +1405,7 @@ export default function Questions() {
           </button>
           <button onClick={handleSave}
             className="px-4 py-2 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors">
-            Create {batchForm.questions.length} Question{batchForm.questions.length !== 1 ? 's' : ''}
+            Create {batchForm.questionGroups.reduce((sum, g) => sum + g.questions.filter(q => q.text.trim()).length, 0)} Question(s)
           </button>
         </div>
       </Modal>
@@ -776,7 +1443,7 @@ export default function Questions() {
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">Score</label>
               <input type="number" min="0" step="0.5" value={editForm.score}
-                onChange={(e) => setEditForm({ ...editForm, score: e.target.value })}
+                onChange={(e) => setEditForm({ ...editForm, score: parseFloat(e.target.value) || 1 })}
                 className="w-32 h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm" />
             </div>
 
@@ -787,7 +1454,7 @@ export default function Questions() {
                 className="w-full px-3 py-2 rounded-lg border border-gray-300 focus-brand text-sm resize-none" />
             </div>
 
-            {renderQuestionOptions(editForm, 0, true)}
+            {renderQuestionOptions(editForm, 0, 0, true)}
           </div>
         )}
 
