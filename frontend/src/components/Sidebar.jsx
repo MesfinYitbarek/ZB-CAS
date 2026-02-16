@@ -183,17 +183,6 @@ export default function Sidebar({
 
         {/* Bottom: Logout + Desktop Toggle */}
         <div className="border-t border-white/10 pt-3 pb-4">
-          {/* User Info - Only show when not collapsed or on mobile */}
-          {(!collapsed || isMobile) && (
-            <div className="mb-2 px-5 py-2 bg-white/5 rounded-lg mx-3">
-              <div className="text-xs font-semibold text-white truncate">
-                {auth.user?.name}
-              </div>
-              <div className="text-[10px] text-white/60 uppercase tracking-wide mt-0.5">
-                {auth.user?.role?.replace('_', ' ')}
-              </div>
-            </div>
-          )}
 
           {/* Logout */}
           <button

@@ -3,7 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import api from '../utils/api';
-import logo from '../image/ZB-logo.png'
+
+// Assets
+import logoFull from '../image/ZB-logo.png'; // Original Full Logo
+import bullArt from '../image/bull.jpg';
+import zIcon from '../image/z.jpg';
+
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -45,50 +50,65 @@ export default function Login() {
 
   return (
     <div className="min-h-screen flex bg-white">
-      {/* Left panel – brand */}
-      <div className="hidden lg:flex lg:flex-[0_0_42%] bg-brand-gradient flex-col justify-between p-12 relative overflow-hidden">
-        {/* Decorative circles */}
-        <div className="absolute -top-32 -right-32 w-[340px] h-[340px] rounded-full border border-white/10" />
-        <div className="absolute -bottom-20 -left-16 w-60 h-60 rounded-full border border-white/8" />
+      {/* Left panel – brand (Beautiful Dark Theme) */}
+      <div className="hidden lg:flex lg:flex-[0_0_42%] bg-[#1a1a1a] flex-col justify-between p-12 relative overflow-hidden">
+        
+        {/* Background Bull Graphic */}
+        <div className="absolute inset-0 z-0 opacity-40">
+          <img 
+            src={bullArt} 
+            alt="Background Art" 
+            className="w-full h-full object-cover mix-blend-luminosity"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-[#1a1a1a] via-transparent to-[#1a1a1a]/80" />
+        </div>
 
-        {/* Logo */}
+        {/* Desktop Logo - Z-Icon integrated natively */}
         <div className="flex items-center gap-3.5 z-10">
           <img
-            src={logo}
-            alt="Zemen Bank Logo"
+            src={zIcon}
+            alt="Zemen Icon"
             className="h-14 w-auto object-contain"
           />
           <div>
-            <div className="text-white font-display text-xl font-bold">Zemen Bank</div>
-            <div className="text-white/50 text-[11px] uppercase tracking-widest">
-              CAS Platform
-            </div>
+            <div className="text-white font-display text-xl font-bold">CAS Platform</div>
           </div>
         </div>
 
         {/* Mid text */}
-        <div className="text-white/90 z-10">
-          <h1 className="font-display text-[34px] font-bold leading-tight mb-4">
+        <div className="text-white z-10">
+          <h1 className="font-display text-[48px] font-black leading-[1.1] mb-6 tracking-tighter">
             Measure.<br />
             Develop.<br />
-            Excel.
+            <span className="text-red-600">Excel.</span>
           </h1>
-          <p className="text-[15px] text-white/55 leading-relaxed max-w-md">
+          <div className="w-16 h-1 bg-red-600 mb-6"></div>
+          <p className="text-[17px] text-gray-400 leading-relaxed max-w-md font-light">
             The integrated competency assessment platform powering talent development across Zemen Bank.
           </p>
         </div>
 
         {/* Bottom tag */}
-        <div className="text-white/30 text-xs z-10">© 2024 Zemen Bank. All rights reserved.</div>
+        <div className="text-white/30 text-xs z-10">© 2026 Zemen Bank. All rights reserved.</div>
       </div>
 
-      {/* Right panel – form */}
+      {/* Right panel – Form */}
       <div className="flex-1 flex items-center justify-center p-10 lg:p-16">
         <div className="w-full max-w-[380px]">
+          
+          {/* Mobile Logo: Displaying original logo without text below */}
+          <div className="lg:hidden flex justify-center mb-12">
+            <img
+              src={logoFull}
+              alt="Zemen Bank"
+              className="h-16 w-auto object-contain"
+            />
+          </div>
+
           {!showForgot ? (
             <>
-              <h2 className="font-display text-[28px] font-bold mb-2">Welcome back</h2>
-              <p className="text-gray-500 text-sm mb-8">Sign in to your CAS account</p>
+              <h2 className="font-display text-[28px] font-bold mb-2 lg:text-left text-center">Welcome back</h2>
+              <p className="text-gray-500 text-sm mb-8 lg:text-left text-center">Sign in to your CAS account</p>
 
               <form onSubmit={handleLogin} className="space-y-5">
                 <div>
@@ -98,7 +118,7 @@ export default function Login() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="you@zemenbank.com"
-                    className="w-full h-11 px-3.5 rounded-lg border border-gray-300 focus-brand"
+                    className="w-full h-11 px-3.5 rounded-lg border border-gray-300 focus-brand outline-none"
                   />
                 </div>
                 <div>
@@ -108,7 +128,7 @@ export default function Login() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
-                    className="w-full h-11 px-3.5 rounded-lg border border-gray-300 focus-brand"
+                    className="w-full h-11 px-3.5 rounded-lg border border-gray-300 focus-brand outline-none"
                   />
                 </div>
                 <div className="flex justify-end -mt-2">
@@ -131,8 +151,8 @@ export default function Login() {
             </>
           ) : (
             <>
-              <h2 className="font-display text-[28px] font-bold mb-2">Reset Password</h2>
-              <p className="text-gray-500 text-sm mb-8">Enter your email to receive a reset link.</p>
+              <h2 className="font-display text-[28px] font-bold mb-2 lg:text-left text-center">Reset Password</h2>
+              <p className="text-gray-500 text-sm mb-8 lg:text-left text-center">Enter your email to receive a reset link.</p>
 
               <form onSubmit={handleForgot} className="space-y-5">
                 <div>
@@ -142,7 +162,7 @@ export default function Login() {
                     value={forgotEmail}
                     onChange={(e) => setForgotEmail(e.target.value)}
                     placeholder="you@zemenbank.com"
-                    className="w-full h-11 px-3.5 rounded-lg border border-gray-300 focus-brand"
+                    className="w-full h-11 px-3.5 rounded-lg border border-gray-300 focus-brand outline-none"
                   />
                 </div>
                 <button

@@ -216,40 +216,6 @@ export default function AdminDashboard() {
           )}
         </div>
       </div>
-
-      {/* Bottom Row */}
-      <div className="grid lg:grid-cols-2 gap-6">
-        {/* Recent Activity */}
-        <div className="bg-white rounded-xl p-6 shadow-card border border-gray-100">
-          <h3 className="text-lg font-display font-bold text-brand-black mb-4">Recent Activity</h3>
-          {recentActivity.length === 0 ? (
-            <div className="text-center py-8 text-gray-400">
-              <AlertTriangle className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-              <p className="text-sm">No recent activity</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {recentActivity.map((act, idx) => (
-                <div key={idx} className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
-                  <div className="w-8 h-8 rounded-lg bg-brand-red/10 flex items-center justify-center flex-shrink-0">
-                    {act.type === 'assessment' && <ClipboardList className="w-4 h-4 text-brand-red" />}
-                    {act.type === 'result' && <CheckCircle className="w-4 h-4 text-green-600" />}
-                    {act.type === 'user' && <Users className="w-4 h-4 text-blue-600" />}
-                    {act.type === 'feedback' && <AlertTriangle className="w-4 h-4 text-orange-600" />}
-                  </div>
-                  <div className="flex-1">
-                    <div className="text-sm font-semibold text-brand-black">{act.desc}</div>
-                    <div className="text-xs text-gray-500 mt-0.5">
-                      {act.user} · {act.time}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-      </div>
     </div>
   );
 }
