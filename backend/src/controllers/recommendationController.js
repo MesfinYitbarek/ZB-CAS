@@ -55,10 +55,35 @@ export const getByCompetency = asyncHandler(async (req, res) => {
 });
 
 // ─── CREATE ──────────────────────────────────────────────────────────────────
+// ─── CREATE OR BULK UPSERT ────────────────────────────────────────────────────
 export const createRecommendation = asyncHandler(async (req, res, next) => {
-  const { competencyId, level, recommendation } = req.body;
+  const { competencyId, level, recommendation, bulk } = req.body;
 
-  const rec = await Recommendation.create({ competencyId, level, recommendation });
+  // Handle Bulk Creation (Array of levels)
+  if (bulk && Array.isArray(bulk)) {
+    const operations = bulk.map((item) => ({
+      updateOne: {
+        filter: { competencyId: item.competencyId, level: item.level },
+        update: { recommendation: item.recommendation },
+        upsert: true, // Creates if it doesn't exist, updates if it does
+      },
+    }));
+
+    await Recommendation.bulkWrite(operations);
+    
+    return res.status(201).json({ 
+      status: 'success', 
+      message: 'Bulk recommendations processed successfully.' 
+    });
+  }
+
+  // Handle Single Creation (standard)
+  // We use findOneAndUpdate with upsert:true to avoid Unique Index crashes
+  const rec = await Recommendation.findOneAndUpdate(
+    { competencyId, level },
+    { recommendation },
+    { upsert: true, new: true, runValidators: true }
+  );
 
   res.status(201).json({ status: 'success', data: { recommendation: rec } });
 });
