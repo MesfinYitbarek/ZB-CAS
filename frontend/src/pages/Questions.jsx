@@ -366,247 +366,273 @@ export default function Questions() {
   };
 
   const parseQuestionsFromText = (text) => {
-  if (!text || typeof text !== "string") return [];
+    const questions = [];
 
-  console.log("Raw input:", text);
+    console.log('Parsing text:', text);
 
-  // --------------------------------------------------
-  // 1️⃣ Normalize (Remove newline dependency)
-  // --------------------------------------------------
-  const normalized = text
-    .replace(/\r/g, " ")
-    .replace(/\n/g, " ")
-    .replace(/\s+/g, " ")
-    .replace(/\s*:\s*/g, ": ")
-    .trim();
+    let lines;
 
-  console.log("Normalized:", normalized);
+    if (text.includes('\n')) {
+      lines = text.split('\n')
+        .map(l => l.trim())
+        .filter(l => l.length > 0);
+    } else {
+      console.log('No newlines found, attempting intelligent splitting');
 
-  const questions = [];
-  let currentType = "MCQ";
+      const withBreaks = text
+        .replace(/(Type:)/g, '\n$1')
+        .replace(/(Question \d+:)/g, '\n$1')
+        .replace(/(Score:)/g, '\n$1')
+        .replace(/(Answer:)/g, '\n$1')
+        .replace(/([a-d]\))/g, '\n$1')
+        .replace(/(\w+ -> \w+)/g, '\n$1');
 
-  const typeMap = {
-    "MCQ": "MCQ",
-    "MULTIPLECHOICE": "MCQ",
-    "TRUE/FALSE": "TrueFalse",
-    "TRUEFALSE": "TrueFalse",
-    "MULTISELECT": "MultiSelect",
-    "MULTI-SELECT": "MultiSelect",
-    "MATCHING": "Matching",
-    "ORDERING": "Ordering",
-    "SCENARIOMCQ": "ScenarioMCQ",
-    "SCENARIO": "ScenarioMCQ",
-    "DRAGDROP": "DragDropClassification",
-    "DRAG-DROPCLASSIFICATION": "DragDropClassification",
-    "CLASSIFICATION": "DragDropClassification",
-    "RATING": "Rating",
-  };
+      lines = withBreaks.split('\n')
+        .map(l => l.trim())
+        .filter(l => l.length > 0);
+    }
 
-  // --------------------------------------------------
-  // 2️⃣ Split by Type blocks
-  // --------------------------------------------------
-  const typeBlocks = normalized.split(/(?=Type\s*:)/i);
+    console.log('Processed lines:', lines);
 
-  typeBlocks.forEach((block) => {
-    const typeMatch = block.match(/Type\s*:\s*([A-Za-z\-\/ ]+)/i);
-    if (!typeMatch) return;
+    let currentType = 'MCQ';
+    let currentQuestion = null;
 
-    const rawType = typeMatch[1].toUpperCase().replace(/\s+/g, "");
-    currentType = typeMap[rawType] || "MCQ";
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
 
-    // --------------------------------------------------
-    // 3️⃣ Split by Question blocks
-    // --------------------------------------------------
-    const questionBlocks = block.split(/(?=Question\s*\d*\s*:)/i);
+      if (line.length < 2) continue;
 
-    questionBlocks.forEach((qBlock) => {
-      const qMatch = qBlock.match(/Question\s*\d*\s*:\s*(.*?)(?=Score\s*:|Answer\s*:|a\)|1\.|$)/i);
-      if (!qMatch) return;
+      // Check for Type declaration (applies to all following questions until next Type)
+      if (line.match(/^type\s*:\s*(.+)$/i)) {
+        const match = line.match(/^type\s*:\s*(.+)$/i);
+        const typeStr = match[1].trim().toUpperCase();
 
-      const questionText = qMatch[1].trim();
+        const typeMap = {
+          'MCQ': 'MCQ',
+          'MULTIPLE CHOICE': 'MCQ',
+          'MULTIPLECHOICE': 'MCQ',
+          'TRUE/FALSE': 'TrueFalse',
+          'TRUE FALSE': 'TrueFalse',
+          'TRUEFALSE': 'TrueFalse',
+          'TRUE-FALSE': 'TrueFalse',
+          'RATING': 'Rating',
+          'MULTISELECT': 'MultiSelect',
+          'MULTI-SELECT': 'MultiSelect',
+          'MULTI SELECT': 'MultiSelect',
+          'MATCHING': 'Matching',
+          'ORDERING': 'Ordering',
+          'SCENARIO MCQ': 'ScenarioMCQ',
+          'SCENARIOMCQ': 'ScenarioMCQ',
+          'SCENARIO': 'ScenarioMCQ',
+          'DRAGDROP': 'DragDropClassification',
+          'DRAG DROP': 'DragDropClassification',
+          'CLASSIFICATION': 'DragDropClassification',
+          'DRAG-DROP CLASSIFICATION': 'DragDropClassification',
+        };
 
-      const scoreMatch = qBlock.match(/Score\s*:\s*(\d+(\.\d+)?)/i);
-      const score = scoreMatch ? parseFloat(scoreMatch[1]) : 1;
+        currentType = typeMap[typeStr] || 'MCQ';
 
-      const answerMatch = qBlock.match(/Answer\s*:\s*(.*?)(?=a\)|1\.|$)/i);
-      const answerRaw = answerMatch ? answerMatch[1].trim() : null;
-
-      const questionObj = {
-        ...initQuestionForm(),
-        type: currentType,
-        text: questionText,
-        score,
-      };
-
-      // --------------------------------------------------
-      // TRUE / FALSE
-      // --------------------------------------------------
-      if (currentType === "TrueFalse" && answerRaw) {
-        questionObj.correctAnswer =
-          answerRaw.toLowerCase().includes("true") ? "True" : "False";
-      }
-
-      // --------------------------------------------------
-      // MCQ / MultiSelect / ScenarioMCQ
-      // --------------------------------------------------
-      if (["MCQ", "MultiSelect", "ScenarioMCQ"].includes(currentType)) {
-        const optionRegex = /([a-d])\s*\)\s*(.*?)(?=\s[a-d]\s*\)|$)/gi;
-        const options = [];
-        let match;
-
-        while ((match = optionRegex.exec(qBlock)) !== null) {
-          let optionText = match[2].trim();
-          optionText = optionText.replace(/\*|\(correct\)/gi, "").trim();
-          options.push(optionText);
+        // Save previous question if exists
+        if (currentQuestion && currentQuestion.text) {
+          questions.push(currentQuestion);
+          currentQuestion = null;
         }
 
-        questionObj.options = options;
+        continue;
+      }
 
-        if (answerRaw) {
-          if (currentType === "MultiSelect") {
-            const rawAnswers = answerRaw.split(/[,;]/).map(a => a.trim().toLowerCase());
+      // Check for new question (starts with Question, Q, or number)
+      if (line.match(/^(?:question\s*\d*\s*:|q\d*\s*:|\d+\.)\s*(.+)$/i)) {
+        // Save previous question
+        if (currentQuestion && currentQuestion.text) {
+          questions.push(currentQuestion);
+        }
 
-            questionObj.correctAnswers = rawAnswers.map(a => {
-              // If letter (a,b,c,d)
-              if (a.length === 1 && "abcd".includes(a)) {
-                return options[a.charCodeAt(0) - 97];
-              }
+        const match = line.match(/^(?:question\s*\d*\s*:|q\d*\s*:|\d+\.)\s*(.+)$/i);
+        const questionText = match ? match[1].trim() : line;
 
-              // If contains letter like a)
-              const letterMatch = a.match(/[a-d]/);
-              if (letterMatch) {
-                return options[letterMatch[0].charCodeAt(0) - 97];
-              }
+        currentQuestion = {
+          ...initQuestionForm(),
+          type: currentType,
+          text: questionText,
+        };
+        continue;
+      }
 
-              // Match by text
-              return options.find(opt => opt.toLowerCase() === a);
-            }).filter(Boolean);
-
-          } else {
-            let correct = null;
-            const lower = answerRaw.toLowerCase();
-
-            // If single letter
-            if (lower.length === 1 && "abcd".includes(lower)) {
-              correct = options[lower.charCodeAt(0) - 97];
-            }
-
-            // If contains letter like c)
-            if (!correct) {
-              const letterMatch = lower.match(/[a-d]/);
-              if (letterMatch) {
-                correct = options[letterMatch[0].charCodeAt(0) - 97];
-              }
-            }
-
-            // Match by text
-            if (!correct) {
-              correct = options.find(opt => opt.toLowerCase() === lower);
-            }
-
-            questionObj.correctAnswer = correct || null;
+      // Process question details if we have a current question
+      if (currentQuestion) {
+        // Score
+        if (line.match(/^score\s*:\s*(\d+(?:\.\d+)?)/i)) {
+          const match = line.match(/^score\s*:\s*(\d+(?:\.\d+)?)/i);
+          if (match) {
+            currentQuestion.score = parseFloat(match[1]) || 1;
           }
+          continue;
+        }
+
+        // Answer/Correct Answer
+        if (line.match(/^(?:answer|correct)\s*:\s*(.+)$/i)) {
+          const match = line.match(/^(?:answer|correct)\s*:\s*(.+)$/i);
+          const answer = match[1].trim();
+
+          if (currentQuestion.type === 'TrueFalse') {
+            currentQuestion.correctAnswer = answer.match(/true/i) ? 'True' : 'False';
+          } else if (currentQuestion.type === 'MultiSelect') {
+            // Handle multiple correct answers separated by commas or semicolons
+            currentQuestion.correctAnswers = answer
+              .split(/[,;]/)
+              .map(a => a.trim())
+              .filter(a => a.length > 0);
+          } else {
+            currentQuestion.correctAnswer = answer;
+          }
+          continue;
+        }
+
+        // Options (a), b), c), d) format)
+        if (line.match(/^[a-d]\)\s*(.+)$/i)) {
+          const match = line.match(/^([a-d])\)\s*(.+)$/i);
+          const optionLetter = match[1].toLowerCase();
+          let optionText = match[2].trim();
+
+          const isCorrect = optionText.includes('*') || optionText.includes('(correct)');
+          optionText = optionText.replace(/\*|\(correct\)/gi, '').trim();
+
+          const index = optionLetter.charCodeAt(0) - 'a'.charCodeAt(0);
+
+          if (!currentQuestion.options) {
+            currentQuestion.options = ['', '', '', ''];
+          }
+
+          // Ensure array is large enough
+          while (currentQuestion.options.length <= index) {
+            currentQuestion.options.push('');
+          }
+
+          currentQuestion.options[index] = optionText;
+
+          if (isCorrect) {
+            if (currentQuestion.type === 'MultiSelect') {
+              if (!currentQuestion.correctAnswers) {
+                currentQuestion.correctAnswers = [];
+              }
+              currentQuestion.correctAnswers.push(optionText);
+            } else {
+              currentQuestion.correctAnswer = optionText;
+            }
+          }
+          continue;
+        }
+
+        // Matching pairs (left -> right format)
+        if (currentQuestion.type === 'Matching' && line.includes('->')) {
+          const [left, right] = line.split('->').map(s => s.trim());
+
+          if (!currentQuestion.matchingPairs) {
+            currentQuestion.matchingPairs = [];
+          }
+
+          // Replace default empty pair
+          if (currentQuestion.matchingPairs.length === 1 &&
+            currentQuestion.matchingPairs[0].left === '' &&
+            currentQuestion.matchingPairs[0].right === '') {
+            currentQuestion.matchingPairs[0] = { left, right };
+          } else {
+            currentQuestion.matchingPairs.push({ left, right });
+          }
+          continue;
+        }
+
+        // Ordering items (1., 2., 3. format)
+        if (currentQuestion.type === 'Ordering' && line.match(/^\d+\.\s*(.+)$/)) {
+          const match = line.match(/^\d+\.\s*(.+)$/);
+          const itemText = match[1].trim();
+
+          if (!currentQuestion.correctOrder || currentQuestion.correctOrder.length === 0 ||
+            (currentQuestion.correctOrder.length === 1 && currentQuestion.correctOrder[0] === '')) {
+            currentQuestion.correctOrder = [itemText];
+          } else {
+            currentQuestion.correctOrder.push(itemText);
+          }
+          continue;
+        }
+
+        // Categories for classification (Category: item1, item2, item3)
+        if (currentQuestion.type === 'DragDropClassification' && line.match(/^(.+?):\s*(.+)$/)) {
+          const match = line.match(/^(.+?):\s*(.+)$/);
+          const category = match[1].trim();
+          const itemsText = match[2].trim();
+          const items = itemsText.split(',').map(item => item.trim()).filter(item => item.length > 0);
+
+          if (!currentQuestion.categories || Object.keys(currentQuestion.categories).length === 0) {
+            currentQuestion.categories = {};
+          }
+
+          // Remove default empty category
+          if (currentQuestion.categories[''] && currentQuestion.categories[''].length === 1 && currentQuestion.categories[''][0] === '') {
+            delete currentQuestion.categories[''];
+          }
+
+          currentQuestion.categories[category] = items;
+          continue;
+        }
+
+        // Scenario text (for ScenarioMCQ)
+        if (currentQuestion.type === 'ScenarioMCQ' && line.match(/^scenario\s*:\s*(.+)$/i)) {
+          const match = line.match(/^scenario\s*:\s*(.+)$/i);
+          currentQuestion.scenario = match[1].trim();
+          continue;
+        }
+      }
+    }
+
+    // Don't forget the last question
+    if (currentQuestion && currentQuestion.text) {
+      questions.push(currentQuestion);
+    }
+
+    console.log('Parsed questions:', questions);
+
+    // Clean up questions
+    return questions.map(q => {
+      if (q.type === 'MCQ' || q.type === 'MultiSelect' || q.type === 'ScenarioMCQ') {
+        q.options = (q.options || []).filter(opt => opt && opt.length > 0);
+        if (q.options.length === 0) {
+          q.options = ['', '', '', ''];
         }
       }
 
-      // --------------------------------------------------
-      // MATCHING
-      // --------------------------------------------------
-      if (currentType === "Matching") {
-        const pairs = [];
-        const pairRegex = /([^->]+?)\s*->\s*([^->]+?)(?=\s[^->]+\s*->|$)/g;
-        let match;
-
-        while ((match = pairRegex.exec(qBlock)) !== null) {
-          pairs.push({
-            left: match[1].trim(),
-            right: match[2].trim(),
-          });
-        }
-
-        questionObj.matchingPairs = pairs;
-      }
-
-      // --------------------------------------------------
-      // ORDERING
-      // --------------------------------------------------
-      if (currentType === "Ordering") {
-        const items = [];
-        const orderRegex = /\d+\.\s*(.*?)(?=\s\d+\.|$)/g;
-        let match;
-
-        while ((match = orderRegex.exec(qBlock)) !== null) {
-          items.push(match[1].trim());
-        }
-
-        questionObj.correctOrder = items;
-      }
-
-      // --------------------------------------------------
-      // DRAG & DROP
-      // --------------------------------------------------
-      if (currentType === "DragDropClassification") {
-        const categories = {};
-        const catRegex = /([A-Za-z ]+)\s*:\s*([^:]+?)(?=\s[A-Za-z ]+\s*:|$)/g;
-        let match;
-
-        while ((match = catRegex.exec(qBlock)) !== null) {
-          categories[match[1].trim()] =
-            match[2].split(",").map(i => i.trim()).filter(Boolean);
-        }
-
-        questionObj.categories = categories;
-      }
-
-      // --------------------------------------------------
-      // SCENARIO
-      // --------------------------------------------------
-      if (currentType === "ScenarioMCQ") {
-        const scenarioMatch = qBlock.match(/Scenario\s*:\s*(.*?)(?=Score\s*:|a\)|$)/i);
-        if (scenarioMatch) {
-          questionObj.scenario = scenarioMatch[1].trim();
+      if (q.type === 'Matching') {
+        q.matchingPairs = (q.matchingPairs || []).filter(p => p.left && p.right);
+        if (q.matchingPairs.length === 0) {
+          q.matchingPairs = [{ left: '', right: '' }, { left: '', right: '' }];
         }
       }
 
-      questions.push(questionObj);
+      if (q.type === 'Ordering') {
+        q.correctOrder = (q.correctOrder || []).filter(item => item && item.length > 0);
+        if (q.correctOrder.length === 0) {
+          q.correctOrder = ['', ''];
+        }
+      }
+
+      if (q.type === 'DragDropClassification') {
+        const cats = {};
+        Object.entries(q.categories || {}).forEach(([cat, items]) => {
+          const trimmed = cat.trim();
+          if (trimmed && items && items.length > 0) {
+            cats[trimmed] = items.filter(i => i && i.trim());
+          }
+        });
+        if (Object.keys(cats).length === 0) {
+          cats[''] = [''];
+        }
+        q.categories = cats;
+      }
+
+      return q;
     });
-  });
-
-  console.log("Parsed questions:", questions);
-
-  // --------------------------------------------------
-  // 4️⃣ Cleanup (Safer Defaults)
-  // --------------------------------------------------
-  return questions.map(q => {
-    if (["MCQ", "MultiSelect", "ScenarioMCQ"].includes(q.type)) {
-      q.options = (q.options || []).filter(Boolean);
-      if (!q.options.length) q.options = ["", "", "", ""];
-    }
-
-    if (q.type === "Matching") {
-      q.matchingPairs = (q.matchingPairs || []).filter(p => p.left && p.right);
-      if (!q.matchingPairs.length) {
-        q.matchingPairs = [{ left: "", right: "" }];
-      }
-    }
-
-    if (q.type === "Ordering") {
-      q.correctOrder = (q.correctOrder || []).filter(Boolean);
-      if (!q.correctOrder.length) q.correctOrder = [""];
-    }
-
-    if (q.type === "DragDropClassification") {
-      const clean = {};
-      Object.entries(q.categories || {}).forEach(([k, v]) => {
-        if (k.trim() && v.length) clean[k.trim()] = v;
-      });
-      q.categories = Object.keys(clean).length ? clean : { "": [""] };
-    }
-
-    return q;
-  });
-};
-
+  };
 
   // ─── Group questions by type ────────────────────────────────────────────
   const groupQuestionsByType = (questions) => {
