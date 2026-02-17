@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
-import { Plus, Star, CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, Star, CheckCircle2, ChevronLeft, ChevronRight, Filter } from 'lucide-react';
 import Modal from '../components/Modal';
 import api from '../utils/api';
 
@@ -14,6 +14,9 @@ export default function Feedback() {
   const [modal, setModal] = useState(false);
   const [filterReviewed, setFilterReviewed] = useState('');
   
+  // New state for assessment filter (admin only)
+  const [selectedAssessment, setSelectedAssessment] = useState('');
+  
   // Pagination state
   const [pagination, setPagination] = useState({
     page: 1,
@@ -25,6 +28,7 @@ export default function Feedback() {
   const initForm = () => ({ assessmentId: '', content: '', rating: 0 });
   const [form, setForm] = useState(initForm());
 
+  // Fetch assessments for filter dropdown
   useEffect(() => {
     api.get('/assessments').then(({ data }) => setAssessments(data.data.assessments)).catch(() => {});
   }, []);
@@ -36,7 +40,14 @@ export default function Feedback() {
         page: pagination.page,
         limit: pagination.limit
       };
+      
+      // Add filters
       if (filterReviewed !== '') params.reviewed = filterReviewed;
+      
+      // Add assessment filter for admin
+      if (isAdmin && selectedAssessment) {
+        params.assessmentId = selectedAssessment;
+      }
       
       const { data } = await api.get('/feedback', { params });
       setItems(data.data.feedbacks);
@@ -53,7 +64,7 @@ export default function Feedback() {
       show('Failed to load feedback.', 'error');
     }
     setLoading(false);
-  }, [filterReviewed, pagination.page, pagination.limit]);
+  }, [filterReviewed, selectedAssessment, pagination.page, pagination.limit, isAdmin]);
 
   useEffect(() => {
     fetch();
@@ -99,9 +110,22 @@ export default function Feedback() {
     });
   };
 
-  // Handle filter change
+  // Handle filter changes
   const handleFilterChange = (value) => {
     setFilterReviewed(value);
+    setPagination(prev => ({ ...prev, page: 1 }));
+  };
+
+  // Handle assessment filter change (admin)
+  const handleAssessmentFilterChange = (e) => {
+    setSelectedAssessment(e.target.value);
+    setPagination(prev => ({ ...prev, page: 1 }));
+  };
+
+  // Clear all filters (admin)
+  const clearFilters = () => {
+    setFilterReviewed('');
+    setSelectedAssessment('');
     setPagination(prev => ({ ...prev, page: 1 }));
   };
 
@@ -125,7 +149,9 @@ export default function Feedback() {
       <div className="flex justify-between items-start mb-6">
         <div>
           <h1 className="text-3xl font-display font-bold text-brand-black">Feedback</h1>
-          <p className="text-gray-500 mt-1">{isAdmin ? 'Review employee feedback.' : 'Share your feedback on assessments.'}</p>
+          <p className="text-gray-500 mt-1">
+            {isAdmin ? 'Filter and review employee feedback by assessment.' : 'Share your feedback on assessments.'}
+          </p>
         </div>
         {!isAdmin && (
           <button
@@ -142,39 +168,113 @@ export default function Feedback() {
 
       {/* Filters (admin) */}
       {isAdmin && (
-        <div className="flex justify-between items-center gap-3 mb-6 flex-wrap">
-          <div className="flex gap-2">
-            {[
-              ['', 'All'],
-              ['false', 'Pending'],
-              ['true', 'Reviewed'],
-            ].map(([val, label]) => (
-              <button
-                key={val}
-                onClick={() => handleFilterChange(val)}
-                className={`px-4 py-2 rounded-lg border-2 font-semibold text-sm transition-all ${
-                  filterReviewed === val ? 'border-brand-red bg-brand-red/10 text-brand-red' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
+        <div className="bg-white rounded-xl p-5 shadow-card border border-gray-100 mb-6">
+          <div className="flex items-center gap-2 mb-4">
+            <Filter className="w-5 h-5 text-brand-red" />
+            <h3 className="font-semibold text-brand-black">Filter Feedback</h3>
           </div>
           
-          {/* Page size selector */}
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-600">Show:</span>
-            <select 
-              value={pagination.limit} 
-              onChange={handlePageSizeChange}
-              className="px-3 py-1.5 rounded-lg border border-gray-300 focus-brand text-sm"
-            >
-              <option value="5">5 per page</option>
-              <option value="10">10 per page</option>
-              <option value="20">20 per page</option>
-              <option value="50">50 per page</option>
-            </select>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Assessment Filter */}
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                Filter by Assessment
+              </label>
+              <select
+                value={selectedAssessment}
+                onChange={handleAssessmentFilterChange}
+                className="w-full h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm"
+              >
+                <option value="">All Assessments</option>
+                {assessments.map((a) => (
+                  <option key={a._id} value={a._id}>
+                    {a.description || 'Assessment'} {a.competencyId?.name ? `(${a.competencyId.name})` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Review Status Filter */}
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                Filter by Status
+              </label>
+              <div className="flex gap-2">
+                {[
+                  ['', 'All'],
+                  ['false', 'Pending'],
+                  ['true', 'Reviewed'],
+                ].map(([val, label]) => (
+                  <button
+                    key={val}
+                    onClick={() => handleFilterChange(val)}
+                    className={`flex-1 px-4 py-2 rounded-lg border-2 font-semibold text-sm transition-all ${
+                      filterReviewed === val 
+                        ? 'border-brand-red bg-brand-red/10 text-brand-red' 
+                        : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Clear Filters & Page Size */}
+            <div className="flex items-end justify-end gap-3">
+              {(selectedAssessment || filterReviewed !== '') && (
+                <button
+                  onClick={clearFilters}
+                  className="px-4 py-2 text-sm font-semibold text-gray-600 hover:text-brand-red transition-colors"
+                >
+                  Clear Filters
+                </button>
+              )}
+              
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-600">Show:</span>
+                <select 
+                  value={pagination.limit} 
+                  onChange={handlePageSizeChange}
+                  className="px-3 py-1.5 rounded-lg border border-gray-300 focus-brand text-sm"
+                >
+                  <option value="5">5 per page</option>
+                  <option value="10">10 per page</option>
+                  <option value="20">20 per page</option>
+                  <option value="50">50 per page</option>
+                </select>
+              </div>
+            </div>
           </div>
+
+          {/* Active Filters Display */}
+          {(selectedAssessment || filterReviewed !== '') && (
+            <div className="mt-4 pt-4 border-t border-gray-100 flex flex-wrap gap-2">
+              <span className="text-sm text-gray-500">Active filters:</span>
+              {selectedAssessment && (
+                <span className="inline-flex items-center gap-1 px-3 py-1 bg-brand-red/10 text-brand-red rounded-full text-sm">
+                  Assessment: {assessments.find(a => a._id === selectedAssessment)?.description || 'Selected'}
+                  <button 
+                    onClick={() => setSelectedAssessment('')}
+                    className="ml-1 hover:text-brand-red-dark"
+                  >
+                    ×
+                  </button>
+                </span>
+              )}
+              {filterReviewed !== '' && (
+                <span className="inline-flex items-center gap-1 px-3 py-1 bg-brand-red/10 text-brand-red rounded-full text-sm">
+                  Status: {filterReviewed === 'true' ? 'Reviewed' : 'Pending'}
+                  <button 
+                    onClick={() => setFilterReviewed('')}
+                    className="ml-1 hover:text-brand-red-dark"
+                  >
+                    ×
+                  </button>
+                </span>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -197,7 +297,12 @@ export default function Feedback() {
           <div className="space-y-3 mb-6">
             {items.length === 0 && (
               <div className="text-center py-16 text-gray-400">
-                <h3 className="text-lg font-semibold">No feedback yet.</h3>
+                <h3 className="text-lg font-semibold">No feedback found.</h3>
+                <p className="text-sm mt-2">
+                  {selectedAssessment || filterReviewed !== '' 
+                    ? 'Try adjusting your filters' 
+                    : 'Be the first to submit feedback!'}
+                </p>
               </div>
             )}
             {items.map((f) => (
@@ -210,19 +315,25 @@ export default function Feedback() {
                   <div className="flex items-center gap-3">
                     {f.reviewed && <span className="badge badge-active">Reviewed</span>}
                     {isAdmin && !f.reviewed && (
-                      <button onClick={() => reviewItem(f._id)} className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold bg-brand-red text-white rounded-lg hover:bg-brand-red-dark transition-colors">
-                        <CheckCircle2 className="w-3 h-3" /> Review
+                      <button 
+                        onClick={() => reviewItem(f._id)} 
+                        className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold bg-brand-red text-white rounded-lg hover:bg-brand-red-dark transition-colors"
+                      >
+                        <CheckCircle2 className="w-3 h-3" /> Mark Reviewed
                       </button>
                     )}
                   </div>
                 </div>
-                {f.rating && (
+                {f.rating > 0 && (
                   <div className="mb-2">
                     <StarRating value={f.rating} />
                   </div>
                 )}
                 <p className="text-sm text-gray-700 leading-relaxed mb-2">{f.content}</p>
-                <p className="text-xs text-gray-400">Assessment: {f.assessmentId?.description || '—'}</p>
+                <p className="text-xs text-gray-400">
+                  Assessment: {f.assessmentId?.description || '—'} 
+                  {f.assessmentId?.competencyId?.name && ` (${f.assessmentId.competencyId.name})`}
+                </p>
               </div>
             ))}
           </div>
@@ -299,11 +410,15 @@ export default function Feedback() {
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">Assessment</label>
-            <select value={form.assessmentId} onChange={(e) => setForm({ ...form, assessmentId: e.target.value })} className="w-full h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm">
-              <option value="">— Select —</option>
+            <select 
+              value={form.assessmentId} 
+              onChange={(e) => setForm({ ...form, assessmentId: e.target.value })} 
+              className="w-full h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm"
+            >
+              <option value="">— Select an assessment —</option>
               {assessments.map((a) => (
                 <option key={a._id} value={a._id}>
-                  {a.description || 'Assessment'} ({a.competencyId?.name})
+                  {a.description || 'Assessment'} {a.competencyId?.name ? `(${a.competencyId.name})` : ''}
                 </option>
               ))}
             </select>
@@ -314,14 +429,26 @@ export default function Feedback() {
           </div>
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">Your Feedback</label>
-            <textarea rows={4} value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} placeholder="Share your thoughts on the assessment..." className="w-full px-3 py-2 rounded-lg border border-gray-300 focus-brand text-sm resize-none" />
+            <textarea 
+              rows={4} 
+              value={form.content} 
+              onChange={(e) => setForm({ ...form, content: e.target.value })} 
+              placeholder="Share your thoughts on the assessment..." 
+              className="w-full px-3 py-2 rounded-lg border border-gray-300 focus-brand text-sm resize-none"
+            />
           </div>
         </div>
         <div className="flex justify-end gap-3 mt-6">
-          <button onClick={() => setModal(false)} className="px-4 py-2 border border-gray-300 rounded-lg font-semibold text-gray-700 hover:bg-gray-50 transition-colors">
+          <button 
+            onClick={() => setModal(false)} 
+            className="px-4 py-2 border border-gray-300 rounded-lg font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+          >
             Cancel
           </button>
-          <button onClick={handleSubmit} className="px-4 py-2 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors">
+          <button 
+            onClick={handleSubmit} 
+            className="px-4 py-2 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors"
+          >
             Submit
           </button>
         </div>
