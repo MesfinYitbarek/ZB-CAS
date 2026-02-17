@@ -292,7 +292,7 @@ export default function Header({ onMobileToggle }) {
 
       {/* Notifications bell */}
       <div className="relative" ref={notifRef}>
-        <button
+        {/* <button
           onClick={() => setShowNotifications(!showNotifications)}
           className="relative p-2 hover:bg-gray-100 rounded-lg transition-base active:scale-95 group"
           aria-label="Notifications"
@@ -303,10 +303,10 @@ export default function Header({ onMobileToggle }) {
               {unreadCount > 9 ? '9+' : unreadCount}
             </span>
           )}
-        </button>
+        </button> */}
 
         {/* Notifications Dropdown */}
-        {showNotifications && (
+        {/* {showNotifications && (
           <div className="absolute top-full right-0 mt-2 w-80 sm:w-96 bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden z-50">
             <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between bg-gray-50">
               <span className="font-semibold text-sm text-brand-black">Notifications</span>
@@ -365,7 +365,7 @@ export default function Header({ onMobileToggle }) {
               )}
             </div>
           </div>
-        )}
+        )} */}
       </div>
 
       {/* Profile Menu */}

@@ -14,5 +14,6 @@ router.post('/', authorize('HR_ADMIN'), qCtrl.createQuestion);
 router.post('/batch', authorize('HR_ADMIN'), qCtrl.batchCreateQuestions);
 router.put('/:id', authorize('HR_ADMIN'), qCtrl.updateQuestion);
 router.delete('/:id', authorize('HR_ADMIN'), qCtrl.deleteQuestion);
+router.post('/questions/bulk-delete',authorize('HR_ADMIN'), qCtrl.bulkDeleteQuestions);
 
 export default router;

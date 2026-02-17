@@ -108,3 +108,18 @@ export const deleteQuestion = asyncHandler(async (req, res, next) => {
 
   res.status(200).json({ status: 'success', message: 'Question deleted.' });
 });
+
+export const bulkDeleteQuestions = asyncHandler(async (req, res, next) => {
+  const { ids } = req.body;
+
+  if (!ids || !Array.isArray(ids) || ids.length === 0) {
+    return next(new AppError('Please provide an array of question IDs.', 400));
+  }
+
+  const result = await Question.deleteMany({ _id: { $in: ids } });
+
+  res.status(200).json({
+    status: 'success',
+    message: `${result.deletedCount} question(s) deleted.`,
+  });
+});

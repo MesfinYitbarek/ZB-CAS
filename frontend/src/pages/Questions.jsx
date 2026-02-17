@@ -83,6 +83,10 @@ export default function Questions() {
   const { show } = useToast();
   const fileInputRef = useRef(null);
 
+  // ─── Bulk selection state ───────────────────────────────────────────────
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [bulkDeleteModal, setBulkDeleteModal] = useState(false);
+
   const [pagination, setPagination] = useState({
     page: 1, limit: 10, total: 0, totalPages: 0,
   });
@@ -110,6 +114,7 @@ export default function Questions() {
 
       const { data } = await api.get('/questions', { params });
       setItems(data.data.questions);
+      setSelectedIds(new Set()); // Clear selection on re-fetch
 
       if (data.data.pagination) {
         setPagination((prev) => ({
@@ -125,6 +130,27 @@ export default function Questions() {
   }, [filterComp, filterType, pagination.page, pagination.limit]);
 
   useEffect(() => { fetch(); }, [fetch]);
+
+  // ─── Bulk selection helpers ─────────────────────────────────────────────
+  const toggleSelect = (id) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === items.length && items.length > 0) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(items.map((q) => q._id)));
+    }
+  };
+
+  const isAllSelected = items.length > 0 && selectedIds.size === items.length;
+  const isSomeSelected = selectedIds.size > 0 && selectedIds.size < items.length;
 
   // ─── Modal helpers ──────────────────────────────────────────────────────
   const openCreate = () => {
@@ -161,393 +187,355 @@ export default function Questions() {
 
   // ─── Document Upload and Parsing ────────────────────────────────────────
   const handleFileUpload = async (e) => {
-  const file = e.target.files?.[0];
-  if (!file) return;
+    const file = e.target.files?.[0];
+    if (!file) return;
 
-  // Log file details for debugging
-  console.log('Uploading file:', {
-    name: file.name,
-    type: file.type,
-    size: file.size
-  });
+    console.log('Uploading file:', {
+      name: file.name,
+      type: file.type,
+      size: file.size
+    });
 
-  const validTypes = [
-    'application/pdf',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'application/msword',
-    'text/plain',
-    'text/markdown',
-    '' // Sometimes type is empty for text files
-  ];
+    const isTextFile = file.name.endsWith('.txt') || file.name.endsWith('.md') || file.type.includes('text');
+    const isDocx = file.name.endsWith('.docx') || file.type.includes('wordprocessingml');
+    const isDoc = file.name.endsWith('.doc') || file.type === 'application/msword';
+    const isPdf = file.name.endsWith('.pdf') || file.type === 'application/pdf';
 
-  // More lenient type checking
-  const isTextFile = file.name.endsWith('.txt') || file.name.endsWith('.md') || file.type.includes('text');
-  const isDocx = file.name.endsWith('.docx') || file.type.includes('wordprocessingml');
-  const isDoc = file.name.endsWith('.doc') || file.type === 'application/msword';
-  const isPdf = file.name.endsWith('.pdf') || file.type === 'application/pdf';
-
-  if (!isTextFile && !isDocx && !isDoc && !isPdf) {
-    show('Please upload a PDF, DOCX, or TXT file.', 'error');
-    return;
-  }
-
-  setUploadLoading(true);
-  setUploadProgress(10);
-
-  try {
-    let text = '';
-    
-    if (isPdf) {
-      text = await extractTextFromPDF(file);
-    } else if (isDocx) {
-      text = await extractTextFromDOCX(file);
-    } else {
-      // Plain text or other formats
-      text = await extractTextFromPlain(file);
-    }
-    
-    console.log('Extracted text:', text.substring(0, 200) + '...'); // Debug log
-    
-    setUploadProgress(70);
-    
-    const parsed = parseQuestionsFromText(text);
-    console.log('Parsed questions:', parsed); // Debug log
-    
-    setUploadProgress(100);
-    
-    if (parsed.length === 0) {
-      show('No questions found in the document. Please check the format.', 'error');
-      setUploadLoading(false);
+    if (!isTextFile && !isDocx && !isDoc && !isPdf) {
+      show('Please upload a PDF, DOCX, or TXT file.', 'error');
       return;
     }
 
-    // Group questions by type
-    const grouped = groupQuestionsByType(parsed);
-    setUploadedQuestions({
-      competencyId: '',
-      questionGroups: grouped,
-    });
-    show(`Successfully extracted ${parsed.length} question(s).`, 'success');
-  } catch (err) {
-    console.error('Parse error:', err);
-    show('Failed to parse document. Please check the format. Error: ' + err.message, 'error');
-  }
-  setUploadLoading(false);
-  if (fileInputRef.current) fileInputRef.current.value = '';
-};
+    setUploadLoading(true);
+    setUploadProgress(10);
+
+    try {
+      let text = '';
+
+      if (isPdf) {
+        text = await extractTextFromPDF(file);
+      } else if (isDocx) {
+        text = await extractTextFromDOCX(file);
+      } else {
+        text = await extractTextFromPlain(file);
+      }
+
+      console.log('Extracted text:', text.substring(0, 200) + '...');
+
+      setUploadProgress(70);
+
+      const parsed = parseQuestionsFromText(text);
+      console.log('Parsed questions:', parsed);
+
+      setUploadProgress(100);
+
+      if (parsed.length === 0) {
+        show('No questions found in the document. Please check the format.', 'error');
+        setUploadLoading(false);
+        return;
+      }
+
+      const grouped = groupQuestionsByType(parsed);
+      setUploadedQuestions({
+        competencyId: '',
+        questionGroups: grouped,
+      });
+      show(`Successfully extracted ${parsed.length} question(s).`, 'success');
+    } catch (err) {
+      console.error('Parse error:', err);
+      show('Failed to parse document. Please check the format. Error: ' + err.message, 'error');
+    }
+    setUploadLoading(false);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
 
   // ─── Extract text from PDF using pdf.js ─────────────────────────────────
   const extractTextFromPDF = async (file) => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
-      
+
       reader.onload = async (e) => {
         try {
           const arrayBuffer = e.target.result;
           const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-          
+
           let fullText = '';
-          
+
           for (let i = 1; i <= pdf.numPages; i++) {
             setUploadProgress(10 + Math.floor((i / pdf.numPages) * 50));
-            
+
             const page = await pdf.getPage(i);
             const textContent = await page.getTextContent();
             const pageText = textContent.items.map(item => item.str).join(' ');
             fullText += pageText + '\n';
           }
-          
+
           resolve(fullText);
         } catch (error) {
           reject(error);
         }
       };
-      
+
       reader.onerror = reject;
       reader.readAsArrayBuffer(file);
     });
   };
 
-// Replace the extractTextFromDOCX function with this improved version
-const extractTextFromDOCX = async (file) => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    
-    reader.onload = async (e) => {
-      try {
-        const arrayBuffer = e.target.result;
-        
-        // Try different methods to extract text with proper line breaks
-        
-        // Method 1: Use extractRawText with preserveEmptyParagraphs
-        const result1 = await mammoth.extractRawText({ 
-          arrayBuffer,
-          options: {
-            preserveEmptyParagraphs: true,
+  // ─── Extract text from DOCX ─────────────────────────────────────────────
+  const extractTextFromDOCX = async (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+
+      reader.onload = async (e) => {
+        try {
+          const arrayBuffer = e.target.result;
+
+          const result1 = await mammoth.extractRawText({
+            arrayBuffer,
+            options: {
+              preserveEmptyParagraphs: true,
+            }
+          });
+
+          const result2 = await mammoth.extractRawText({
+            arrayBuffer,
+            options: {
+              preserveEmptyParagraphs: true,
+              includeDefaultStyleMap: true,
+            }
+          });
+
+          let text = result2.value || result1.value;
+
+          if (!text.includes('\n') && text.length > 0) {
+            console.log('No line breaks detected, adding artificial breaks');
+
+            text = text
+              .replace(/Type:/g, '\nType:')
+              .replace(/Question \d+:/g, '\n$&')
+              .replace(/Score:/g, '\nScore:')
+              .replace(/Answer:/g, '\nAnswer:')
+              .replace(/[a-d]\)/g, '\n$&')
+              .replace(/(Paris|London) ->/g, '\n$&');
           }
-        });
-        
-        // Method 2: Try to extract with more formatting preserved
-        const result2 = await mammoth.extractRawText({
-          arrayBuffer,
-          options: {
-            preserveEmptyParagraphs: true,
-            includeDefaultStyleMap: true,
-          }
-        });
-        
-        // Use the result with more line breaks
-        let text = result2.value || result1.value;
-        
-        // If still no line breaks, try to insert them based on patterns
-        if (!text.includes('\n') && text.length > 0) {
-          console.log('No line breaks detected, adding artificial breaks');
-          
-          // Add line breaks before common patterns
+
           text = text
-            .replace(/Type:/g, '\nType:')
-            .replace(/Question \d+:/g, '\n$&')
-            .replace(/Score:/g, '\nScore:')
-            .replace(/Answer:/g, '\nAnswer:')
-            .replace(/[a-d]\)/g, '\n$&')
-            .replace(/(Paris|London) ->/g, '\n$&');
+            .replace(/\r\n/g, '\n')
+            .replace(/\r/g, '\n')
+            .replace(/\n\s+/g, '\n')
+            .replace(/[ \t]+/g, ' ')
+            .split('\n')
+            .map(line => line.trim())
+            .filter(line => line.length > 0)
+            .join('\n');
+
+          console.log('Processed DOCX text with line breaks:', text);
+          resolve(text);
+        } catch (error) {
+          console.error('Mammoth error:', error);
+          reject(error);
         }
-        
-        // Clean up the text
-        text = text
-          .replace(/\r\n/g, '\n')
-          .replace(/\r/g, '\n')
-          .replace(/\n\s+/g, '\n') // Remove leading spaces after newlines
-          .replace(/[ \t]+/g, ' ') // Collapse multiple spaces
-          .split('\n')
-          .map(line => line.trim())
-          .filter(line => line.length > 0)
-          .join('\n');
-        
-        console.log('Processed DOCX text with line breaks:', text);
-        resolve(text);
-      } catch (error) {
-        console.error('Mammoth error:', error);
+      };
+
+      reader.onerror = (error) => {
+        console.error('FileReader error:', error);
         reject(error);
-      }
-    };
-    
-    reader.onerror = (error) => {
-      console.error('FileReader error:', error);
-      reject(error);
-    };
-    
-    reader.readAsArrayBuffer(file);
-  });
-};
+      };
+
+      reader.readAsArrayBuffer(file);
+    });
+  };
 
   // ─── Extract text from plain text file ─────────────────────────────────
   const extractTextFromPlain = (file) => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    
-    reader.onload = (e) => {
-      console.log('Plain text extracted, length:', e.target.result.length);
-      resolve(e.target.result);
-    };
-    
-    reader.onerror = (e) => {
-      console.error('FileReader error:', e);
-      reject(new Error('Failed to read text file'));
-    };
-    
-    reader.readAsText(file);
-  });
-};
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
 
-const parseQuestionsFromText = (text) => {
-  const questions = [];
-  
-  console.log('Parsing text:', text);
-  
-  // First, try to split by common patterns if we don't have clear line breaks
-  let lines;
-  
-  if (text.includes('\n')) {
-    // If we have newlines, use them
-    lines = text.split('\n')
-      .map(l => l.trim())
-      .filter(l => l.length > 0);
-  } else {
-    // If no newlines, try to intelligently split the text
-    console.log('No newlines found, attempting intelligent splitting');
-    
-    // Add artificial splits before patterns
-    const withBreaks = text
-      .replace(/(Type:)/g, '\n$1')
-      .replace(/(Question \d+:)/g, '\n$1')
-      .replace(/(Score:)/g, '\n$1')
-      .replace(/(Answer:)/g, '\n$1')
-      .replace(/([a-d]\))/g, '\n$1')
-      .replace(/(\w+ -> \w+)/g, '\n$1');
-    
-    lines = withBreaks.split('\n')
-      .map(l => l.trim())
-      .filter(l => l.length > 0);
-  }
-  
-  console.log('Processed lines:', lines);
-  
-  let currentQuestion = null;
-  let currentType = 'MCQ';
-  
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    
-    // Skip if line is too short
-    if (line.length < 2) continue;
-    
-    // Detect question type
-    if (line.match(/^type\s*:\s*(.+)$/i)) {
-      const match = line.match(/^type\s*:\s*(.+)$/i);
-      const typeStr = match[1].trim().toUpperCase();
-      
-      const typeMap = {
-        'MCQ': 'MCQ',
-        'MULTIPLE CHOICE': 'MCQ',
-        'MULTIPLECHOICE': 'MCQ',
-        'TRUE/FALSE': 'TrueFalse',
-        'TRUE FALSE': 'TrueFalse',
-        'TRUEFALSE': 'TrueFalse',
-        'RATING': 'Rating',
-        'MULTISELECT': 'MultiSelect',
-        'MULTI-SELECT': 'MultiSelect',
-        'MATCHING': 'Matching',
-        'ORDERING': 'Ordering',
-        'SCENARIO MCQ': 'ScenarioMCQ',
-        'SCENARIOMCQ': 'ScenarioMCQ',
-        'DRAGDROP': 'DragDropClassification',
-        'CLASSIFICATION': 'DragDropClassification',
+      reader.onload = (e) => {
+        console.log('Plain text extracted, length:', e.target.result.length);
+        resolve(e.target.result);
       };
-      
-      currentType = typeMap[typeStr] || 'MCQ';
-      continue;
-    }
-    
-    // Detect question start
-    if (line.match(/^question\s*\d*\s*:\s*(.+)$/i) || line.match(/^q\d*\s*:\s*(.+)$/i)) {
-      // Save previous question if exists
-      if (currentQuestion && currentQuestion.text) {
-        questions.push(currentQuestion);
-      }
-      
-      const match = line.match(/^question\s*\d*\s*:\s*(.+)$/i) || line.match(/^q\d*\s*:\s*(.+)$/i);
-      const questionText = match ? match[1].trim() : line;
-      
-      currentQuestion = {
-        ...initQuestionForm(),
-        type: currentType,
-        text: questionText,
+
+      reader.onerror = (e) => {
+        console.error('FileReader error:', e);
+        reject(new Error('Failed to read text file'));
       };
-      continue;
+
+      reader.readAsText(file);
+    });
+  };
+
+  const parseQuestionsFromText = (text) => {
+    const questions = [];
+
+    console.log('Parsing text:', text);
+
+    let lines;
+
+    if (text.includes('\n')) {
+      lines = text.split('\n')
+        .map(l => l.trim())
+        .filter(l => l.length > 0);
+    } else {
+      console.log('No newlines found, attempting intelligent splitting');
+
+      const withBreaks = text
+        .replace(/(Type:)/g, '\n$1')
+        .replace(/(Question \d+:)/g, '\n$1')
+        .replace(/(Score:)/g, '\n$1')
+        .replace(/(Answer:)/g, '\n$1')
+        .replace(/([a-d]\))/g, '\n$1')
+        .replace(/(\w+ -> \w+)/g, '\n$1');
+
+      lines = withBreaks.split('\n')
+        .map(l => l.trim())
+        .filter(l => l.length > 0);
     }
-    
-    // If we have a current question, parse its components
-    if (currentQuestion) {
-      // Score
-      if (line.match(/^score\s*:\s*(\d+(?:\.\d+)?)/i)) {
-        const match = line.match(/^score\s*:\s*(\d+(?:\.\d+)?)/i);
-        if (match) {
-          currentQuestion.score = parseFloat(match[1]) || 1;
-        }
+
+    console.log('Processed lines:', lines);
+
+    let currentQuestion = null;
+    let currentType = 'MCQ';
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+
+      if (line.length < 2) continue;
+
+      if (line.match(/^type\s*:\s*(.+)$/i)) {
+        const match = line.match(/^type\s*:\s*(.+)$/i);
+        const typeStr = match[1].trim().toUpperCase();
+
+        const typeMap = {
+          'MCQ': 'MCQ',
+          'MULTIPLE CHOICE': 'MCQ',
+          'MULTIPLECHOICE': 'MCQ',
+          'TRUE/FALSE': 'TrueFalse',
+          'TRUE FALSE': 'TrueFalse',
+          'TRUEFALSE': 'TrueFalse',
+          'RATING': 'Rating',
+          'MULTISELECT': 'MultiSelect',
+          'MULTI-SELECT': 'MultiSelect',
+          'MATCHING': 'Matching',
+          'ORDERING': 'Ordering',
+          'SCENARIO MCQ': 'ScenarioMCQ',
+          'SCENARIOMCQ': 'ScenarioMCQ',
+          'DRAGDROP': 'DragDropClassification',
+          'CLASSIFICATION': 'DragDropClassification',
+        };
+
+        currentType = typeMap[typeStr] || 'MCQ';
         continue;
       }
-      
-      // Answer
-      if (line.match(/^answer\s*:\s*(.+)$/i)) {
-        const match = line.match(/^answer\s*:\s*(.+)$/i);
-        const answer = match[1].trim();
-        
-        if (currentQuestion.type === 'TrueFalse') {
-          currentQuestion.correctAnswer = answer.match(/true/i) ? 'True' : 'False';
-        } else {
-          currentQuestion.correctAnswer = answer;
+
+      if (line.match(/^question\s*\d*\s*:\s*(.+)$/i) || line.match(/^q\d*\s*:\s*(.+)$/i)) {
+        if (currentQuestion && currentQuestion.text) {
+          questions.push(currentQuestion);
         }
+
+        const match = line.match(/^question\s*\d*\s*:\s*(.+)$/i) || line.match(/^q\d*\s*:\s*(.+)$/i);
+        const questionText = match ? match[1].trim() : line;
+
+        currentQuestion = {
+          ...initQuestionForm(),
+          type: currentType,
+          text: questionText,
+        };
         continue;
       }
-      
-      // Options (a), b), c), d))
-      if (line.match(/^[a-d]\)\s*(.+)$/i)) {
-        const match = line.match(/^([a-d])\)\s*(.+)$/i);
-        const optionLetter = match[1].toLowerCase();
-        let optionText = match[2].trim();
-        
-        // Check if this option is correct (marked with *)
-        const isCorrect = optionText.includes('*');
-        optionText = optionText.replace('*', '').trim();
-        
-        // Map a->0, b->1, c->2, d->3
-        const index = optionLetter.charCodeAt(0) - 'a'.charCodeAt(0);
-        
-        if (!currentQuestion.options) {
-          currentQuestion.options = ['', '', '', ''];
+
+      if (currentQuestion) {
+        if (line.match(/^score\s*:\s*(\d+(?:\.\d+)?)/i)) {
+          const match = line.match(/^score\s*:\s*(\d+(?:\.\d+)?)/i);
+          if (match) {
+            currentQuestion.score = parseFloat(match[1]) || 1;
+          }
+          continue;
         }
-        
-        currentQuestion.options[index] = optionText;
-        
-        if (isCorrect) {
-          currentQuestion.correctAnswer = optionText;
+
+        if (line.match(/^answer\s*:\s*(.+)$/i)) {
+          const match = line.match(/^answer\s*:\s*(.+)$/i);
+          const answer = match[1].trim();
+
+          if (currentQuestion.type === 'TrueFalse') {
+            currentQuestion.correctAnswer = answer.match(/true/i) ? 'True' : 'False';
+          } else {
+            currentQuestion.correctAnswer = answer;
+          }
+          continue;
         }
-        continue;
-      }
-      
-      // Matching pairs
-      if (currentQuestion.type === 'Matching' && line.includes('->')) {
-        const [left, right] = line.split('->').map(s => s.trim());
-        
-        if (!currentQuestion.matchingPairs) {
-          currentQuestion.matchingPairs = [];
+
+        if (line.match(/^[a-d]\)\s*(.+)$/i)) {
+          const match = line.match(/^([a-d])\)\s*(.+)$/i);
+          const optionLetter = match[1].toLowerCase();
+          let optionText = match[2].trim();
+
+          const isCorrect = optionText.includes('*');
+          optionText = optionText.replace('*', '').trim();
+
+          const index = optionLetter.charCodeAt(0) - 'a'.charCodeAt(0);
+
+          if (!currentQuestion.options) {
+            currentQuestion.options = ['', '', '', ''];
+          }
+
+          currentQuestion.options[index] = optionText;
+
+          if (isCorrect) {
+            currentQuestion.correctAnswer = optionText;
+          }
+          continue;
         }
-        
-        // If first pair is empty, replace it
-        if (currentQuestion.matchingPairs.length === 1 && 
-            currentQuestion.matchingPairs[0].left === '' && 
+
+        if (currentQuestion.type === 'Matching' && line.includes('->')) {
+          const [left, right] = line.split('->').map(s => s.trim());
+
+          if (!currentQuestion.matchingPairs) {
+            currentQuestion.matchingPairs = [];
+          }
+
+          if (currentQuestion.matchingPairs.length === 1 &&
+            currentQuestion.matchingPairs[0].left === '' &&
             currentQuestion.matchingPairs[0].right === '') {
-          currentQuestion.matchingPairs[0] = { left, right };
-        } else {
-          currentQuestion.matchingPairs.push({ left, right });
+            currentQuestion.matchingPairs[0] = { left, right };
+          } else {
+            currentQuestion.matchingPairs.push({ left, right });
+          }
+          continue;
         }
-        continue;
       }
     }
-  }
-  
-  // Add the last question
-  if (currentQuestion && currentQuestion.text) {
-    questions.push(currentQuestion);
-  }
-  
-  console.log('Parsed questions:', questions);
-  
-  // Clean up questions
-  return questions.map(q => {
-    if (q.type === 'MCQ' || q.type === 'MultiSelect' || q.type === 'ScenarioMCQ') {
-      q.options = (q.options || []).filter(opt => opt && opt.length > 0);
-      if (q.options.length === 0) {
-        q.options = ['', '', '', ''];
-      }
+
+    if (currentQuestion && currentQuestion.text) {
+      questions.push(currentQuestion);
     }
-    
-    if (q.type === 'Matching') {
-      q.matchingPairs = (q.matchingPairs || []).filter(p => p.left && p.right);
-      if (q.matchingPairs.length === 0) {
-        q.matchingPairs = [{ left: '', right: '' }, { left: '', right: '' }];
+
+    console.log('Parsed questions:', questions);
+
+    return questions.map(q => {
+      if (q.type === 'MCQ' || q.type === 'MultiSelect' || q.type === 'ScenarioMCQ') {
+        q.options = (q.options || []).filter(opt => opt && opt.length > 0);
+        if (q.options.length === 0) {
+          q.options = ['', '', '', ''];
+        }
       }
-    }
-    
-    return q;
-  });
-};
+
+      if (q.type === 'Matching') {
+        q.matchingPairs = (q.matchingPairs || []).filter(p => p.left && p.right);
+        if (q.matchingPairs.length === 0) {
+          q.matchingPairs = [{ left: '', right: '' }, { left: '', right: '' }];
+        }
+      }
+
+      return q;
+    });
+  };
+
   // ─── Group questions by type ────────────────────────────────────────────
   const groupQuestionsByType = (questions) => {
     const groups = [];
     let currentGroup = null;
-    
+
     questions.forEach(q => {
       if (!currentGroup || currentGroup.type !== q.type) {
         currentGroup = {
@@ -558,7 +546,7 @@ const parseQuestionsFromText = (text) => {
       }
       currentGroup.questions.push(q);
     });
-    
+
     return groups;
   };
 
@@ -630,7 +618,6 @@ const parseQuestionsFromText = (text) => {
   const handleSave = async () => {
     try {
       if (modal === 'create') {
-        // Batch create from all groups
         const allQuestions = [];
         batchForm.questionGroups.forEach(group => {
           group.questions
@@ -648,7 +635,6 @@ const parseQuestionsFromText = (text) => {
         await api.post('/questions/batch', { questions: allQuestions });
         show(`${allQuestions.length} question(s) created successfully.`, 'success');
       } else {
-        // Single edit
         const payload = buildQuestionPayload(editForm, editForm.competencyId);
         await api.put(`/questions/${selected._id}`, payload);
         show('Question updated.', 'success');
@@ -660,7 +646,7 @@ const parseQuestionsFromText = (text) => {
     }
   };
 
-  // ─── Delete ─────────────────────────────────────────────────────────────
+  // ─── Single Delete ──────────────────────────────────────────────────────
   const confirmDelete = (q) => setDeleteModal(q);
 
   const handleDelete = async () => {
@@ -673,6 +659,21 @@ const parseQuestionsFromText = (text) => {
     } catch (err) {
       show(err.response?.data?.message || 'Failed.', 'error');
       setDeleteModal(null);
+    }
+  };
+
+  // ─── Bulk Delete ────────────────────────────────────────────────────────
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    try {
+      await api.post('/questions/bulk-delete', { ids: Array.from(selectedIds) });
+      show(`${selectedIds.size} question(s) deleted.`, 'success');
+      setSelectedIds(new Set());
+      setBulkDeleteModal(false);
+      fetch();
+    } catch (err) {
+      show(err.response?.data?.message || 'Bulk delete failed.', 'error');
+      setBulkDeleteModal(false);
     }
   };
 
@@ -738,8 +739,8 @@ const parseQuestionsFromText = (text) => {
   // ─── Type-specific form sections ────────────────────────────────────────
   const renderQuestionOptions = (q, groupIndex, questionIndex, isEdit = false) => {
     const form = isEdit ? editForm : q;
-    const setForm = isEdit 
-      ? setEditForm 
+    const setForm = isEdit
+      ? setEditForm
       : (updates) => updateQuestionInGroup(groupIndex, questionIndex, updates);
 
     switch (form.type) {
@@ -1111,6 +1112,34 @@ const parseQuestionsFromText = (text) => {
         </div>
       </div>
 
+      {/* Bulk Actions Bar */}
+      {selectedIds.size > 0 && (
+        <div className="flex items-center justify-between bg-red-50 border border-red-200 rounded-lg px-4 py-3 mb-4 animate-in fade-in">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center">
+              <span className="text-red-700 font-bold text-sm">{selectedIds.size}</span>
+            </div>
+            <span className="text-sm font-semibold text-red-800">
+              {selectedIds.size} question{selectedIds.size !== 1 ? 's' : ''} selected
+            </span>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setSelectedIds(new Set())}
+              className="text-sm text-gray-600 hover:text-gray-800 font-medium transition-colors"
+            >
+              Clear Selection
+            </button>
+            <button
+              onClick={() => setBulkDeleteModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition-colors text-sm"
+            >
+              <Trash2 className="w-4 h-4" /> Delete Selected
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Table */}
       <div className="bg-white rounded-xl shadow-card border border-gray-100 overflow-hidden mb-4">
         {loading ? (
@@ -1122,6 +1151,17 @@ const parseQuestionsFromText = (text) => {
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
+                  <th className="px-4 py-3 w-12">
+                    <input
+                      type="checkbox"
+                      checked={isAllSelected}
+                      ref={(el) => {
+                        if (el) el.indeterminate = isSomeSelected;
+                      }}
+                      onChange={toggleSelectAll}
+                      className="w-4 h-4 text-brand-red focus:ring-brand-red rounded cursor-pointer"
+                    />
+                  </th>
                   <th className="text-left px-6 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">Question</th>
                   <th className="text-left px-6 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-44">Type</th>
                   <th className="text-left px-6 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider w-48">Competency</th>
@@ -1131,10 +1171,18 @@ const parseQuestionsFromText = (text) => {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {items.length === 0 && (
-                  <tr><td colSpan={5} className="px-6 py-8 text-center text-gray-400">No questions found.</td></tr>
+                  <tr><td colSpan={6} className="px-6 py-8 text-center text-gray-400">No questions found.</td></tr>
                 )}
                 {items.map((q) => (
-                  <tr key={q._id} className="hover:bg-gray-50 transition-colors">
+                  <tr key={q._id} className={`hover:bg-gray-50 transition-colors ${selectedIds.has(q._id) ? 'bg-red-50/50' : ''}`}>
+                    <td className="px-4 py-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(q._id)}
+                        onChange={() => toggleSelect(q._id)}
+                        className="w-4 h-4 text-brand-red focus:ring-brand-red rounded cursor-pointer"
+                      />
+                    </td>
                     <td className="px-6 py-3 font-semibold text-sm text-brand-black-soft max-w-xs">
                       <span className="line-clamp-2">{q.text}</span>
                     </td>
@@ -1209,14 +1257,14 @@ const parseQuestionsFromText = (text) => {
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
             <h4 className="font-semibold text-blue-900 mb-2">Document Format Guidelines</h4>
             <ul className="text-sm text-blue-800 space-y-1 list-disc list-inside">
-              <li>Start each question with "Question:" or "Q:" or a number (e.g., "1.")</li>
-              <li>Specify type with "Type: MCQ" (supports: MCQ, True/False, Rating, Multi-Select, Matching, Ordering, Scenario MCQ, Classification)</li>
-              <li>For MCQ/Multi-Select, use "a)" or "a." for options, mark correct with "*" or "(correct)"</li>
-              <li>Specify "Answer:" or "Correct:" for the correct answer</li>
-              <li>For Scenario MCQ, add "Scenario: ..." before options</li>
-              <li>For Matching, use "left item -> right item" format</li>
-              <li>For Ordering, list items with "1.", "2.", etc.</li>
-              <li>Optional: "Score: 2" to set point value</li>
+              <li>Start each question with &quot;Question:&quot; or &quot;Q:&quot; or a number (e.g., &quot;1.&quot;)</li>
+              <li>Specify type with &quot;Type: MCQ&quot; (supports: MCQ, True/False, Rating, Multi-Select, Matching, Ordering, Scenario MCQ, Classification)</li>
+              <li>For MCQ/Multi-Select, use &quot;a)&quot; or &quot;a.&quot; for options, mark correct with &quot;*&quot; or &quot;(correct)&quot;</li>
+              <li>Specify &quot;Answer:&quot; or &quot;Correct:&quot; for the correct answer</li>
+              <li>For Scenario MCQ, add &quot;Scenario: ...&quot; before options</li>
+              <li>For Matching, use &quot;left item -&gt; right item&quot; format</li>
+              <li>For Ordering, list items with &quot;1.&quot;, &quot;2.&quot;, etc.</li>
+              <li>Optional: &quot;Score: 2&quot; to set point value</li>
             </ul>
           </div>
 
@@ -1271,7 +1319,7 @@ const parseQuestionsFromText = (text) => {
                     onClick={useUploadedQuestions}
                     className="px-4 py-2 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition-colors text-sm"
                   >
-                    Review & Edit Questions
+                    Review &amp; Edit Questions
                   </button>
                 </div>
               </div>
@@ -1470,7 +1518,7 @@ const parseQuestionsFromText = (text) => {
         </div>
       </Modal>
 
-      {/* ── Delete Confirmation Modal ────────────────────────────────────── */}
+      {/* ── Single Delete Confirmation Modal ─────────────────────────────── */}
       {deleteModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setDeleteModal(null)}>
           <div className="bg-white p-6 rounded-xl shadow-lg max-w-sm w-full mx-4" onClick={(e) => e.stopPropagation()}>
@@ -1485,6 +1533,53 @@ const parseQuestionsFromText = (text) => {
               <button onClick={handleDelete}
                 className="px-4 py-2 bg-red-600 text-white hover:bg-red-700 rounded-lg font-semibold transition-colors">
                 Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Bulk Delete Confirmation Modal ────────────────────────────────── */}
+      {bulkDeleteModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setBulkDeleteModal(false)}>
+          <div className="bg-white p-6 rounded-xl shadow-lg max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
+                <Trash2 className="w-5 h-5 text-red-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-gray-900">
+                  Delete {selectedIds.size} Question{selectedIds.size !== 1 ? 's' : ''}
+                </h3>
+              </div>
+            </div>
+            <p className="text-gray-600 mb-2 text-sm">
+              Are you sure you want to delete <span className="font-semibold text-red-600">{selectedIds.size}</span> selected question{selectedIds.size !== 1 ? 's' : ''}?
+            </p>
+            <p className="text-gray-500 text-xs mb-5">
+              This action cannot be undone. All selected questions will be permanently removed.
+            </p>
+
+            {/* Preview of selected questions */}
+            {selectedIds.size <= 5 && (
+              <div className="mb-5 bg-gray-50 rounded-lg p-3 max-h-32 overflow-y-auto">
+                <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Selected questions:</p>
+                {items.filter(q => selectedIds.has(q._id)).map(q => (
+                  <p key={q._id} className="text-xs text-gray-600 line-clamp-1 mb-1">
+                    &bull; {q.text}
+                  </p>
+                ))}
+              </div>
+            )}
+
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setBulkDeleteModal(false)}
+                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-semibold transition-colors">
+                Cancel
+              </button>
+              <button onClick={handleBulkDelete}
+                className="px-4 py-2 bg-red-600 text-white hover:bg-red-700 rounded-lg font-semibold transition-colors">
+                Delete {selectedIds.size} Question{selectedIds.size !== 1 ? 's' : ''}
               </button>
             </div>
           </div>
