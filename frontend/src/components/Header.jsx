@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Menu, Bell, Search, X, User, LogOut, Settings, ChevronDown } from 'lucide-react';
+import { Menu, Search, X, User, LogOut, ChevronDown } from 'lucide-react';
 import api from '../utils/api';
 
 export default function Header({ onMobileToggle }) {
@@ -10,15 +10,11 @@ export default function Header({ onMobileToggle }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [showSearchResults, setShowSearchResults] = useState(false);
-  const [notifications, setNotifications] = useState([]);
-  const [showNotifications, setShowNotifications] = useState(false);
-  const [unreadCount, setUnreadCount] = useState(0);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [isTablet, setIsTablet] = useState(false);
 
   const searchRef = useRef(null);
-  const notifRef = useRef(null);
   const profileRef = useRef(null);
 
   useEffect(() => {
@@ -38,9 +34,6 @@ export default function Header({ onMobileToggle }) {
       if (searchRef.current && !searchRef.current.contains(e.target)) {
         setShowSearchResults(false);
       }
-      if (notifRef.current && !notifRef.current.contains(e.target)) {
-        setShowNotifications(false);
-      }
       if (profileRef.current && !profileRef.current.contains(e.target)) {
         setShowProfileMenu(false);
       }
@@ -53,67 +46,6 @@ export default function Header({ onMobileToggle }) {
       document.removeEventListener('touchstart', handleClickOutside);
     };
   }, []);
-
-  // Load notifications
-  useEffect(() => {
-    loadNotifications();
-    const interval = setInterval(loadNotifications, 30000);
-    return () => clearInterval(interval);
-  }, [user?.role]);
-
-  const loadNotifications = async () => {
-    try {
-      const { data: assessData } = await api.get('/assessments/active');
-      const activeAssessments = assessData.data.assessments || [];
-
-      let pendingResults = [];
-      if (user?.role === 'HR_ADMIN') {
-        const { data: resultsData } = await api.get('/results?status=PENDING');
-        pendingResults = resultsData.data.results || [];
-      }
-
-      let unreviewedFeedback = [];
-      if (user?.role === 'HR_ADMIN') {
-        const { data: feedbackData } = await api.get('/feedback?reviewed=false');
-        unreviewedFeedback = feedbackData.data.feedbacks || [];
-      }
-
-      const notifs = [
-        ...activeAssessments.map(a => ({
-          id: `assessment-${a._id}`,
-          type: 'assessment',
-          title: 'Active Assessment',
-          message: a.description || 'New assessment available',
-          link: `/assessments/${a._id}/take`,
-          time: new Date(a.startDate).toISOString(),
-          read: false,
-        })),
-        ...pendingResults.map(r => ({
-          id: `result-${r._id}`,
-          type: 'result',
-          title: 'Pending Review',
-          message: `Result for ${r.userId?.name} requires manual scoring`,
-          link: '/results',
-          time: r.createdAt,
-          read: false,
-        })),
-        ...unreviewedFeedback.map(f => ({
-          id: `feedback-${f._id}`,
-          type: 'feedback',
-          title: 'New Feedback',
-          message: `Feedback from ${f.userId?.name}`,
-          link: '/feedback',
-          time: f.createdAt,
-          read: false,
-        })),
-      ].sort((a, b) => new Date(b.time) - new Date(a.time));
-
-      setNotifications(notifs.slice(0, 8));
-      setUnreadCount(notifs.filter(n => !n.read).length);
-    } catch (_) {
-      // Silent error
-    }
-  };
 
   // Search functionality
   const handleSearch = async (query) => {
@@ -160,7 +92,7 @@ export default function Header({ onMobileToggle }) {
         title: a.description || 'Assessment',
         subtitle: a.competencyId?.name,
         link: `/assessments/${a._id}`,
-        icon: Bell,
+        icon: User,
       })));
 
       if (user?.role === 'HR_ADMIN') {
@@ -176,7 +108,7 @@ export default function Header({ onMobileToggle }) {
           title: c.name,
           subtitle: c.category,
           link: '/competencies',
-          icon: Bell,
+          icon: User,
         })));
       }
 
@@ -185,16 +117,6 @@ export default function Header({ onMobileToggle }) {
     } catch (_) {
       setSearchResults([]);
     }
-  };
-
-  const handleNotificationClick = (notif) => {
-    nav(notif.link);
-    setShowNotifications(false);
-  };
-
-  const markAllAsRead = () => {
-    setNotifications(notifs => notifs.map(n => ({ ...n, read: true })));
-    setUnreadCount(0);
   };
 
   const handleLogout = async () => {
@@ -290,83 +212,7 @@ export default function Header({ onMobileToggle }) {
       {/* Spacer */}
       <div className="flex-1" />
 
-      {/* Notifications bell */}
-      <div className="relative" ref={notifRef}>
-        {/* <button
-          onClick={() => setShowNotifications(!showNotifications)}
-          className="relative p-2 hover:bg-gray-100 rounded-lg transition-base active:scale-95 group"
-          aria-label="Notifications"
-        >
-          <Bell className="w-5 h-5 text-gray-500 group-hover:text-brand-red transition-base" />
-          {unreadCount > 0 && (
-            <span className="absolute -top-0.5 -right-0.5 w-5 h-5 bg-brand-red text-white text-[10px] font-bold rounded-full flex items-center justify-center border-2 border-white">
-              {unreadCount > 9 ? '9+' : unreadCount}
-            </span>
-          )}
-        </button> */}
-
-        {/* Notifications Dropdown */}
-        {/* {showNotifications && (
-          <div className="absolute top-full right-0 mt-2 w-80 sm:w-96 bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden z-50">
-            <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between bg-gray-50">
-              <span className="font-semibold text-sm text-brand-black">Notifications</span>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-500">{unreadCount} unread</span>
-                {unreadCount > 0 && (
-                  <button
-                    onClick={markAllAsRead}
-                    className="text-xs text-brand-red hover:text-brand-red-dark font-medium"
-                  >
-                    Mark all read
-                  </button>
-                )}
-              </div>
-            </div>
-            <div className="max-h-80 sm:max-h-96 overflow-y-auto custom-scrollbar">
-              {notifications.length === 0 ? (
-                <div className="px-4 py-8 text-center">
-                  <Bell className="w-10 h-10 mx-auto mb-3 text-gray-300" />
-                  <p className="text-sm text-gray-500">No notifications</p>
-                </div>
-              ) : (
-                notifications.map((notif) => (
-                  <button
-                    key={notif.id}
-                    onClick={() => handleNotificationClick(notif)}
-                    className="w-full px-4 py-3 hover:bg-gray-50 transition-base text-left border-b border-gray-100 last:border-0 group"
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className={`w-2 h-2 rounded-full flex-shrink-0 mt-2 ${notif.read ? 'bg-gray-300' : 'bg-brand-red'}`} />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between gap-2 mb-1">
-                          <div className="font-semibold text-sm text-brand-black truncate">
-                            {notif.title}
-                          </div>
-                          <span className="text-[10px] text-gray-400 flex-shrink-0">
-                            {new Date(notif.time).toLocaleDateString('en-US', {
-                              month: 'short',
-                              day: 'numeric'
-                            })}
-                          </span>
-                        </div>
-                        <div className="text-xs text-gray-600 line-clamp-2 mb-1">
-                          {notif.message}
-                        </div>
-                        <div className="text-[10px] text-gray-400">
-                          {new Date(notif.time).toLocaleTimeString('en-US', {
-                            hour: '2-digit',
-                            minute: '2-digit'
-                          })}
-                        </div>
-                      </div>
-                    </div>
-                  </button>
-                ))
-              )}
-            </div>
-          </div>
-        )} */}
-      </div>
+      {/* Notifications bell - REMOVED COMPLETELY */}
 
       {/* Profile Menu */}
       <div className="relative" ref={profileRef}>
@@ -393,7 +239,7 @@ export default function Header({ onMobileToggle }) {
           )}
         </button>
 
-        {/* Profile Dropdown */}
+        {/* Profile Dropdown - Simplified */}
         {showProfileMenu && (
           <div className="absolute top-full right-0 mt-2 w-56 bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden z-50">
             <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
@@ -406,38 +252,6 @@ export default function Header({ onMobileToggle }) {
               <div className="text-[10px] font-medium text-brand-red mt-1">
                 {user?.role?.replace('_', ' ')}
               </div>
-            </div>
-            <div className="py-2">
-              <button
-                onClick={() => {
-                  nav('/profile');
-                  setShowProfileMenu(false);
-                }}
-                className="w-full px-4 py-2.5 hover:bg-gray-50 transition-base text-left flex items-center gap-3 text-sm"
-              >
-                <User className="w-4 h-4 text-gray-500" />
-                <span>My Profile</span>
-              </button>
-              <button
-                onClick={() => {
-                  nav('/results');
-                  setShowProfileMenu(false);
-                }}
-                className="w-full px-4 py-2.5 hover:bg-gray-50 transition-base text-left flex items-center gap-3 text-sm"
-              >
-                <Bell className="w-4 h-4 text-gray-500" />
-                <span>My Results</span>
-              </button>
-              <button
-                onClick={() => {
-                  nav('/feedback');
-                  setShowProfileMenu(false);
-                }}
-                className="w-full px-4 py-2.5 hover:bg-gray-50 transition-base text-left flex items-center gap-3 text-sm"
-              >
-                <Settings className="w-4 h-4 text-gray-500" />
-                <span>Feedback</span>
-              </button>
             </div>
             <div className="border-t border-gray-100">
               <button
