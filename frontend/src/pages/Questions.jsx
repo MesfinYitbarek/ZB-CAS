@@ -394,14 +394,15 @@ export default function Questions() {
 
     console.log('Processed lines:', lines);
 
-    let currentQuestion = null;
     let currentType = 'MCQ';
+    let currentQuestion = null;
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
 
       if (line.length < 2) continue;
 
+      // Check for Type declaration (applies to all following questions until next Type)
       if (line.match(/^type\s*:\s*(.+)$/i)) {
         const match = line.match(/^type\s*:\s*(.+)$/i);
         const typeStr = match[1].trim().toUpperCase();
@@ -413,27 +414,41 @@ export default function Questions() {
           'TRUE/FALSE': 'TrueFalse',
           'TRUE FALSE': 'TrueFalse',
           'TRUEFALSE': 'TrueFalse',
+          'TRUE-FALSE': 'TrueFalse',
           'RATING': 'Rating',
           'MULTISELECT': 'MultiSelect',
           'MULTI-SELECT': 'MultiSelect',
+          'MULTI SELECT': 'MultiSelect',
           'MATCHING': 'Matching',
           'ORDERING': 'Ordering',
           'SCENARIO MCQ': 'ScenarioMCQ',
           'SCENARIOMCQ': 'ScenarioMCQ',
+          'SCENARIO': 'ScenarioMCQ',
           'DRAGDROP': 'DragDropClassification',
+          'DRAG DROP': 'DragDropClassification',
           'CLASSIFICATION': 'DragDropClassification',
+          'DRAG-DROP CLASSIFICATION': 'DragDropClassification',
         };
 
         currentType = typeMap[typeStr] || 'MCQ';
+
+        // Save previous question if exists
+        if (currentQuestion && currentQuestion.text) {
+          questions.push(currentQuestion);
+          currentQuestion = null;
+        }
+
         continue;
       }
 
-      if (line.match(/^question\s*\d*\s*:\s*(.+)$/i) || line.match(/^q\d*\s*:\s*(.+)$/i)) {
+      // Check for new question (starts with Question, Q, or number)
+      if (line.match(/^(?:question\s*\d*\s*:|q\d*\s*:|\d+\.)\s*(.+)$/i)) {
+        // Save previous question
         if (currentQuestion && currentQuestion.text) {
           questions.push(currentQuestion);
         }
 
-        const match = line.match(/^question\s*\d*\s*:\s*(.+)$/i) || line.match(/^q\d*\s*:\s*(.+)$/i);
+        const match = line.match(/^(?:question\s*\d*\s*:|q\d*\s*:|\d+\.)\s*(.+)$/i);
         const questionText = match ? match[1].trim() : line;
 
         currentQuestion = {
@@ -444,7 +459,9 @@ export default function Questions() {
         continue;
       }
 
+      // Process question details if we have a current question
       if (currentQuestion) {
+        // Score
         if (line.match(/^score\s*:\s*(\d+(?:\.\d+)?)/i)) {
           const match = line.match(/^score\s*:\s*(\d+(?:\.\d+)?)/i);
           if (match) {
@@ -453,25 +470,33 @@ export default function Questions() {
           continue;
         }
 
-        if (line.match(/^answer\s*:\s*(.+)$/i)) {
-          const match = line.match(/^answer\s*:\s*(.+)$/i);
+        // Answer/Correct Answer
+        if (line.match(/^(?:answer|correct)\s*:\s*(.+)$/i)) {
+          const match = line.match(/^(?:answer|correct)\s*:\s*(.+)$/i);
           const answer = match[1].trim();
 
           if (currentQuestion.type === 'TrueFalse') {
             currentQuestion.correctAnswer = answer.match(/true/i) ? 'True' : 'False';
+          } else if (currentQuestion.type === 'MultiSelect') {
+            // Handle multiple correct answers separated by commas or semicolons
+            currentQuestion.correctAnswers = answer
+              .split(/[,;]/)
+              .map(a => a.trim())
+              .filter(a => a.length > 0);
           } else {
             currentQuestion.correctAnswer = answer;
           }
           continue;
         }
 
+        // Options (a), b), c), d) format)
         if (line.match(/^[a-d]\)\s*(.+)$/i)) {
           const match = line.match(/^([a-d])\)\s*(.+)$/i);
           const optionLetter = match[1].toLowerCase();
           let optionText = match[2].trim();
 
-          const isCorrect = optionText.includes('*');
-          optionText = optionText.replace('*', '').trim();
+          const isCorrect = optionText.includes('*') || optionText.includes('(correct)');
+          optionText = optionText.replace(/\*|\(correct\)/gi, '').trim();
 
           const index = optionLetter.charCodeAt(0) - 'a'.charCodeAt(0);
 
@@ -479,14 +504,27 @@ export default function Questions() {
             currentQuestion.options = ['', '', '', ''];
           }
 
+          // Ensure array is large enough
+          while (currentQuestion.options.length <= index) {
+            currentQuestion.options.push('');
+          }
+
           currentQuestion.options[index] = optionText;
 
           if (isCorrect) {
-            currentQuestion.correctAnswer = optionText;
+            if (currentQuestion.type === 'MultiSelect') {
+              if (!currentQuestion.correctAnswers) {
+                currentQuestion.correctAnswers = [];
+              }
+              currentQuestion.correctAnswers.push(optionText);
+            } else {
+              currentQuestion.correctAnswer = optionText;
+            }
           }
           continue;
         }
 
+        // Matching pairs (left -> right format)
         if (currentQuestion.type === 'Matching' && line.includes('->')) {
           const [left, right] = line.split('->').map(s => s.trim());
 
@@ -494,6 +532,7 @@ export default function Questions() {
             currentQuestion.matchingPairs = [];
           }
 
+          // Replace default empty pair
           if (currentQuestion.matchingPairs.length === 1 &&
             currentQuestion.matchingPairs[0].left === '' &&
             currentQuestion.matchingPairs[0].right === '') {
@@ -503,15 +542,58 @@ export default function Questions() {
           }
           continue;
         }
+
+        // Ordering items (1., 2., 3. format)
+        if (currentQuestion.type === 'Ordering' && line.match(/^\d+\.\s*(.+)$/)) {
+          const match = line.match(/^\d+\.\s*(.+)$/);
+          const itemText = match[1].trim();
+
+          if (!currentQuestion.correctOrder || currentQuestion.correctOrder.length === 0 ||
+            (currentQuestion.correctOrder.length === 1 && currentQuestion.correctOrder[0] === '')) {
+            currentQuestion.correctOrder = [itemText];
+          } else {
+            currentQuestion.correctOrder.push(itemText);
+          }
+          continue;
+        }
+
+        // Categories for classification (Category: item1, item2, item3)
+        if (currentQuestion.type === 'DragDropClassification' && line.match(/^(.+?):\s*(.+)$/)) {
+          const match = line.match(/^(.+?):\s*(.+)$/);
+          const category = match[1].trim();
+          const itemsText = match[2].trim();
+          const items = itemsText.split(',').map(item => item.trim()).filter(item => item.length > 0);
+
+          if (!currentQuestion.categories || Object.keys(currentQuestion.categories).length === 0) {
+            currentQuestion.categories = {};
+          }
+
+          // Remove default empty category
+          if (currentQuestion.categories[''] && currentQuestion.categories[''].length === 1 && currentQuestion.categories[''][0] === '') {
+            delete currentQuestion.categories[''];
+          }
+
+          currentQuestion.categories[category] = items;
+          continue;
+        }
+
+        // Scenario text (for ScenarioMCQ)
+        if (currentQuestion.type === 'ScenarioMCQ' && line.match(/^scenario\s*:\s*(.+)$/i)) {
+          const match = line.match(/^scenario\s*:\s*(.+)$/i);
+          currentQuestion.scenario = match[1].trim();
+          continue;
+        }
       }
     }
 
+    // Don't forget the last question
     if (currentQuestion && currentQuestion.text) {
       questions.push(currentQuestion);
     }
 
     console.log('Parsed questions:', questions);
 
+    // Clean up questions
     return questions.map(q => {
       if (q.type === 'MCQ' || q.type === 'MultiSelect' || q.type === 'ScenarioMCQ') {
         q.options = (q.options || []).filter(opt => opt && opt.length > 0);
@@ -525,6 +607,27 @@ export default function Questions() {
         if (q.matchingPairs.length === 0) {
           q.matchingPairs = [{ left: '', right: '' }, { left: '', right: '' }];
         }
+      }
+
+      if (q.type === 'Ordering') {
+        q.correctOrder = (q.correctOrder || []).filter(item => item && item.length > 0);
+        if (q.correctOrder.length === 0) {
+          q.correctOrder = ['', ''];
+        }
+      }
+
+      if (q.type === 'DragDropClassification') {
+        const cats = {};
+        Object.entries(q.categories || {}).forEach(([cat, items]) => {
+          const trimmed = cat.trim();
+          if (trimmed && items && items.length > 0) {
+            cats[trimmed] = items.filter(i => i && i.trim());
+          }
+        });
+        if (Object.keys(cats).length === 0) {
+          cats[''] = [''];
+        }
+        q.categories = cats;
       }
 
       return q;

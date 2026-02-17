@@ -239,7 +239,7 @@ export default function Header({ onMobileToggle }) {
           )}
         </button>
 
-        {/* Profile Dropdown - Simplified */}
+        {/* Profile Dropdown - Keep profile button */}
         {showProfileMenu && (
           <div className="absolute top-full right-0 mt-2 w-56 bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden z-50">
             <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
@@ -253,6 +253,22 @@ export default function Header({ onMobileToggle }) {
                 {user?.role?.replace('_', ' ')}
               </div>
             </div>
+            
+            {/* Profile Menu Item */}
+            <div className="py-2">
+              <button
+                onClick={() => {
+                  nav('/profile');
+                  setShowProfileMenu(false);
+                }}
+                className="w-full px-4 py-2.5 hover:bg-gray-50 transition-base text-left flex items-center gap-3 text-sm"
+              >
+                <User className="w-4 h-4 text-gray-500" />
+                <span>My Profile</span>
+              </button>
+            </div>
+
+            {/* Logout */}
             <div className="border-t border-gray-100">
               <button
                 onClick={handleLogout}
