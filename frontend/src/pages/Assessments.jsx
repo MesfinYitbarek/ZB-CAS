@@ -19,8 +19,7 @@ export default function Assessments() {
   const [filterStatus, setFilterStatus] = useState('');
   const [modal, setModal] = useState(null);
 
-  // Question selection mode
-  const [questionSelectionMode, setQuestionSelectionMode] = useState('auto'); // 'auto' or 'manual'
+  const [questionSelectionMode, setQuestionSelectionMode] = useState('auto');
   const [autoSelectionConfig, setAutoSelectionConfig] = useState({
     totalQuestions: 10,
     questionTypes: {
@@ -33,7 +32,6 @@ export default function Assessments() {
     }
   });
 
-  // Pagination state
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 6,
@@ -41,7 +39,6 @@ export default function Assessments() {
     totalPages: 0
   });
 
-  // Supervisor-specific stats
   const [supervisorStats, setSupervisorStats] = useState({
     pendingEvaluations: 0,
     completedEvaluations: 0
@@ -76,7 +73,6 @@ export default function Assessments() {
         .get('/questions', { params: { competencyId: form.competencyId } })
         .then(({ data }) => {
           setQuestions(data.data.questions);
-          // Reset question selection when competency changes
           setForm(prev => ({ ...prev, questionIds: [] }));
           setQuestionSelectionMode('auto');
         })
@@ -148,7 +144,6 @@ export default function Assessments() {
     setModal('create');
   };
 
-  // Auto-select questions with shuffling
   const autoSelectQuestions = () => {
     if (!questions.length) {
       show('No questions available for this competency.', 'warning');
@@ -158,18 +153,15 @@ export default function Assessments() {
     const selected = [];
     const availableByType = {};
 
-    // Group questions by type
     questions.forEach(q => {
       if (!availableByType[q.type]) availableByType[q.type] = [];
       availableByType[q.type].push(q);
     });
 
-    // Shuffle each type array
     Object.keys(availableByType).forEach(type => {
       availableByType[type] = shuffleArray(availableByType[type]);
     });
 
-    // Select questions according to config
     Object.entries(autoSelectionConfig.questionTypes).forEach(([type, count]) => {
       if (count > 0 && availableByType[type]) {
         const picked = availableByType[type].slice(0, count);
@@ -186,7 +178,6 @@ export default function Assessments() {
     show(`${selected.length} questions automatically selected and shuffled.`, 'success');
   };
 
-  // Fisher-Yates shuffle
   const shuffleArray = (array) => {
     const arr = [...array];
     for (let i = arr.length - 1; i > 0; i--) {
@@ -196,7 +187,6 @@ export default function Assessments() {
     return arr;
   };
 
-  // Validate date and time
   const validateDateTime = () => {
     const start = new Date(`${form.startDate}T${form.startTime}`);
     const end = new Date(`${form.endDate}T${form.endTime}`);
@@ -222,7 +212,7 @@ export default function Assessments() {
       return false;
     }
 
-    const duration = (end - start) / (1000 * 60 * 60); // hours
+    const duration = (end - start) / (1000 * 60 * 60);
     if (duration < 1) {
       show('Assessment duration must be at least 1 hour.', 'error');
       return false;
@@ -233,10 +223,8 @@ export default function Assessments() {
 
   const handleSave = async () => {
     try {
-      // Validate date/time
       if (!validateDateTime()) return;
 
-      // Validate Combined assessment weights
       if (form.type === 'Combined') {
         const totalWeight = form.weight.selfAssessment + form.weight.supervisor;
         if (totalWeight !== 100) {
@@ -245,13 +233,11 @@ export default function Assessments() {
         }
       }
 
-      // For SupervisorOnly, questions are optional (used for OD reference only)
       if (form.type !== 'SupervisorOnly' && form.questionIds.length === 0) {
         show('Please select at least one question for this assessment.', 'error');
         return;
       }
 
-      // Combine date and time into ISO string
       const startDateTime = new Date(`${form.startDate}T${form.startTime}`).toISOString();
       const endDateTime = new Date(`${form.endDate}T${form.endTime}`).toISOString();
 
@@ -293,8 +279,12 @@ export default function Assessments() {
   };
 
   const getNextStatus = (current) => {
+    if (current === 'SCHEDULED') return null;
     const idx = STATUS_ORDER.indexOf(current);
-    return idx < STATUS_ORDER.length - 1 ? STATUS_ORDER[idx + 1] : null;
+    if (idx < 0) return null;
+    const nextIdx = idx + 1;
+    if (nextIdx >= STATUS_ORDER.length) return null;
+    return STATUS_ORDER[nextIdx];
   };
 
   const getStatusColor = (status) => {
@@ -353,10 +343,13 @@ export default function Assessments() {
   };
 
   const handleScoreResults = async (assessmentId) => {
-    if (!window.confirm('Score all Combined assessment results? Missing responses will be treated as 0. This action cannot be undone.')) {
-      return;
-    }
+    setScoreConfirm(assessmentId);
+  };
 
+  const [scoreConfirm, setScoreConfirm] = useState(null);
+
+  const executeScoreResults = async (assessmentId) => {
+    setScoreConfirm(null);
     try {
       const res = await api.post(`/results/score/${assessmentId}`);
       show(res.data.message || 'Results scored successfully.', 'success');
@@ -366,14 +359,25 @@ export default function Assessments() {
     }
   };
 
-  // Get available question types count
   const getQuestionTypeCount = (type) => {
     return questions.filter(q => q.type === type).length;
   };
 
-  // Calculate total auto-selected questions
   const getTotalAutoQuestions = () => {
     return Object.values(autoSelectionConfig.questionTypes).reduce((sum, count) => sum + count, 0);
+  };
+
+  const getTimeUntil = (dateStr) => {
+    const now = new Date();
+    const target = new Date(dateStr);
+    const diff = target - now;
+    if (diff <= 0) return 'Starting soon...';
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+    if (days > 0) return `in ${days}d ${hours}h`;
+    if (hours > 0) return `in ${hours}h ${minutes}m`;
+    return `in ${minutes}m`;
   };
 
   return (
@@ -386,7 +390,7 @@ export default function Assessments() {
               ? 'Create, schedule, and manage assessments.'
               : user?.role === 'SUPERVISOR'
                 ? 'Your active assessments and evaluations.'
-                : 'Your active assessments.'
+                : 'Your scheduled and active assessments.'
             }
           </p>
         </div>
@@ -514,13 +518,16 @@ export default function Assessments() {
               <div className="col-span-full text-center py-16 text-gray-400">
                 {user?.role === 'SUPERVISOR'
                   ? 'No assessments requiring your evaluation at the moment.'
-                  : 'No assessments found.'
+                  : user?.role === 'EMPLOYEE'
+                    ? 'No scheduled or active assessments for you at the moment.'
+                    : 'No assessments found.'
                 }
               </div>
             )}
             {items.map((a) => {
               const next = getNextStatus(a.status);
               const isActive = a.status === 'ACTIVE';
+              const isScheduled = a.status === 'SCHEDULED';
               const requiresSupervisor = requiresSupervisorEvaluation(a);
 
               return (
@@ -558,6 +565,21 @@ export default function Assessments() {
                       </div>
                     )}
 
+                    {isScheduled && (
+                      <div className="bg-blue-50 border-l-4 border-blue-500 rounded p-2 mb-3">
+                        <div className="text-xs text-blue-800 font-semibold flex items-center gap-1">
+                          <Clock className="w-3 h-3" />
+                          Starts {getTimeUntil(a.startDate)}
+                        </div>
+                        <div className="text-[10px] text-blue-600 mt-0.5">
+                          {new Date(a.startDate).toLocaleString('en-US', {
+                            month: 'short', day: 'numeric',
+                            hour: '2-digit', minute: '2-digit'
+                          })}
+                        </div>
+                      </div>
+                    )}
+
                     <div className="flex gap-4 text-xs text-gray-400 mb-4">
                       <span className="flex items-center gap-1">
                         <Calendar className="w-3 h-3" />
@@ -584,7 +606,7 @@ export default function Assessments() {
                   </div>
 
                   <div className="border-t border-gray-100 px-5 py-3 flex justify-between items-center bg-gray-50">
-                    {isAdmin && next && (
+                    {isAdmin && next && a.status !== 'SCHEDULED' && (
                       <button
                         onClick={() => changeStatus(a._id, next)}
                         className="px-3 py-1.5 text-xs font-semibold text-brand-red border border-brand-red rounded-lg hover:bg-brand-red-muted transition-colors"
@@ -593,12 +615,31 @@ export default function Assessments() {
                       </button>
                     )}
 
+                    {isAdmin && isScheduled && (
+                      <span className="text-xs text-blue-600 flex items-center gap-1 font-medium">
+                        <Clock className="w-3 h-3" />
+                        Auto-activates {new Date(a.startDate).toLocaleDateString('en-US', {
+                          month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+                        })}
+                      </span>
+                    )}
+
                     {!isAdmin && isActive && !requiresSupervisor && (
                       <button
                         onClick={() => nav(`/assessments/${a._id}/take`)}
                         className="px-3 py-1.5 text-xs font-semibold bg-brand-red text-white rounded-lg hover:bg-brand-red-dark transition-colors"
                       >
                         Start Assessment
+                      </button>
+                    )}
+
+                    {!isAdmin && isScheduled && (
+                      <button
+                        onClick={() => nav(`/assessments/${a._id}/take`)}
+                        className="px-3 py-1.5 text-xs font-semibold bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors flex items-center gap-1"
+                      >
+                        <Eye className="w-3 h-3" />
+                        View Details
                       </button>
                     )}
 
@@ -700,10 +741,38 @@ export default function Assessments() {
         </>
       )}
 
-      {/* Create Modal */}
+      {scoreConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-lg max-w-md w-full p-6">
+            <div className="w-12 h-12 rounded-full bg-purple-100 flex items-center justify-center mx-auto mb-4">
+              <Target className="w-6 h-6 text-purple-600" />
+            </div>
+            <h3 className="text-lg font-bold text-brand-black text-center mb-2">
+              Score Combined Results?
+            </h3>
+            <p className="text-sm text-gray-600 text-center mb-4">
+              Missing responses will be treated as 0. This action cannot be undone.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setScoreConfirm(null)}
+                className="flex-1 py-2.5 border border-gray-300 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => executeScoreResults(scoreConfirm)}
+                className="flex-1 py-2.5 bg-purple-600 text-white rounded-lg text-sm font-semibold hover:bg-purple-700"
+              >
+                Score Results
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <Modal open={modal === 'create'} onClose={() => setModal(null)} title="Create Assessment" large>
         <div className="space-y-5">
-          {/* Basic Info Section */}
           <div className="bg-gray-50 p-4 rounded-lg">
             <h3 className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-2">
               <Target className="w-4 h-4" />
@@ -751,12 +820,22 @@ export default function Assessments() {
             </div>
           </div>
 
-          {/* Date & Time Section */}
           <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
             <h3 className="text-sm font-bold text-blue-800 mb-3 flex items-center gap-2">
               <Calendar className="w-4 h-4" />
               Schedule & Duration
             </h3>
+
+            <div className="bg-blue-100 border-l-4 border-blue-500 p-2 rounded mb-3">
+              <p className="text-[10px] text-blue-800 flex items-center gap-1">
+                <Clock className="w-3 h-3 flex-shrink-0" />
+                <span>
+                  <strong>Note:</strong> The assessment will automatically become active at the scheduled start time.
+                  No manual activation is needed.
+                </span>
+              </p>
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1.5">Start Date *</label>
@@ -817,7 +896,6 @@ export default function Assessments() {
             </div>
           </div>
 
-          {/* Target Section */}
           <div className="bg-purple-50 p-4 rounded-lg border border-purple-100">
             <h3 className="text-sm font-bold text-purple-800 mb-3 flex items-center gap-2">
               <Users className="w-4 h-4" />
@@ -848,7 +926,6 @@ export default function Assessments() {
             </div>
           </div>
 
-          {/* Combined Assessment Weights */}
           {form.type === 'Combined' && (
             <div className="bg-amber-50 p-4 rounded-lg border border-amber-100">
               <h3 className="text-sm font-bold text-amber-800 mb-3">Combined Assessment Weights</h3>
@@ -893,7 +970,6 @@ export default function Assessments() {
             </div>
           )}
 
-          {/* Question Selection Section */}
           {questions.length > 0 && form.type !== 'SupervisorOnly' && (
             <div className="bg-green-50 p-4 rounded-lg border border-green-100">
               <div className="flex justify-between items-center mb-3">
@@ -1001,7 +1077,6 @@ export default function Assessments() {
             </div>
           )}
 
-          {/* SupervisorOnly OD Note */}
           {form.type === 'SupervisorOnly' && questions.length > 0 && (
             <div className="bg-orange-50 p-4 rounded-lg border border-orange-200">
               <div className="flex items-start gap-2">

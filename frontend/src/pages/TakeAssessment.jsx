@@ -5,7 +5,8 @@ import { useToast } from '../context/ToastContext';
 import useAssessmentSecurity from '../hooks/useAssessmentSecurity';
 import {
   CheckCircle, ArrowLeft, Star, AlertTriangle, Clock, Shield,
-  TrendingUp, Award, FileText, Check, ChevronLeft, ChevronRight, X
+  TrendingUp, Award, FileText, Check, ChevronLeft, ChevronRight, X,
+  Calendar, Target, Info
 } from 'lucide-react';
 import SecurityMonitor from '../components/SecurityMonitor';
 import { exportToPDF, generateFilename } from '../utils/exportUtils';
@@ -29,6 +30,10 @@ export default function TakeAssessment() {
   const [showSubmitWarning, setShowSubmitWarning] = useState(false);
   const debounceRef = useRef({});
 
+  const [isWaitingForStart, setIsWaitingForStart] = useState(false);
+  const [countdown, setCountdown] = useState(null);
+  const countdownRef = useRef(null);
+
   const respondentType = user?.role === 'SUPERVISOR' ? 'supervisor' : 'self';
   const employeeId = respondentType === 'supervisor'
     ? new URLSearchParams(window.location.search).get('employeeId') || user?._id
@@ -50,16 +55,24 @@ export default function TakeAssessment() {
     const load = async () => {
       try {
         const { data } = await api.get(`/assessments/${assessmentId}`);
-        setAssessment(data.data.assessment);
+        const fetched = data.data.assessment;
+        setAssessment(fetched);
 
-        if (data.data.assessment.timeLimit) {
-          security.startTimer(data.data.assessment.timeLimit);
+        if (fetched.status === 'SCHEDULED') {
+          setIsWaitingForStart(true);
+        } else if (fetched.status === 'ACTIVE') {
+          setIsWaitingForStart(false);
+          if (fetched.timeLimit) {
+            security.startTimer(fetched.timeLimit);
+          }
         }
 
-        const prog = await api.get(`/responses/progress/${assessmentId}`);
-        if (prog.data.data.isSubmitted) {
-          setSubmitted(true);
-          await checkResult();
+        if (fetched.status === 'ACTIVE' || fetched.status === 'COMPLETED') {
+          const prog = await api.get(`/responses/progress/${assessmentId}`);
+          if (prog.data.data.isSubmitted) {
+            setSubmitted(true);
+            await checkResult();
+          }
         }
       } catch (err) {
         show('Failed to load assessment.', 'error');
@@ -70,19 +83,71 @@ export default function TakeAssessment() {
     load();
   }, [assessmentId]);
 
-  // Handle browser back button
+  useEffect(() => {
+    if (!assessment || assessment.status !== 'SCHEDULED') return;
+
+    if (countdownRef.current) clearInterval(countdownRef.current);
+
+    const tick = () => {
+      const now = new Date();
+      const start = new Date(assessment.startDate);
+      const diff = start - now;
+
+      if (diff <= 0) {
+        clearInterval(countdownRef.current);
+        countdownRef.current = null;
+        refetchAssessment();
+      } else {
+        const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+        const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+        setCountdown({ days, hours, minutes, seconds });
+      }
+    };
+
+    tick();
+    countdownRef.current = setInterval(tick, 1000);
+
+    return () => {
+      if (countdownRef.current) clearInterval(countdownRef.current);
+    };
+  }, [assessment?.status, assessment?.startDate]);
+
+  const refetchAssessment = async () => {
+    try {
+      const { data } = await api.get(`/assessments/${assessmentId}`);
+      const fetched = data.data.assessment;
+      setAssessment(fetched);
+
+      if (fetched.status === 'ACTIVE') {
+        setIsWaitingForStart(false);
+        setCountdown(null);
+        show('Assessment is now active! You can start.', 'success');
+
+        if (fetched.timeLimit) {
+          security.startTimer(fetched.timeLimit);
+        }
+      } else if (fetched.status === 'SCHEDULED') {
+        setIsWaitingForStart(true);
+      }
+    } catch (err) {
+      show('Failed to refresh assessment status.', 'error');
+    }
+  };
+
   useEffect(() => {
     const handleBeforeUnload = (e) => {
-      if (!submitted) {
+      if (!submitted && !isWaitingForStart) {
         e.preventDefault();
         e.returnValue = '';
       }
     };
 
     const handlePopState = async (e) => {
-      if (!submitted) {
+      if (!submitted && !isWaitingForStart) {
         e.preventDefault();
-        await handleSubmit(true); // Auto-submit on back
+        await handleSubmit(true);
       }
     };
 
@@ -93,7 +158,7 @@ export default function TakeAssessment() {
       window.removeEventListener('beforeunload', handleBeforeUnload);
       window.removeEventListener('popstate', handlePopState);
     };
-  }, [submitted, answers]);
+  }, [submitted, answers, isWaitingForStart]);
 
   const checkResult = async () => {
     try {
@@ -260,7 +325,7 @@ export default function TakeAssessment() {
   const isCurrentQuestionAnswered = () => {
     const currentQ = questions[currentQuestionIndex];
     if (!currentQ) return false;
-    
+
     const ans = answers[currentQ._id];
     if (ans === undefined || ans === null || ans === '') return false;
     if (Array.isArray(ans) && ans.length === 0) return false;
@@ -268,7 +333,6 @@ export default function TakeAssessment() {
     return true;
   };
 
-  // Render question based on type
   const renderQuestion = (q) => {
     switch (q.type) {
       case 'MCQ':
@@ -286,15 +350,13 @@ export default function TakeAssessment() {
               return (
                 <label
                   key={idx}
-                  className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
-                    chosen 
-                      ? 'border-brand-red bg-brand-red/5' 
+                  className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${chosen
+                      ? 'border-brand-red bg-brand-red/5'
                       : 'border-gray-200 bg-white hover:border-gray-300'
-                  }`}
+                    }`}
                 >
-                  <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 mt-0.5 transition-all ${
-                    chosen ? 'border-brand-red bg-brand-red' : 'border-gray-300'
-                  }`}>
+                  <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 mt-0.5 transition-all ${chosen ? 'border-brand-red bg-brand-red' : 'border-gray-300'
+                    }`}>
                     {chosen && <div className="w-2 h-2 rounded-full bg-white" />}
                   </div>
                   <input
@@ -322,11 +384,10 @@ export default function TakeAssessment() {
                 <button
                   key={opt}
                   onClick={() => handleAnswer(q._id, opt)}
-                  className={`py-3 rounded-lg border font-semibold text-sm transition-all ${
-                    chosen 
-                      ? 'border-brand-red bg-brand-red text-white shadow' 
+                  className={`py-3 rounded-lg border font-semibold text-sm transition-all ${chosen
+                      ? 'border-brand-red bg-brand-red text-white shadow'
                       : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
-                  }`}
+                    }`}
                 >
                   {opt}
                 </button>
@@ -383,15 +444,13 @@ export default function TakeAssessment() {
               return (
                 <label
                   key={idx}
-                  className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
-                    selected 
-                      ? 'border-brand-red bg-brand-red/5' 
+                  className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${selected
+                      ? 'border-brand-red bg-brand-red/5'
                       : 'border-gray-200 bg-white hover:border-gray-300'
-                  }`}
+                    }`}
                 >
-                  <div className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 mt-0.5 transition-all ${
-                    selected ? 'border-brand-red bg-brand-red' : 'border-gray-300'
-                  }`}>
+                  <div className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 mt-0.5 transition-all ${selected ? 'border-brand-red bg-brand-red' : 'border-gray-300'
+                    }`}>
                     {selected && <Check className="w-3 h-3 text-white" />}
                   </div>
                   <input
@@ -557,7 +616,7 @@ export default function TakeAssessment() {
 
   const questions = assessment.questionIds || [];
   const currentQuestion = questions[currentQuestionIndex];
-  
+
   const answeredCount = questions.filter((q) => {
     const ans = answers[q._id];
     if (ans === undefined || ans === null || ans === '') return false;
@@ -565,11 +624,126 @@ export default function TakeAssessment() {
     if (typeof ans === 'object' && Object.keys(ans).length === 0) return false;
     return true;
   }).length;
-  
+
   const progressPercent = questions.length > 0 ? Math.round((answeredCount / questions.length) * 100) : 0;
   const isLastQuestion = currentQuestionIndex === questions.length - 1;
 
-  // Security acknowledgment screen
+  if (isWaitingForStart && !submitted) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+        <div className="bg-white rounded-xl shadow-lg p-6 max-w-lg w-full">
+          <div className="w-16 h-16 rounded-full bg-blue-100 flex items-center justify-center mx-auto mb-4">
+            <Clock className="w-8 h-8 text-blue-600" />
+          </div>
+          <h2 className="text-xl font-display font-bold text-brand-black text-center mb-1">
+            Assessment Scheduled
+          </h2>
+          <p className="text-xs text-gray-500 text-center mb-5">
+            This assessment has not started yet
+          </p>
+
+          <div className="bg-gray-50 rounded-lg p-4 mb-5 border border-gray-200">
+            <h3 className="text-sm font-bold text-brand-black mb-2 flex items-center gap-2">
+              <Info className="w-4 h-4 text-gray-500" />
+              Assessment Details
+            </h3>
+            <p className="text-sm text-gray-700 leading-relaxed mb-3">
+              {assessment.description || 'No description provided.'}
+            </p>
+
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <div className="flex items-center gap-2 text-gray-600">
+                <Target className="w-3 h-3 text-brand-red" />
+                <span>{assessment.competencyId?.name || 'N/A'}</span>
+              </div>
+              <div className="flex items-center gap-2 text-gray-600">
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                  assessment.type === 'SelfAssessment' ? 'bg-blue-100 text-blue-800' :
+                  assessment.type === 'Combined' ? 'bg-purple-100 text-purple-800' :
+                  'bg-green-100 text-green-800'
+                }`}>
+                  {assessment.type}
+                </span>
+              </div>
+              {assessment.timeLimit && (
+                <div className="flex items-center gap-2 text-gray-600">
+                  <Clock className="w-3 h-3 text-brand-red" />
+                  <span>{assessment.timeLimit} min time limit</span>
+                </div>
+              )}
+              <div className="flex items-center gap-2 text-gray-600">
+                <FileText className="w-3 h-3 text-brand-red" />
+                <span>{questions.length} question{questions.length !== 1 ? 's' : ''}</span>
+              </div>
+            </div>
+          </div>
+
+          {countdown && (
+            <div className="mb-5">
+              <p className="text-xs font-semibold text-gray-600 text-center mb-3 uppercase tracking-wide">
+                Starts In
+              </p>
+              <div className="grid grid-cols-4 gap-3">
+                {[
+                  { label: 'Days', value: countdown.days },
+                  { label: 'Hours', value: countdown.hours },
+                  { label: 'Minutes', value: countdown.minutes },
+                  { label: 'Seconds', value: countdown.seconds },
+                ].map(({ label, value }) => (
+                  <div key={label} className="text-center">
+                    <div className="bg-gradient-to-b from-blue-50 to-blue-100 rounded-lg p-3 border border-blue-200">
+                      <div className="text-2xl font-bold font-mono text-blue-800">
+                        {String(value).padStart(2, '0')}
+                      </div>
+                    </div>
+                    <div className="text-[10px] text-gray-500 mt-1 font-medium">{label}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="bg-blue-50 border-l-4 border-blue-500 p-3 rounded mb-5">
+            <div className="text-xs text-blue-800 space-y-1">
+              <p>
+                <strong>Starts:</strong>{' '}
+                {new Date(assessment.startDate).toLocaleString('en-US', {
+                  weekday: 'short', month: 'short', day: 'numeric', year: 'numeric',
+                  hour: '2-digit', minute: '2-digit'
+                })}
+              </p>
+              <p>
+                <strong>Ends:</strong>{' '}
+                {new Date(assessment.endDate).toLocaleString('en-US', {
+                  weekday: 'short', month: 'short', day: 'numeric', year: 'numeric',
+                  hour: '2-digit', minute: '2-digit'
+                })}
+              </p>
+            </div>
+          </div>
+
+          <div className="bg-yellow-50 border-l-4 border-yellow-500 p-3 rounded mb-5">
+            <div className="flex gap-2">
+              <AlertTriangle className="w-4 h-4 text-yellow-600 flex-shrink-0 mt-0.5" />
+              <p className="text-[10px] text-yellow-800">
+                This page will automatically refresh when the assessment starts.
+                You can also leave and come back at the scheduled start time.
+              </p>
+            </div>
+          </div>
+
+          <button
+            onClick={() => nav('/assessments')}
+            className="w-full py-2.5 border border-gray-300 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back to Assessments
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (!securityAcknowledged && !submitted) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
@@ -646,7 +820,6 @@ export default function TakeAssessment() {
     );
   }
 
-  // Result display screens
   if (submitted && assessment.type === 'SelfAssessment') {
     if (scoringInProgress) {
       return (
@@ -775,7 +948,7 @@ export default function TakeAssessment() {
           </div>
           <h2 className="text-xl font-display font-bold text-brand-black mb-1">Assessment Submitted</h2>
           <p className="text-xs text-gray-500 mb-3">Your responses have been recorded.</p>
-          
+
           {security.totalViolations > 0 && (
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-2 mb-4 text-left">
               <div className="text-[9px] font-semibold text-yellow-800">Security: {security.totalViolations} violations</div>
@@ -790,7 +963,6 @@ export default function TakeAssessment() {
     );
   }
 
-  // Main assessment interface
   return (
     <div className="min-h-screen bg-gray-50">
       {showWarning && (
@@ -807,7 +979,6 @@ export default function TakeAssessment() {
 
       <SecurityMonitor violations={security.violations} isHighRisk={security.isHighRisk} />
 
-      {/* Submit Warning Modal */}
       {showSubmitWarning && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-lg max-w-md w-full p-6">
@@ -818,7 +989,7 @@ export default function TakeAssessment() {
               Incomplete Assessment
             </h3>
             <p className="text-sm text-gray-600 text-center mb-4">
-              You have {questions.length - answeredCount} unanswered question{questions.length - answeredCount !== 1 ? 's' : ''}. 
+              You have {questions.length - answeredCount} unanswered question{questions.length - answeredCount !== 1 ? 's' : ''}.
               Unanswered questions will receive 0 points.
             </p>
             <div className="bg-blue-50 border-l-4 border-blue-500 p-3 rounded mb-4">
@@ -844,11 +1015,10 @@ export default function TakeAssessment() {
         </div>
       )}
 
-      {/* Header */}
       <div className={`sticky ${showWarning ? 'top-8' : 'top-0'} z-40 bg-white border-b border-gray-200 shadow-sm`}>
         <div className="max-w-4xl mx-auto px-4 py-2">
           <div className="flex justify-between items-center mb-2">
-            <button 
+            <button
               onClick={async () => {
                 if (!submitted) {
                   await handleSubmit(true);
@@ -863,11 +1033,10 @@ export default function TakeAssessment() {
 
             <div className="flex items-center gap-3">
               {security.timeRemaining !== null && (
-                <div className={`flex items-center gap-1 px-2 py-1 rounded-lg font-semibold text-xs ${
-                  security.timeRemaining < 300 
-                    ? 'bg-red-100 text-red-700' 
+                <div className={`flex items-center gap-1 px-2 py-1 rounded-lg font-semibold text-xs ${security.timeRemaining < 300
+                    ? 'bg-red-100 text-red-700'
                     : 'bg-gray-100 text-gray-700'
-                }`}>
+                  }`}>
                   <Clock className="w-3 h-3" />
                   <span className="font-mono">{security.formatTime(security.timeRemaining)}</span>
                 </div>
@@ -887,8 +1056,8 @@ export default function TakeAssessment() {
 
           <div className="flex items-center gap-2">
             <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
-              <div 
-                className="h-full bg-brand-red rounded-full transition-all" 
+              <div
+                className="h-full bg-brand-red rounded-full transition-all"
                 style={{ width: `${progressPercent}%` }}
               />
             </div>
@@ -899,10 +1068,8 @@ export default function TakeAssessment() {
         </div>
       </div>
 
-      {/* Question Display */}
       <div className="max-w-4xl mx-auto px-4 py-4">
         <div className="bg-white rounded-xl shadow border border-gray-100 overflow-hidden">
-          {/* Question Header */}
           <div className="bg-gradient-to-r from-brand-red/5 to-brand-red/10 px-5 py-3 border-b border-gray-200">
             <div className="flex justify-between items-center mb-1">
               <span className="text-[10px] font-semibold text-gray-500 uppercase">
@@ -917,12 +1084,10 @@ export default function TakeAssessment() {
             </p>
           </div>
 
-          {/* Question Body */}
           <div className="px-5 py-4">
             {renderQuestion(currentQuestion)}
           </div>
 
-          {/* Navigation Footer */}
           <div className="bg-gray-50 px-5 py-3 border-t border-gray-200">
             <div className="flex justify-between items-center">
               <button
@@ -964,7 +1129,6 @@ export default function TakeAssessment() {
           </div>
         </div>
 
-        {/* Question Navigator */}
         <div className="mt-4 bg-white rounded-xl shadow border border-gray-100 p-3">
           <h3 className="text-xs font-bold text-brand-black mb-2">Navigator</h3>
           <div className="grid grid-cols-10 gap-1">
@@ -982,13 +1146,12 @@ export default function TakeAssessment() {
                 <button
                   key={q._id}
                   onClick={() => goToQuestion(idx)}
-                  className={`w-full aspect-square rounded-md text-[10px] font-medium transition-all ${
-                    isCurrent
+                  className={`w-full aspect-square rounded-md text-[10px] font-medium transition-all ${isCurrent
                       ? 'bg-brand-red text-white shadow scale-105'
                       : isAnswered
-                      ? 'bg-green-100 text-green-700 border border-green-300'
-                      : 'bg-gray-100 text-gray-600 border border-gray-200'
-                  }`}
+                        ? 'bg-green-100 text-green-700 border border-green-300'
+                        : 'bg-gray-100 text-gray-600 border border-gray-200'
+                    }`}
                 >
                   {idx + 1}
                 </button>

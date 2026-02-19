@@ -1,14 +1,20 @@
+/* controllers/responseController.js */
 import Assessment from '../models/Assessment.js';
 import Question from '../models/Question.js';
 import Response from '../models/Response.js';
+import SecurityViolation from '../models/SecurityViolation.js';
 import User from '../models/User.js';
 import AppError from '../utils/AppError.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import { scoreIndividual } from '../services/scoringService.js';
 import { sendResultsEmail } from '../services/emailService.js';
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   HELPERS
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 /**
- * Helper: Validate access permissions for assessments
+ * Validate access permissions for assessments
  */
 const validateAccess = async (assessmentId, userId, employeeId, respondentType) => {
   const assessment = await Assessment.findById(assessmentId);
@@ -28,6 +34,34 @@ const validateAccess = async (assessmentId, userId, employeeId, respondentType) 
   return assessment;
 };
 
+/**
+ * Normalize violation type to a consistent UPPER_SNAKE_CASE format
+ */
+const normalizeViolationType = (type) => {
+  if (!type) return 'UNKNOWN';
+  return type.toUpperCase().replace(/[-\s]/g, '_');
+};
+
+/**
+ * Map violation types → summary counter field names
+ */
+const VIOLATION_FIELD_MAP = {
+  TAB_SWITCH: 'tabSwitches',
+  COPY_ATTEMPT: 'copyAttempts',
+  RIGHT_CLICK: 'rightClickAttempts',
+  FULLSCREEN_EXIT: 'fullscreenExits',
+  DEVTOOLS: 'devToolsAttempts',
+  WINDOW_BLUR: 'windowBlurs',
+  PRINT_ATTEMPT: 'printAttempts',
+};
+
+/** Number of violations before a record is automatically flagged high-risk */
+const HIGH_RISK_THRESHOLD = 5;
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   EMPLOYEE ACTIONS
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 // ─── AUTO-SAVE (Single Answer) ───────────────────────────────────────────────
 export const saveAnswer = asyncHandler(async (req, res, next) => {
   const { assessmentId, questionId, selectedAnswer, employeeId } = req.body;
@@ -35,7 +69,7 @@ export const saveAnswer = asyncHandler(async (req, res, next) => {
 
   const assessment = await validateAccess(assessmentId, req.user.id, empId, 'self');
 
-  if (!assessment.questionIds.some(q => q.toString() === questionId)) {
+  if (!assessment.questionIds.some((q) => q.toString() === questionId)) {
     return next(new AppError('Question does not belong to this assessment.', 400));
   }
 
@@ -56,7 +90,11 @@ export const submitAssessment = asyncHandler(async (req, res, next) => {
   const assessment = await validateAccess(assessmentId, req.user.id, employeeId, 'self');
 
   // Check if all questions are answered
-  const responseCount = await Response.countDocuments({ assessmentId, employeeId, respondentType: 'self' });
+  const responseCount = await Response.countDocuments({
+    assessmentId,
+    employeeId,
+    respondentType: 'self',
+  });
   if (responseCount < assessment.questionIds.length) {
     return next(new AppError('Please answer all questions before submitting.', 400));
   }
@@ -68,30 +106,171 @@ export const submitAssessment = asyncHandler(async (req, res, next) => {
     { $set: { submittedAt: now } }
   );
 
-  // TRIGGER AUTO-SCORING for SelfAssessment
+  // ─── Persist final security data ────────────────────────────────────────
+  const { securityLog, totalViolations } = req.body;
+  try {
+    await SecurityViolation.findOneAndUpdate(
+      { assessmentId, userId: employeeId },
+      {
+        $set: {
+          securityLog: securityLog || null,
+          submittedAt: now,
+        },
+        ...(totalViolations != null && {
+          $max: { 'summary.totalViolations': totalViolations },
+        }),
+      },
+      { upsert: true }
+    );
+  } catch (secErr) {
+    console.error('[SECURITY] Failed to persist security log:', secErr.message);
+  }
+
+  // ─── TRIGGER AUTO-SCORING for SelfAssessment ───────────────────────────
   if (assessment.type === 'SelfAssessment') {
     const result = await scoreIndividual(assessmentId, employeeId);
-    
+
     // Notify Employee
     const employee = await User.findById(employeeId).lean();
     if (employee?.email) {
-      sendResultsEmail({ name: employee.name, email: employee.email }, [{
-        competencyName: assessment.competencyId?.name || 'Competency',
-        finalScore: result.finalScore,
-        level: result.level,
-        assessmentType: assessment.type
-      }]).catch(e => console.error('Email failed:', e.message));
+      sendResultsEmail(
+        { name: employee.name, email: employee.email },
+        [
+          {
+            competencyName: assessment.competencyId?.name || 'Competency',
+            finalScore: result.finalScore,
+            level: result.level,
+            assessmentType: assessment.type,
+          },
+        ]
+      ).catch((e) => console.error('Email failed:', e.message));
     }
 
     return res.status(200).json({
       status: 'success',
       message: 'Assessment submitted and scored.',
-      data: { result }
+      data: { result },
     });
   }
 
   res.status(200).json({ status: 'success', message: 'Assessment submitted successfully.' });
 });
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SECURITY VIOLATION TRACKING
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+// ─── RECORD A SINGLE SECURITY VIOLATION ──────────────────────────────────────
+export const recordSecurityViolation = asyncHandler(async (req, res, next) => {
+  const { assessmentId, violation } = req.body;
+  const userId = req.user.id;
+
+  if (!assessmentId) {
+    return next(new AppError('assessmentId is required.', 400));
+  }
+
+  const violationType = normalizeViolationType(violation?.type);
+  const violationDetails = typeof violation?.details === 'string' ? violation.details : '';
+
+  const incFields = { 'summary.totalViolations': 1 };
+  const summaryField = VIOLATION_FIELD_MAP[violationType];
+  if (summaryField) {
+    incFields[`summary.${summaryField}`] = 1;
+  }
+
+  const doc = await SecurityViolation.findOneAndUpdate(
+    { assessmentId, userId },
+    {
+      $push: {
+        violations: {
+          type: violationType,
+          timestamp: new Date(),
+          details: violationDetails,
+        },
+      },
+      $inc: incFields,
+    },
+    { upsert: true, new: true }
+  );
+
+  if (!doc.summary.isHighRisk && doc.summary.totalViolations >= HIGH_RISK_THRESHOLD) {
+    doc.summary.isHighRisk = true;
+    await doc.save();
+  }
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      totalViolations: doc.summary.totalViolations,
+      isHighRisk: doc.summary.isHighRisk,
+    },
+  });
+});
+
+// ─── GET SECURITY VIOLATIONS FOR A SPECIFIC USER + ASSESSMENT ────────────────
+export const getSecurityViolations = asyncHandler(async (req, res, next) => {
+  const { assessmentId, userId } = req.params;
+  const requesterId = req.user.id;
+  const requesterRole = req.user.role;
+
+  if (requesterId !== userId && requesterRole !== 'HR_ADMIN') {
+    if (requesterRole === 'SUPERVISOR') {
+      const employee = await User.findById(userId).lean();
+      if (!employee || employee.supervisorId?.toString() !== requesterId) {
+        return next(new AppError('Not authorised to view these security records.', 403));
+      }
+    } else {
+      return next(new AppError('Not authorised to view these security records.', 403));
+    }
+  }
+
+  const record = await SecurityViolation.findOne({ assessmentId, userId })
+    .populate('userId', 'name email')
+    .lean();
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      securityRecord: record || {
+        summary: {
+          totalViolations: 0,
+          tabSwitches: 0,
+          copyAttempts: 0,
+          rightClickAttempts: 0,
+          fullscreenExits: 0,
+          devToolsAttempts: 0,
+          windowBlurs: 0,
+          printAttempts: 0,
+          isHighRisk: false,
+        },
+        violations: [],
+      },
+    },
+  });
+});
+
+// ─── HR_ADMIN: SECURITY SUMMARY FOR AN ENTIRE ASSESSMENT ────────────────────
+export const getAssessmentSecuritySummary = asyncHandler(async (req, res, next) => {
+  const { assessmentId } = req.params;
+
+  const records = await SecurityViolation.find({ assessmentId })
+    .populate('userId', 'name email department')
+    .sort({ 'summary.totalViolations': -1 })
+    .lean();
+
+  const aggregated = {
+    totalRecords: records.length,
+    highRiskCount: records.filter((r) => r.summary.isHighRisk).length,
+    totalViolations: records.reduce((sum, r) => sum + (r.summary?.totalViolations || 0), 0),
+    records,
+  };
+
+  res.status(200).json({ status: 'success', data: { summary: aggregated } });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SUPERVISOR ACTIONS
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 // ─── SUBMIT SUPERVISOR EVALUATION ────────────────────────────────────────────
 export const submitSupervisorEvaluation = asyncHandler(async (req, res, next) => {
@@ -101,31 +280,27 @@ export const submitSupervisorEvaluation = asyncHandler(async (req, res, next) =>
   const assessment = await Assessment.findById(assessmentId);
   if (!assessment) return next(new AppError('Assessment not found', 404));
 
-  // 1. Finalize the Response
   const evaluation = await Response.findOneAndUpdate(
     { assessmentId, employeeId, userId: supervisorId, respondentType: 'supervisor' },
-    { 
-      score: Number(score), 
-      comments: comments || '', 
-      isSupervisorEvaluation: true, 
-      submittedAt: new Date() 
+    {
+      score: Number(score),
+      comments: comments || '',
+      isSupervisorEvaluation: true,
+      submittedAt: new Date(),
     },
     { new: true, upsert: true }
   );
 
-  // 2. Trigger Scoring Logic
-  // If it's SupervisorOnly, we calculate the final result immediately.
-  // If it's Combined, we just wait for HR to click "Score Results".
   let result = null;
   if (assessment.type === 'SupervisorOnly') {
     result = await scoreIndividual(assessmentId, employeeId);
     console.log(`[AUTO-SCORE] SupervisorOnly Assessment finalized for ${employeeId}`);
   }
 
-  res.status(200).json({ 
-    status: 'success', 
-    message: 'Evaluation submitted successfully.', 
-    data: { evaluation, result } 
+  res.status(200).json({
+    status: 'success',
+    message: 'Evaluation submitted successfully.',
+    data: { evaluation, result },
   });
 });
 
@@ -136,12 +311,16 @@ export const getProgress = asyncHandler(async (req, res, next) => {
   if (!assessment) return next(new AppError('Assessment not found.', 404));
 
   const total = assessment.questionIds.length;
-  const answeredCount = await Response.countDocuments({ assessmentId, userId: req.user.id, respondentType: 'self' });
-  const submitted = await Response.findOne({ 
-    assessmentId, 
-    userId: req.user.id, 
-    respondentType: 'self', 
-    submittedAt: { $ne: null } 
+  const answeredCount = await Response.countDocuments({
+    assessmentId,
+    userId: req.user.id,
+    respondentType: 'self',
+  });
+  const submitted = await Response.findOne({
+    assessmentId,
+    userId: req.user.id,
+    respondentType: 'self',
+    submittedAt: { $ne: null },
   }).lean();
 
   res.status(200).json({
@@ -158,14 +337,18 @@ export const getProgress = asyncHandler(async (req, res, next) => {
 // ─── GET SUPERVISOR EVALUATION (Draft or Submitted) ────────────────────────
 export const getSupervisorEvaluation = asyncHandler(async (req, res, next) => {
   const { assessmentId, employeeId } = req.params;
-  const evaluation = await Response.findOne({ 
-    assessmentId, 
-    employeeId, 
-    respondentType: 'supervisor' 
+  const evaluation = await Response.findOne({
+    assessmentId,
+    employeeId,
+    respondentType: 'supervisor',
   }).lean();
 
   res.status(200).json({ status: 'success', data: { evaluation } });
 });
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   HR_ADMIN ACTIONS
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 // ─── HR_ADMIN: GET ALL RESPONSES ─────────────────────────────────────────────
 export const getAllResponses = asyncHandler(async (req, res, next) => {
@@ -177,27 +360,28 @@ export const getAllResponses = asyncHandler(async (req, res, next) => {
   res.status(200).json({ status: 'success', data: { responses } });
 });
 
-
 // ─── SAVE SUPERVISOR EVALUATION DRAFT ──────────────────────────────────────
 export const saveSupervisorEvaluation = asyncHandler(async (req, res, next) => {
   const { assessmentId, employeeId, score, comments } = req.body;
   const supervisorId = req.user.id;
 
-  // Logic: Just upsert the response without setting submittedAt
   const evaluation = await Response.findOneAndUpdate(
     { assessmentId, employeeId, userId: supervisorId, respondentType: 'supervisor' },
-    { 
-      score: Number(score) || 0, 
-      comments: comments || '', 
+    {
+      score: Number(score) || 0,
+      comments: comments || '',
       isSupervisorEvaluation: true,
-      submittedAt: null // Ensure it remains a draft
+      submittedAt: null,
     },
     { new: true, upsert: true, runValidators: true }
   );
 
-  res.status(200).json({ status: 'success', message: 'Evaluation draft saved.', data: { evaluation } });
+  res.status(200).json({
+    status: 'success',
+    message: 'Evaluation draft saved.',
+    data: { evaluation },
+  });
 });
-
 
 // ─── SET MANUAL SCORE (HR_ADMIN, ShortAnswer only) ───────────────────────────
 export const setManualScore = asyncHandler(async (req, res, next) => {
@@ -210,7 +394,7 @@ export const setManualScore = asyncHandler(async (req, res, next) => {
   }
 
   response.manualScore = manualScore;
-  response.score = manualScore; // In ShortAnswer, score = manualScore
+  response.score = manualScore;
   await response.save();
 
   res.status(200).json({ status: 'success', data: { response } });

@@ -4,6 +4,26 @@ import AppError from '../utils/AppError.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import { sendAssessmentNotification, sendSupervisorReminder } from '../services/emailService.js';
 
+// ─── AUTO-ACTIVATE HELPER ────────────────────────────────────────────────────
+const autoActivateScheduledAssessments = async () => {
+  const now = new Date();
+  const result = await Assessment.updateMany(
+    { status: 'SCHEDULED', startDate: { $lte: now } },
+    { $set: { status: 'ACTIVE' } }
+  );
+  return result.modifiedCount || 0;
+};
+
+// ─── AUTO-COMPLETE HELPER ────────────────────────────────────────────────────
+const autoCompleteExpiredAssessments = async () => {
+  const now = new Date();
+  const result = await Assessment.updateMany(
+    { status: 'ACTIVE', endDate: { $lte: now } },
+    { $set: { status: 'COMPLETED' } }
+  );
+  return result.modifiedCount || 0;
+};
+
 // ─── CREATE ──────────────────────────────────────────────────────────────────
 export const createAssessment = asyncHandler(async (req, res, next) => {
   const {
@@ -23,7 +43,7 @@ export const createAssessment = asyncHandler(async (req, res, next) => {
     weight: type === 'Combined'
       ? { selfAssessment: weight?.selfAssessment || 20, supervisor: weight?.supervisor || 80 }
       : { selfAssessment: 0, supervisor: 0 },
-    status:    'DRAFT',
+    status: 'DRAFT',
     createdBy: req.user.id,
   });
 
@@ -32,19 +52,21 @@ export const createAssessment = asyncHandler(async (req, res, next) => {
 
 // ─── LIST ─────────────────────────────────────────────────────────────────────
 export const getAssessments = asyncHandler(async (req, res) => {
+  await autoActivateScheduledAssessments();
+  await autoCompleteExpiredAssessments();
+
   const { status, competencyId, page = 1, limit = 6 } = req.query;
 
   const filter = {};
-  if (status)       filter.status       = status;
+  if (status) filter.status = status;
   if (competencyId) filter.competencyId = competencyId;
 
-  // Non-admin users only see assessments that target their dept/position
   if (req.user.role !== 'HR_ADMIN') {
     const me = await User.findById(req.user.id).lean();
     filter.$or = [
       { 'target.department': me.department },
-      { 'target.position':   me.position },
-      { 'target.department': null, 'target.position': null }, // global assessments
+      { 'target.position': me.position },
+      { 'target.department': null, 'target.position': null },
     ];
   }
 
@@ -72,13 +94,22 @@ export const getAssessments = asyncHandler(async (req, res) => {
 
 // ─── GET ONE ─────────────────────────────────────────────────────────────────
 export const getAssessment = asyncHandler(async (req, res, next) => {
+  await autoActivateScheduledAssessments();
+  await autoCompleteExpiredAssessments();
+
+  const raw = await Assessment.findById(req.params.id);
+  if (!raw) return next(new AppError('Assessment not found.', 404));
+
+  if (raw.status === 'SCHEDULED' && new Date(raw.startDate) <= new Date()) {
+    raw.status = 'ACTIVE';
+    await raw.save({ validateBeforeSave: false });
+  }
+
   const assessment = await Assessment.findById(req.params.id)
     .populate('competencyId', 'name category')
     .populate('createdBy', 'name email')
-    .populate('questionIds', ' -correctAnswer')   // never leak answers
+    .populate('questionIds', ' -correctAnswer')
     .lean();
-
-  if (!assessment) return next(new AppError('Assessment not found.', 404));
 
   res.status(200).json({ status: 'success', data: { assessment } });
 });
@@ -112,12 +143,10 @@ export const updateStatus = asyncHandler(async (req, res, next) => {
 
   if (!assessment) return next(new AppError('Assessment not found.', 404));
 
-  // Valid transitions
   const transitions = {
-    DRAFT:      ['SCHEDULED'],
-    SCHEDULED:  ['ACTIVE'],
-    ACTIVE:     ['COMPLETED'],
-    COMPLETED:  ['ARCHIVED'],
+    DRAFT: ['SCHEDULED'],
+    ACTIVE: ['COMPLETED'],
+    COMPLETED: ['ARCHIVED'],
   };
 
   const allowed = transitions[assessment.status] || [];
@@ -126,17 +155,14 @@ export const updateStatus = asyncHandler(async (req, res, next) => {
   }
 
   assessment.status = status;
-  
-  // Initialize supervisor evaluations when moving to SCHEDULED
+
   if (status === 'SCHEDULED' && (assessment.type === 'Combined' || assessment.type === 'SupervisorOnly')) {
-    // Find target employees
     const userFilter = { status: 'ACTIVE' };
     if (assessment.target?.department) userFilter.department = assessment.target.department;
-    if (assessment.target?.position)   userFilter.position   = assessment.target.position;
+    if (assessment.target?.position) userFilter.position = assessment.target.position;
 
     const employees = await User.find(userFilter).lean();
-    
-    // Create pending supervisor evaluations
+
     assessment.supervisorEvaluations = employees
       .filter(emp => emp.supervisorId)
       .map(emp => ({
@@ -148,23 +174,19 @@ export const updateStatus = asyncHandler(async (req, res, next) => {
 
   await assessment.save({ validateBeforeSave: false });
 
-  // ── Notify participants when moving to SCHEDULED ────────────────────────
   if (status === 'SCHEDULED') {
-    // Find target employees
     const userFilter = { status: 'ACTIVE' };
     if (assessment.target?.department) userFilter.department = assessment.target.department;
-    if (assessment.target?.position)   userFilter.position   = assessment.target.position;
+    if (assessment.target?.position) userFilter.position = assessment.target.position;
 
     const employees = await User.find(userFilter).lean();
 
-    // Send notifications to employees
     employees.forEach((emp) => sendAssessmentNotification(emp, assessment));
 
-    // For Combined / SupervisorOnly, also notify supervisors
     if (assessment.type === 'Combined' || assessment.type === 'SupervisorOnly') {
       const supervisorIds = [...new Set(employees.map((e) => e.supervisorId).filter(Boolean))];
-      const supervisors   = await User.find({ _id: { $in: supervisorIds } }).lean();
-      
+      const supervisors = await User.find({ _id: { $in: supervisorIds } }).lean();
+
       supervisors.forEach((sup) => {
         const supEmployees = employees.filter((e) => e.supervisorId?.toString() === sup._id.toString());
         supEmployees.forEach((emp) => sendSupervisorReminder(sup, emp.name, assessment));
@@ -175,15 +197,18 @@ export const updateStatus = asyncHandler(async (req, res, next) => {
   res.status(200).json({ status: 'success', data: { assessment } });
 });
 
-// ─── GET ACTIVE ASSESSMENTS FOR CURRENT USER ────────────────────────────────
+// ─── GET SCHEDULED + ACTIVE ASSESSMENTS FOR CURRENT USER ────────────────────
 export const getActiveAssessments = asyncHandler(async (req, res) => {
+  await autoActivateScheduledAssessments();
+  await autoCompleteExpiredAssessments();
+
   const me = await User.findById(req.user.id).lean();
 
   const filter = {
-    status: 'ACTIVE',
+    status: { $in: ['SCHEDULED', 'ACTIVE'] },
     $or: [
       { 'target.department': me.department },
-      { 'target.position':   me.position },
+      { 'target.position': me.position },
       { 'target.department': null, 'target.position': null },
     ],
   };
@@ -191,7 +216,7 @@ export const getActiveAssessments = asyncHandler(async (req, res) => {
   const assessments = await Assessment.find(filter)
     .populate('competencyId', 'name category')
     .populate('questionIds', ' -correctAnswer')
-    .sort({ endDate: 1 })
+    .sort({ startDate: 1 })
     .lean();
 
   res.status(200).json({ status: 'success', data: { assessments } });
