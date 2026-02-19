@@ -1178,11 +1178,11 @@ export default function Results() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start gap-4 mb-6">
         <div>
-          <h1 className="text-3xl font-display font-bold text-brand-black">Assessment Results</h1>
+          <h1 className="text-3xl font-display font-bold text-brand-black">Competency Results</h1>
           <p className="text-gray-500 mt-1">
             {isAdmin
               ? 'View results filtered by assessment — click any result to see per-question details'
-              : 'Your assessment history — click any result to see per-question details'}
+              : 'Your competency assessment history — click any result to see per-question details'}
           </p>
         </div>
 
@@ -1524,66 +1524,6 @@ export default function Results() {
         </>
       )}
 
-      {/* Summary Cards */}
-      {selectedAssessment && results.length > 0 && !isAdmin && (
-        <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-gray-500 uppercase font-medium">Total Competencies</p>
-                <p className="text-2xl font-bold text-gray-900 mt-1">{results.length}</p>
-              </div>
-              <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center">
-                <TrendingUp className="w-5 h-5 text-blue-600" />
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-gray-500 uppercase font-medium">Average Score</p>
-                <p className="text-2xl font-bold text-gray-900 mt-1">
-                  {results.length > 0
-                    ? Math.round(results.reduce((acc, r) => acc + r.finalScore, 0) / results.length)
-                    : 0}%
-                </p>
-              </div>
-              <div className="w-10 h-10 bg-green-50 rounded-lg flex items-center justify-center">
-                <Award className="w-5 h-5 text-green-600" />
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-gray-500 uppercase font-medium">Expert Level</p>
-                <p className="text-2xl font-bold text-gray-900 mt-1">
-                  {results.filter(r => r.level === 'Expert').length}
-                </p>
-              </div>
-              <div className="w-10 h-10 bg-brand-red-muted rounded-lg flex items-center justify-center">
-                <CheckCircle2 className="w-5 h-5 text-brand-red" />
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-gray-500 uppercase font-medium">With Both Scores</p>
-                <p className="text-2xl font-bold text-gray-900 mt-1">
-                  {results.filter(r => r.hasBoth).length}
-                </p>
-              </div>
-              <div className="w-10 h-10 bg-purple-50 rounded-lg flex items-center justify-center">
-                <Scale className="w-5 h-5 text-purple-600" />
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
