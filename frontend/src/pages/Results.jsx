@@ -1055,7 +1055,7 @@ export default function Results() {
     setShowDetailModal(true);
     fetchQuestionDetails(result._id);
 
-    const assessId = result.assessmentId || selectedAssessment;
+    const assessId = result.assessmentId?._id ||result.assessmentId || selectedAssessment;
     const empId = getResultUserId(result) || user._id;
     fetchSecurityData(assessId, empId);
   };
