@@ -1,48 +1,57 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, Legend } from 'recharts';
-import { Users, ClipboardList, BarChart3, Target, TrendingUp, AlertTriangle, CheckCircle } from 'lucide-react';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+  LineChart,
+  Line,
+  Legend
+} from 'recharts';
+import { ClipboardList, Target, TrendingUp } from 'lucide-react';
 import api from '../utils/api';
 
 const COLORS = ['#C8102E', '#2563EB', '#16A34A', '#EA580C'];
 
 export default function AdminDashboard() {
   const nav = useNavigate();
+
   const [stats, setStats] = useState({
-    totalUsers: 0,
-    activeUsers: 0,
     totalCompetencies: 0,
     activeAssessments: 0,
-    completedAssessments: 0,
-    pendingResults: 0,
-    totalResults: 0,
-    draftAssessments: 0,
-    scheduledAssessments: 0
+    completedAssessments: 0
   });
+
   const [compData, setCompData] = useState([]);
   const [statusData, setStatusData] = useState([]);
   const [trendData, setTrendData] = useState([]);
-  const [recentActivity, setRecentActivity] = useState([]);
   const [quickStats, setQuickStats] = useState({
-    completionRate: 0,
-    avgAssessmentsPerUser: 0,
-    feedbackPending: 0
+    completionRate: 0
   });
+
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const loadDashboard = async () => {
       try {
-        // Single API call to get all admin dashboard data
         const res = await api.get('/dashboard/admin');
         const data = res.data.data;
 
-        // Update stats from backend
-        setStats(data.stats);
+        setStats({
+          totalCompetencies: data.stats.totalCompetencies,
+          activeAssessments: data.stats.activeAssessments,
+          completedAssessments: data.stats.completedAssessments
+        });
+
         setCompData(data.charts.competencyDistribution || []);
         setStatusData(data.charts.assessmentStatus || []);
         setTrendData(data.charts.monthlyTrends || []);
-        setRecentActivity(data.recentActivity || []);
         setQuickStats(data.quickStats || {});
       } catch (error) {
         console.error('Failed to load admin dashboard:', error);
@@ -64,15 +73,6 @@ export default function AdminDashboard() {
 
   const KPICards = [
     {
-      icon: Users,
-      label: 'Total Employees',
-      value: stats.totalUsers,
-      subValue: `${stats.activeUsers} active`,
-      color: 'text-blue-600',
-      bg: 'bg-blue-100',
-      link: '/users'
-    },
-    {
       icon: Target,
       label: 'Competencies',
       value: stats.totalCompetencies,
@@ -89,16 +89,7 @@ export default function AdminDashboard() {
       color: 'text-green-600',
       bg: 'bg-green-100',
       link: '/assessments'
-    },
-    {
-      icon: BarChart3,
-      label: 'Total Results',
-      value: stats.totalResults,
-      subValue: `${stats.pendingResults} pending review`,
-      color: 'text-orange-600',
-      bg: 'bg-orange-100',
-      link: '/results'
-    },
+    }
   ];
 
   return (
@@ -106,20 +97,20 @@ export default function AdminDashboard() {
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-display font-bold text-brand-black">Admin Dashboard</h1>
-          <p className="text-gray-500 mt-1">Comprehensive overview of the assessment system</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-sm font-semibold">
-            Completion Rate: {quickStats.completionRate}%
-          </div>
+          <h1 className="text-3xl font-display font-bold text-brand-black">
+            Admin Dashboard
+          </h1>
+          <p className="text-gray-500 mt-1">
+            Comprehensive overview of the assessment system
+          </p>
         </div>
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {KPICards.map((k) => {
           const Icon = k.icon;
+
           return (
             <div
               key={k.label}
@@ -127,13 +118,20 @@ export default function AdminDashboard() {
               className="bg-white rounded-xl p-5 shadow-card hover:shadow-card-hover transition-all cursor-pointer border border-gray-100"
             >
               <div className="flex items-center gap-3 mb-3">
-                <div className={`w-12 h-12 ${k.bg} rounded-xl flex items-center justify-center`}>
+                <div
+                  className={`w-12 h-12 ${k.bg} rounded-xl flex items-center justify-center`}
+                >
                   <Icon className={`w-6 h-6 ${k.color}`} />
                 </div>
                 <TrendingUp className="w-4 h-4 text-green-500 ml-auto" />
               </div>
-              <div className="text-3xl font-display font-bold text-brand-black mb-1">{k.value}</div>
-              <div className="text-sm font-semibold text-gray-700 mb-1">{k.label}</div>
+
+              <div className="text-3xl font-display font-bold text-brand-black mb-1">
+                {k.value}
+              </div>
+              <div className="text-sm font-semibold text-gray-700 mb-1">
+                {k.label}
+              </div>
               <div className="text-xs text-gray-500">{k.subValue}</div>
             </div>
           );
@@ -144,7 +142,10 @@ export default function AdminDashboard() {
       <div className="grid lg:grid-cols-3 gap-6">
         {/* Competency Distribution */}
         <div className="bg-white rounded-xl p-6 shadow-card border border-gray-100">
-          <h3 className="text-lg font-display font-bold text-brand-black mb-4">Competency Distribution</h3>
+          <h3 className="text-lg font-display font-bold text-brand-black mb-4">
+            Competency Distribution
+          </h3>
+
           {compData.length === 0 ? (
             <div className="h-[200px] flex items-center justify-center text-gray-400">
               No competency data available
@@ -154,7 +155,7 @@ export default function AdminDashboard() {
               <BarChart data={compData}>
                 <XAxis dataKey="name" tick={{ fontSize: 11 }} />
                 <YAxis hide />
-                <Tooltip contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
+                <Tooltip />
                 <Bar dataKey="value" radius={[6, 6, 0, 0]}>
                   {compData.map((entry, i) => (
                     <Cell key={i} fill={COLORS[i % COLORS.length]} />
@@ -167,7 +168,10 @@ export default function AdminDashboard() {
 
         {/* Assessment Status */}
         <div className="bg-white rounded-xl p-6 shadow-card border border-gray-100">
-          <h3 className="text-lg font-display font-bold text-brand-black mb-4">Assessment Status</h3>
+          <h3 className="text-lg font-display font-bold text-brand-black mb-4">
+            Assessment Status
+          </h3>
+
           {statusData.length === 0 ? (
             <div className="h-[200px] flex items-center justify-center text-gray-400">
               No assessment data available
@@ -197,7 +201,10 @@ export default function AdminDashboard() {
 
         {/* 6-Month Trend */}
         <div className="bg-white rounded-xl p-6 shadow-card border border-gray-100">
-          <h3 className="text-lg font-display font-bold text-brand-black mb-4">6-Month Trend</h3>
+          <h3 className="text-lg font-display font-bold text-brand-black mb-4">
+            6-Month Trend
+          </h3>
+
           {trendData.length === 0 ? (
             <div className="h-[200px] flex items-center justify-center text-gray-400">
               No trend data available
@@ -207,10 +214,15 @@ export default function AdminDashboard() {
               <LineChart data={trendData}>
                 <XAxis dataKey="month" tick={{ fontSize: 11 }} />
                 <YAxis hide />
-                <Tooltip contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
+                <Tooltip />
                 <Legend />
-                <Line type="monotone" dataKey="assessments" stroke="#C8102E" strokeWidth={2} dot={{ r: 4 }} />
-                <Line type="monotone" dataKey="results" stroke="#2563EB" strokeWidth={2} dot={{ r: 4 }} />
+                <Line
+                  type="monotone"
+                  dataKey="assessments"
+                  stroke="#C8102E"
+                  strokeWidth={2}
+                  dot={{ r: 4 }}
+                />
               </LineChart>
             </ResponsiveContainer>
           )}
