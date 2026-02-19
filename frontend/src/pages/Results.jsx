@@ -5,44 +5,37 @@ import {
   TrendingUp, CheckCircle2, Download, ChevronLeft, ChevronRight,
   Award, User, Users, Scale, Calendar, Filter, X, FileText,
   SlidersHorizontal, Eye, XCircle, Info, ClipboardList, ChevronDown,
-  ChevronUp, AlertCircle, HelpCircle, Hash, Minus, ListChecks
+  ChevronUp, AlertCircle, HelpCircle, Hash, Minus, ListChecks,
+  Shield
 } from 'lucide-react';
 import { exportToPDF, exportToExcel, generateFilename } from '../utils/exportUtils';
 import api from '../utils/api';
 import Select from 'react-select';
 
-// ═══════════════════════════════════════════════════════════════
-// Helper: Format answer for display based on question type
-// ═══════════════════════════════════════════════════════════════
 const formatAnswer = (answer, questionType) => {
   if (answer === null || answer === undefined) return '—';
 
   const type = (questionType || '').toLowerCase();
 
-  // String or number: display directly
   if (typeof answer === 'string' || typeof answer === 'number') {
     if (type === 'rating') return `${answer} / 5`;
     if (type === 'truefalse') return answer === 'true' || answer === true ? 'True' : 'False';
     return String(answer);
   }
 
-  // Array: join with commas (multiselect, ordering)
   if (Array.isArray(answer)) {
     if (type === 'ordering') {
       return answer.map((item, idx) => `${idx + 1}. ${item}`).join(' → ');
     }
     if (type === 'matching') {
-      // Array of {left, right} pairs
       return answer.map(p => `${p.left} → ${p.right}`).join('; ');
     }
     return answer.join(', ');
   }
 
-  // Object: format key-value pairs
   if (typeof answer === 'object') {
     const entries = Object.entries(answer);
     if (entries.length === 0) return '—';
-
     if (type === 'matching' || type === 'dragdropclassification') {
       return entries.map(([k, v]) => `${k} → ${v}`).join('; ');
     }
@@ -52,9 +45,6 @@ const formatAnswer = (answer, questionType) => {
   return String(answer);
 };
 
-// ═══════════════════════════════════════════════════════════════
-// Helper: Get status badge for question result
-// ═══════════════════════════════════════════════════════════════
 const QuestionStatusBadge = ({ detail }) => {
   if (detail.isUnanswered) {
     return (
@@ -84,9 +74,6 @@ const QuestionStatusBadge = ({ detail }) => {
   );
 };
 
-// ═══════════════════════════════════════════════════════════════
-// Helper: Question type badge
-// ═══════════════════════════════════════════════════════════════
 const QuestionTypeBadge = ({ type }) => {
   const typeLabels = {
     mcq: 'Multiple Choice',
@@ -109,9 +96,6 @@ const QuestionTypeBadge = ({ type }) => {
   );
 };
 
-// ═══════════════════════════════════════════════════════════════
-// Question Detail Row (expandable)
-// ═══════════════════════════════════════════════════════════════
 const QuestionDetailRow = ({ detail, isExpanded, onToggle }) => {
   const scoreColor = detail.isCorrect
     ? 'text-green-700'
@@ -123,19 +107,16 @@ const QuestionDetailRow = ({ detail, isExpanded, onToggle }) => {
 
   return (
     <div className="border border-gray-200 rounded-lg overflow-hidden">
-      {/* Summary Row (always visible) */}
       <button
         onClick={onToggle}
         className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors text-left"
       >
-        {/* Question Number */}
         <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
           <span className="text-xs font-bold text-gray-600">
             {detail.questionNumber || '?'}
           </span>
         </div>
 
-        {/* Question Text (truncated) */}
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium text-gray-900 truncate">
             {detail.questionText}
@@ -146,7 +127,6 @@ const QuestionDetailRow = ({ detail, isExpanded, onToggle }) => {
           </div>
         </div>
 
-        {/* Score */}
         <div className="flex-shrink-0 text-right">
           <p className={`text-sm font-bold ${scoreColor}`}>
             {detail.scoreAwarded} / {detail.maxScore}
@@ -156,7 +136,6 @@ const QuestionDetailRow = ({ detail, isExpanded, onToggle }) => {
           </p>
         </div>
 
-        {/* Expand chevron */}
         <div className="flex-shrink-0 ml-1">
           {isExpanded
             ? <ChevronUp className="w-4 h-4 text-gray-400" />
@@ -165,14 +144,12 @@ const QuestionDetailRow = ({ detail, isExpanded, onToggle }) => {
         </div>
       </button>
 
-      {/* Expanded Detail */}
       {isExpanded && (
         <div className="px-4 pb-4 pt-2 bg-gray-50 border-t border-gray-200">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Employee's Answer */}
             <div>
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
-                Employee's Answer
+                Employee&apos;s Answer
               </p>
               <div className={`text-sm p-2 rounded border ${
                 detail.isUnanswered
@@ -190,7 +167,6 @@ const QuestionDetailRow = ({ detail, isExpanded, onToggle }) => {
               </div>
             </div>
 
-            {/* Correct Answer */}
             <div>
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
                 Correct Answer
@@ -201,7 +177,6 @@ const QuestionDetailRow = ({ detail, isExpanded, onToggle }) => {
             </div>
           </div>
 
-          {/* Options if available */}
           {detail.options && detail.options.length > 0 && (
             <div className="mt-3">
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
@@ -240,7 +215,6 @@ const QuestionDetailRow = ({ detail, isExpanded, onToggle }) => {
             </div>
           )}
 
-          {/* Score bar */}
           <div className="mt-3">
             <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
               <span>Score Progress</span>
@@ -266,13 +240,10 @@ const QuestionDetailRow = ({ detail, isExpanded, onToggle }) => {
   );
 };
 
-// ═══════════════════════════════════════════════════════════════
-// Question Details Section (used inside the modal)
-// ═══════════════════════════════════════════════════════════════
 const QuestionDetailsSection = ({ questionDetails, summary, loading, error }) => {
   const [expandedQuestions, setExpandedQuestions] = useState({});
   const [expandAll, setExpandAll] = useState(false);
-  const [filterType, setFilterType] = useState('all'); // all, correct, partial, incorrect, unanswered
+  const [filterType, setFilterType] = useState('all');
 
   const toggleQuestion = (idx) => {
     setExpandedQuestions(prev => ({ ...prev, [idx]: !prev[idx] }));
@@ -320,7 +291,6 @@ const QuestionDetailsSection = ({ questionDetails, summary, loading, error }) =>
     );
   }
 
-  // Filter questions
   const filteredDetails = questionDetails.filter(d => {
     if (filterType === 'all') return true;
     if (filterType === 'correct') return d.isCorrect;
@@ -348,7 +318,6 @@ const QuestionDetailsSection = ({ questionDetails, summary, loading, error }) =>
         </button>
       </div>
 
-      {/* Summary Cards */}
       {summary && (
         <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-4">
           <div className="bg-white rounded-lg p-2.5 border border-gray-200 text-center">
@@ -374,7 +343,6 @@ const QuestionDetailsSection = ({ questionDetails, summary, loading, error }) =>
         </div>
       )}
 
-      {/* Filter Tabs */}
       <div className="flex flex-wrap gap-1.5 mb-4">
         {[
           { key: 'all', label: 'All', count: questionDetails.length },
@@ -397,7 +365,6 @@ const QuestionDetailsSection = ({ questionDetails, summary, loading, error }) =>
         ))}
       </div>
 
-      {/* Score Summary Bar */}
       {summary && (
         <div className="bg-white rounded-lg p-3 border border-gray-200 mb-4">
           <div className="flex items-center justify-between text-sm mb-2">
@@ -422,7 +389,6 @@ const QuestionDetailsSection = ({ questionDetails, summary, loading, error }) =>
         </div>
       )}
 
-      {/* Question List */}
       <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
         {filteredDetails.length === 0 ? (
           <div className="text-center py-6">
@@ -443,10 +409,128 @@ const QuestionDetailsSection = ({ questionDetails, summary, loading, error }) =>
   );
 };
 
-// ═══════════════════════════════════════════════════════════════
-// Detail Modal Component (UPDATED with Question Details)
-// ═══════════════════════════════════════════════════════════════
-const ResultDetailModal = ({ result, isOpen, onClose, isAdmin, questionDetails, questionSummary, loadingQuestions, questionError }) => {
+const ViolationTypeBadge = ({ type }) => {
+  const typeMap = {
+    TAB_SWITCH:      { label: 'Tab Switch',      color: 'bg-yellow-100 text-yellow-700' },
+    COPY_ATTEMPT:    { label: 'Copy Attempt',    color: 'bg-red-100 text-red-700' },
+    RIGHT_CLICK:     { label: 'Right Click',     color: 'bg-orange-100 text-orange-700' },
+    FULLSCREEN_EXIT: { label: 'Fullscreen Exit', color: 'bg-blue-100 text-blue-700' },
+    DEVTOOLS:        { label: 'DevTools',        color: 'bg-red-100 text-red-700' },
+    WINDOW_BLUR:     { label: 'Window Blur',     color: 'bg-yellow-100 text-yellow-700' },
+    PRINT_ATTEMPT:   { label: 'Print Attempt',   color: 'bg-orange-100 text-orange-700' },
+  };
+
+  const key = (type || '').toUpperCase().replace(/[-\s]/g, '_');
+  const info = typeMap[key] || { label: type || 'Unknown', color: 'bg-gray-100 text-gray-700' };
+
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${info.color}`}>
+      {info.label}
+    </span>
+  );
+};
+
+const SecurityViolationsSection = ({ securityData, loading, error }) => {
+  if (loading) {
+    return (
+      <div className="bg-gray-50 rounded-xl p-6 text-center">
+        <div className="w-8 h-8 border-3 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+        <p className="text-sm text-gray-500">Loading security data...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="bg-red-50 rounded-xl p-4 border border-red-100">
+        <div className="flex items-center gap-2 text-red-700">
+          <AlertCircle className="w-5 h-5" />
+          <p className="text-sm font-medium">Failed to load security data: {error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!securityData || securityData.summary?.totalViolations === 0) {
+    return (
+      <div className="bg-green-50 rounded-xl p-4 border border-green-100">
+        <div className="flex items-center gap-2 text-green-700">
+          <Shield className="w-5 h-5" />
+          <p className="text-sm font-medium">No security violations recorded</p>
+        </div>
+      </div>
+    );
+  }
+
+  const { summary, violations } = securityData;
+
+  const summaryCards = [
+    { label: 'Total',           value: summary.totalViolations || 0, border: 'border-orange-200', text: 'text-orange-700' },
+    { label: 'Tab Switches',    value: summary.tabSwitches || 0,     border: 'border-yellow-200', text: 'text-yellow-700' },
+    { label: 'Copy Attempts',   value: summary.copyAttempts || 0,    border: 'border-red-200',    text: 'text-red-700' },
+    { label: 'Right Clicks',    value: summary.rightClickAttempts || 0, border: 'border-orange-200', text: 'text-orange-700' },
+    { label: 'Fullscreen Exits', value: summary.fullscreenExits || 0, border: 'border-blue-200',   text: 'text-blue-700' },
+    { label: 'DevTools',        value: summary.devToolsAttempts || 0, border: 'border-red-200',    text: 'text-red-700' },
+  ].filter(item => item.value > 0 || item.label === 'Total');
+
+  return (
+    <div className="bg-gray-50 rounded-xl p-4">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <Shield className="w-5 h-5 text-orange-600" />
+          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+            Security Violations
+          </h4>
+        </div>
+        {summary.isHighRisk && (
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-red-100 text-red-700 rounded-full text-xs font-bold animate-pulse">
+            <AlertCircle className="w-3.5 h-3.5" />
+            HIGH RISK
+          </span>
+        )}
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mb-4">
+        {summaryCards.map((item, idx) => (
+          <div key={idx} className={`bg-white rounded-lg p-2.5 border ${item.border} text-center`}>
+            <p className={`text-lg font-bold ${item.text}`}>{item.value}</p>
+            <p className="text-xs text-gray-500">{item.label}</p>
+          </div>
+        ))}
+      </div>
+
+      {violations && violations.length > 0 && (
+        <div className="bg-white rounded-lg p-3 border border-gray-200">
+          <h5 className="text-xs font-semibold text-gray-600 mb-2">
+            Violation Timeline ({violations.length} event{violations.length !== 1 ? 's' : ''})
+          </h5>
+          <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+            {violations.map((v, idx) => (
+              <div
+                key={idx}
+                className="flex items-center gap-2 text-xs border-b border-gray-50 last:border-0 pb-1.5 last:pb-0"
+              >
+                <span className="text-gray-400 font-mono text-[10px] flex-shrink-0 w-16 text-right">
+                  {new Date(v.timestamp).toLocaleTimeString()}
+                </span>
+                <ViolationTypeBadge type={v.type} />
+                {v.details && (
+                  <span className="text-gray-500 truncate">{v.details}</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const ResultDetailModal = ({
+  result, isOpen, onClose, isAdmin,
+  questionDetails, questionSummary, loadingQuestions, questionError,
+  securityData, loadingSecurity, securityError
+}) => {
   if (!isOpen || !result) return null;
 
   return (
@@ -460,7 +544,6 @@ const ResultDetailModal = ({ result, isOpen, onClose, isAdmin, questionDetails, 
         <span className="hidden sm:inline-block sm:align-middle sm:h-screen">&#8203;</span>
 
         <div className="inline-block align-bottom bg-white rounded-2xl text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-4xl sm:w-full">
-          {/* Header */}
           <div className="bg-gradient-to-r from-brand-red to-brand-red-dark px-6 py-4 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <FileText className="w-5 h-5 text-white" />
@@ -476,10 +559,8 @@ const ResultDetailModal = ({ result, isOpen, onClose, isAdmin, questionDetails, 
             </button>
           </div>
 
-          {/* Content */}
           <div className="px-6 py-5 max-h-[80vh] overflow-y-auto">
             <div className="space-y-6">
-              {/* Assessment Info Header */}
               <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 border border-blue-100">
                 <div className="flex items-center gap-2 mb-2">
                   <ClipboardList className="w-5 h-5 text-blue-600" />
@@ -497,7 +578,6 @@ const ResultDetailModal = ({ result, isOpen, onClose, isAdmin, questionDetails, 
                 </span>
               </div>
 
-              {/* Employee Info (for admin) */}
               {isAdmin && (
                 <div className="bg-gray-50 rounded-xl p-4">
                   <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
@@ -524,7 +604,6 @@ const ResultDetailModal = ({ result, isOpen, onClose, isAdmin, questionDetails, 
                 </div>
               )}
 
-              {/* Competency Details */}
               <div className="bg-gray-50 rounded-xl p-4">
                 <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
                   Competency Details
@@ -535,7 +614,6 @@ const ResultDetailModal = ({ result, isOpen, onClose, isAdmin, questionDetails, 
                 </div>
               </div>
 
-              {/* Score Details */}
               <div className="bg-gray-50 rounded-xl p-4">
                 <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
                   Score Breakdown
@@ -601,9 +679,6 @@ const ResultDetailModal = ({ result, isOpen, onClose, isAdmin, questionDetails, 
                 )}
               </div>
 
-              {/* ═══════════════════════════════════════════════════════ */}
-              {/* NEW: Question-by-Question Breakdown Section            */}
-              {/* ═══════════════════════════════════════════════════════ */}
               <QuestionDetailsSection
                 questionDetails={questionDetails}
                 summary={questionSummary}
@@ -611,7 +686,12 @@ const ResultDetailModal = ({ result, isOpen, onClose, isAdmin, questionDetails, 
                 error={questionError}
               />
 
-              {/* Result & Status */}
+              <SecurityViolationsSection
+                securityData={securityData}
+                loading={loadingSecurity}
+                error={securityError}
+              />
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="bg-gray-50 rounded-xl p-4">
                   <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
@@ -650,7 +730,6 @@ const ResultDetailModal = ({ result, isOpen, onClose, isAdmin, questionDetails, 
                 </div>
               </div>
 
-              {/* Recommendation */}
               {result.recommendation && (
                 <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
                   <div className="flex items-start gap-3">
@@ -669,7 +748,6 @@ const ResultDetailModal = ({ result, isOpen, onClose, isAdmin, questionDetails, 
             </div>
           </div>
 
-          {/* Footer */}
           <div className="bg-gray-50 px-6 py-4 flex justify-end">
             <button
               onClick={onClose}
@@ -682,6 +760,16 @@ const ResultDetailModal = ({ result, isOpen, onClose, isAdmin, questionDetails, 
       </div>
     </div>
   );
+};
+
+const getResultUserId = (result) => {
+  if (result.userId) {
+    return typeof result.userId === 'object' ? result.userId._id : result.userId;
+  }
+  if (result.employeeId) {
+    return typeof result.employeeId === 'object' ? result.employeeId._id : result.employeeId;
+  }
+  return null;
 };
 
 export default function Results() {
@@ -698,13 +786,15 @@ export default function Results() {
   const [selectedResult, setSelectedResult] = useState(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
 
-  // NEW: Question details state for the modal
   const [questionDetails, setQuestionDetails] = useState([]);
   const [questionSummary, setQuestionSummary] = useState(null);
   const [loadingQuestions, setLoadingQuestions] = useState(false);
   const [questionError, setQuestionError] = useState(null);
 
-  // Pagination state
+  const [securityData, setSecurityData] = useState(null);
+  const [loadingSecurity, setLoadingSecurity] = useState(false);
+  const [securityError, setSecurityError] = useState(null);
+
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 10,
@@ -712,7 +802,6 @@ export default function Results() {
     totalPages: 0
   });
 
-  // Filter state
   const [filters, setFilters] = useState({
     competency: '',
     level: '',
@@ -722,10 +811,8 @@ export default function Results() {
     status: ''
   });
 
-  // Export options
   const [exportFormat, setExportFormat] = useState('pdf');
 
-  // Load available assessments
   useEffect(() => {
     const loadAssessments = async () => {
       try {
@@ -733,7 +820,6 @@ export default function Results() {
         const { data } = await api.get('/results/assessments/available');
         setAssessments(data.data.assessments);
 
-        // Auto-select first assessment if available
         if (data.data.assessments.length > 0) {
           setSelectedAssessment(data.data.assessments[0]._id);
         }
@@ -747,7 +833,6 @@ export default function Results() {
     loadAssessments();
   }, []);
 
-  // Load results for selected assessment
   useEffect(() => {
     const loadResultsByAssessment = async () => {
       if (!selectedAssessment) {
@@ -784,7 +869,6 @@ export default function Results() {
     loadResultsByAssessment();
   }, [selectedAssessment, pagination.page, pagination.limit]);
 
-  // NEW: Fetch question details for a specific result
   const fetchQuestionDetails = useCallback(async (resultId) => {
     if (!resultId) return;
 
@@ -806,10 +890,27 @@ export default function Results() {
     }
   }, []);
 
-  // Apply filters to results (client-side filtering)
+  const fetchSecurityData = useCallback(async (assessmentId, userId) => {
+    if (!assessmentId || !userId) return;
+
+    setLoadingSecurity(true);
+    setSecurityError(null);
+    setSecurityData(null);
+
+    try {
+      const { data } = await api.get(`/responses/security-violations/${assessmentId}/${userId}`);
+      setSecurityData(data.data.securityRecord || null);
+    } catch (error) {
+      console.error('Error loading security data:', error);
+      const errMsg = error.response?.data?.message || error.message || 'Failed to load security data';
+      setSecurityError(errMsg);
+    } finally {
+      setLoadingSecurity(false);
+    }
+  }, []);
+
   const getFilteredResults = () => {
     return results.filter(result => {
-      // Search filter
       if (filters.search) {
         const searchLower = filters.search.toLowerCase();
         const matchesSearch =
@@ -820,47 +921,22 @@ export default function Results() {
         if (!matchesSearch) return false;
       }
 
-      // Competency filter
-      if (filters.competency && result.competencyName !== filters.competency) {
-        return false;
-      }
+      if (filters.competency && result.competencyName !== filters.competency) return false;
+      if (filters.level && result.level !== filters.level) return false;
+      if (filters.status && result.status !== filters.status) return false;
+      if (filters.hasBothScores && !result.hasBoth) return false;
 
-      // Level filter
-      if (filters.level && result.level !== filters.level) {
-        return false;
-      }
-
-      // Status filter
-      if (filters.status && result.status !== filters.status) {
-        return false;
-      }
-
-      // Has both scores filter
-      if (filters.hasBothScores && !result.hasBoth) {
-        return false;
-      }
-
-      // Date range filter
       if (filters.dateRange) {
         const resultDate = new Date(result.date);
         const now = new Date();
         const daysDiff = (now - resultDate) / (1000 * 60 * 60 * 24);
 
         switch (filters.dateRange) {
-          case 'today':
-            if (daysDiff > 1) return false;
-            break;
-          case 'week':
-            if (daysDiff > 7) return false;
-            break;
-          case 'month':
-            if (daysDiff > 30) return false;
-            break;
-          case 'quarter':
-            if (daysDiff > 90) return false;
-            break;
-          default:
-            break;
+          case 'today':   if (daysDiff > 1) return false; break;
+          case 'week':    if (daysDiff > 7) return false; break;
+          case 'month':   if (daysDiff > 30) return false; break;
+          case 'quarter': if (daysDiff > 90) return false; break;
+          default: break;
         }
       }
 
@@ -870,7 +946,6 @@ export default function Results() {
 
   const filteredResults = getFilteredResults();
 
-  // Get unique values for filters
   const getUniqueValues = (key) => {
     const values = new Set();
     results.forEach(result => {
@@ -917,7 +992,6 @@ export default function Results() {
         exportFormat
       );
 
-      // Prepare export data
       const exportData = {
         type: 'results',
         assessment: currentAssessment,
@@ -952,7 +1026,6 @@ export default function Results() {
         await exportToExcel(exportData, filename);
         show('Results exported to Excel successfully!', 'success');
       }
-
     } catch (err) {
       console.error('Export Error:', err);
       show(`Export failed: ${err.message}`, 'error');
@@ -977,21 +1050,24 @@ export default function Results() {
     });
   };
 
-  // UPDATED: Now also fetches question details when opening modal
   const openDetailModal = (result) => {
     setSelectedResult(result);
     setShowDetailModal(true);
-    // Fetch question details for this result
     fetchQuestionDetails(result._id);
+
+    const assessId = result.assessmentId || selectedAssessment;
+    const empId = getResultUserId(result) || user._id;
+    fetchSecurityData(assessId, empId);
   };
 
   const closeDetailModal = () => {
     setShowDetailModal(false);
     setSelectedResult(null);
-    // Reset question details state
     setQuestionDetails([]);
     setQuestionSummary(null);
     setQuestionError(null);
+    setSecurityData(null);
+    setSecurityError(null);
   };
 
   const handleAssessmentChange = (e) => {
@@ -1000,7 +1076,6 @@ export default function Results() {
     clearFilters();
   };
 
-  // Filter Panel Component
   const FilterPanel = () => (
     <div className="bg-white rounded-xl shadow-card border border-gray-200 p-5 mb-6">
       <div className="flex items-center justify-between mb-4">
@@ -1025,11 +1100,8 @@ export default function Results() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Search */}
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1.5">
-            Search
-          </label>
+          <label className="block text-xs font-medium text-gray-700 mb-1.5">Search</label>
           <input
             type="text"
             placeholder="Search by competency, employee..."
@@ -1039,11 +1111,8 @@ export default function Results() {
           />
         </div>
 
-        {/* Competency Filter */}
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1.5">
-            Competency
-          </label>
+          <label className="block text-xs font-medium text-gray-700 mb-1.5">Competency</label>
           <select
             value={filters.competency}
             onChange={(e) => setFilters(prev => ({ ...prev, competency: e.target.value }))}
@@ -1056,11 +1125,8 @@ export default function Results() {
           </select>
         </div>
 
-        {/* Level Filter */}
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1.5">
-            Proficiency Level
-          </label>
+          <label className="block text-xs font-medium text-gray-700 mb-1.5">Proficiency Level</label>
           <select
             value={filters.level}
             onChange={(e) => setFilters(prev => ({ ...prev, level: e.target.value }))}
@@ -1073,11 +1139,8 @@ export default function Results() {
           </select>
         </div>
 
-        {/* Status Filter */}
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1.5">
-            Status
-          </label>
+          <label className="block text-xs font-medium text-gray-700 mb-1.5">Status</label>
           <select
             value={filters.status}
             onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value }))}
@@ -1090,11 +1153,8 @@ export default function Results() {
           </select>
         </div>
 
-        {/* Date Range Filter */}
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1.5">
-            Date Range
-          </label>
+          <label className="block text-xs font-medium text-gray-700 mb-1.5">Date Range</label>
           <select
             value={filters.dateRange}
             onChange={(e) => setFilters(prev => ({ ...prev, dateRange: e.target.value }))}
@@ -1108,7 +1168,6 @@ export default function Results() {
           </select>
         </div>
 
-        {/* Checkbox Filters */}
         <div className="flex items-center gap-4 pt-6">
           <label className="flex items-center gap-2 text-sm text-gray-700">
             <input
@@ -1121,7 +1180,6 @@ export default function Results() {
           </label>
         </div>
 
-        {/* Export Format */}
         <div className="col-span-full mt-4 pt-4 border-t border-gray-200">
           <div className="flex items-center gap-4">
             <span className="text-sm font-medium text-gray-700">Export Format:</span>
@@ -1163,7 +1221,6 @@ export default function Results() {
 
   return (
     <div className="p-7">
-      {/* Detail Modal - UPDATED with question details props */}
       <ResultDetailModal
         result={selectedResult}
         isOpen={showDetailModal}
@@ -1173,9 +1230,11 @@ export default function Results() {
         questionSummary={questionSummary}
         loadingQuestions={loadingQuestions}
         questionError={questionError}
+        securityData={securityData}
+        loadingSecurity={loadingSecurity}
+        securityError={securityError}
       />
 
-      {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start gap-4 mb-6">
         <div>
           <h1 className="text-3xl font-display font-bold text-brand-black">Competency Results</h1>
@@ -1217,7 +1276,6 @@ export default function Results() {
         </div>
       </div>
 
-      {/* Assessment Selector */}
       <div className="bg-white rounded-xl shadow-card border border-gray-200 p-5 mb-6">
         <div className="flex flex-col md:flex-row md:items-end gap-4">
           <div className="flex-1">
@@ -1281,10 +1339,8 @@ export default function Results() {
         </div>
       </div>
 
-      {/* Filter Panel */}
       {showFilters && selectedAssessment && <FilterPanel />}
 
-      {/* Results Stats */}
       {selectedAssessment && results.length > 0 && (
         <div className="flex items-center justify-between mb-4">
           <div className="text-sm text-gray-600">
@@ -1310,7 +1366,6 @@ export default function Results() {
         </div>
       )}
 
-      {/* No Assessment Selected */}
       {!selectedAssessment && (
         <div className="bg-white rounded-xl shadow-card border border-gray-200 p-12 text-center">
           <ClipboardList className="w-16 h-16 text-gray-300 mx-auto mb-4" />
@@ -1321,7 +1376,6 @@ export default function Results() {
         </div>
       )}
 
-      {/* Results Table - Only show when assessment is selected */}
       {selectedAssessment && (
         <>
           {loading ? (
@@ -1468,7 +1522,6 @@ export default function Results() {
             </div>
           )}
 
-          {/* Pagination */}
           {pagination.total > pagination.limit && !loading && (
             <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mt-6 pt-6 border-t border-gray-200">
               <div className="text-sm text-gray-600">
@@ -1523,7 +1576,6 @@ export default function Results() {
           )}
         </>
       )}
-
     </div>
   );
 }
