@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Users,  TrendingUp, AlertCircle, Award, Target } from 'lucide-react';
+import { Users,  TrendingUp, AlertCircle, Target } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import api from '../utils/api';
 
@@ -85,17 +85,6 @@ export default function SupervisorDashboard() {
           <div className="text-3xl font-display font-bold text-brand-black mb-1">{stats.pendingEvaluations}</div>
           <div className="text-sm font-semibold text-gray-700">Pending Evaluations</div>
           <div className="text-xs text-gray-500 mt-1">Require your input</div>
-        </div>
-
-        <div className="bg-white rounded-xl p-5 shadow-card border border-gray-100">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-12 h-12 rounded-xl bg-brand-red/10 flex items-center justify-center">
-              <Award className="w-6 h-6 text-brand-red" />
-            </div>
-          </div>
-          <div className="text-3xl font-display font-bold text-brand-black mb-1">{stats.teamAvgScore}%</div>
-          <div className="text-sm font-semibold text-gray-700">Team Average</div>
-          <div className="text-xs text-gray-500 mt-1">Across all assessments</div>
         </div>
       </div>
 
