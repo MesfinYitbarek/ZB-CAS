@@ -2,7 +2,36 @@
 
 /**
  * Master Scoring Logic for all Question Types
+ * UPDATED: Now captures per-question details for result storage
  */
+
+/**
+ * Extract the correct answer from a question for display purposes
+ */
+const getCorrectAnswer = (question) => {
+    const type = (question.type || '').toLowerCase();
+    switch (type) {
+        case 'mcq':
+        case 'scenariomcq':
+        case 'truefalse':
+            return question.correctAnswer;
+        case 'multiselect':
+            return question.correctAnswers || [];
+        case 'matching':
+            return question.matchingPairs || [];
+        case 'ordering':
+            return question.correctOrder || [];
+        case 'dragdropclassification':
+            return question.categories || {};
+        case 'rating':
+            return '5 (max rating)';
+        case 'shortanswer':
+            return question.correctAnswer || 'Manual grading required';
+        default:
+            return null;
+    }
+};
+
 const scoreSingleResponse = (question, response) => {
     const type = (question.type || '').toLowerCase();
     const maxScore = Number(question.score) || 1;
@@ -119,7 +148,6 @@ const scoreSingleResponse = (question, response) => {
             return awarded;
         }
 
-
         case 'shortanswer':
             awarded = Math.min(Math.max(Number(response.manualScore) || 0, 0), maxScore);
             console.log(`      [Q-LOG] SHORT-ANSWER: Manual Score assigned: ${awarded}/${maxScore}`);
@@ -131,8 +159,14 @@ const scoreSingleResponse = (question, response) => {
     }
 };
 
+/**
+ * UPDATED: Now returns questionDetails array alongside rawScore and percentage
+ * Each question detail includes: questionId, text, type, options, user answer,
+ * correct answer, score awarded, max score, and correctness status
+ */
 const computeRawScore = (questions, responses) => {
     let rawScore = 0, totalPossible = 0;
+    const questionDetails = [];
 
     console.log(`\n   ╔═══ Question-by-Question Breakdown ═══╗`);
 
@@ -141,12 +175,41 @@ const computeRawScore = (questions, responses) => {
         const points = Number(q.score) || 1;
         totalPossible += points;
 
+        const type = (q.type || '').toLowerCase();
+
+        // Build the question detail object
+        const detail = {
+            questionId: q._id,
+            questionNumber: idx + 1,
+            questionText: q.questionText || q.text || q.question || `Question ${idx + 1}`,
+            questionType: q.type || 'Unknown',
+            maxScore: points,
+            options: q.options || q.choices || [],
+            userAnswer: null,
+            correctAnswer: getCorrectAnswer(q),
+            scoreAwarded: 0,
+            scorePercentage: 0,
+            isCorrect: false,
+            isPartial: false,
+            isUnanswered: true
+        };
+
         if (!resp || resp.selectedAnswer === null || resp.selectedAnswer === undefined) {
             console.log(`   ║ [Q${idx + 1}] ⊘ UNANSWERED | Possible: ${points} | Awarded: 0`);
+            // detail stays with defaults (unanswered)
         } else {
             const scoreEarned = scoreSingleResponse(q, resp);
             rawScore += scoreEarned;
+
+            detail.userAnswer = resp.selectedAnswer;
+            detail.scoreAwarded = Number(scoreEarned.toFixed(2));
+            detail.scorePercentage = points > 0 ? Number(((scoreEarned / points) * 100).toFixed(1)) : 0;
+            detail.isCorrect = scoreEarned >= points;          // Full marks
+            detail.isPartial = scoreEarned > 0 && scoreEarned < points; // Partial credit
+            detail.isUnanswered = false;
         }
+
+        questionDetails.push(detail);
     });
 
     const percentage = totalPossible === 0 ? 0 : (rawScore / totalPossible) * 100;
@@ -155,7 +218,7 @@ const computeRawScore = (questions, responses) => {
     console.log(`   ║ TOTALS: ${rawScore.toFixed(2)} / ${totalPossible} (${percentage.toFixed(2)}%)`);
     console.log(`   ╚═══════════════════════════════════════╝\n`);
 
-    return { rawScore, percentage };
+    return { rawScore, percentage, questionDetails };
 };
 
 const computeWeightedScore = (selfPerc, supPerc, weights) => {
@@ -186,4 +249,4 @@ const assignLevel = (percentage) => {
     return 'Basic';
 };
 
-export { scoreSingleResponse, computeRawScore, computeWeightedScore, assignLevel };
+export { scoreSingleResponse, computeRawScore, computeWeightedScore, assignLevel, getCorrectAnswer };

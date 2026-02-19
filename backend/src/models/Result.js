@@ -53,6 +53,22 @@ const resultSchema = new mongoose.Schema(
         supervisor: { type: Number, default: 0 },
       },
       calculation: { type: String, default: '' },
+
+      questionDetails: [{
+        questionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Question' },
+        questionNumber: Number,
+        questionText: String,
+        questionType: String,
+        maxScore: Number,
+        options: [mongoose.Schema.Types.Mixed],
+        userAnswer: mongoose.Schema.Types.Mixed,
+        correctAnswer: mongoose.Schema.Types.Mixed,
+        scoreAwarded: Number,
+        scorePercentage: Number,
+        isCorrect: Boolean,
+        isPartial: Boolean,
+        isUnanswered: Boolean
+      }]
     },
   },
   { timestamps: true, strict: true }

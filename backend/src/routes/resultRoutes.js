@@ -20,5 +20,6 @@ router.get('/user/:userId', resCtrl.getResults); // Reuse getResults logic
 router.get('/pdp/:userId', resCtrl.getPDP);
 router.get('/:id', resCtrl.getResult);
 router.get('/supervisor-score/:assessmentId/:employeeId', resCtrl.getSupervisorEvaluationScores);
+router.get('/:id/question-details', resCtrl.getResultQuestionDetails);
 
 export default router;

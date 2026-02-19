@@ -1,17 +1,452 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import {
   TrendingUp, CheckCircle2, Download, ChevronLeft, ChevronRight,
   Award, User, Users, Scale, Calendar, Filter, X, FileText,
-  SlidersHorizontal, Eye, XCircle, Info, ClipboardList, ChevronDown
+  SlidersHorizontal, Eye, XCircle, Info, ClipboardList, ChevronDown,
+  ChevronUp, AlertCircle, HelpCircle, Hash, Minus, ListChecks
 } from 'lucide-react';
 import { exportToPDF, exportToExcel, generateFilename } from '../utils/exportUtils';
 import api from '../utils/api';
 import Select from 'react-select';
 
-// Detail Modal Component
-const ResultDetailModal = ({ result, isOpen, onClose, isAdmin }) => {
+// ═══════════════════════════════════════════════════════════════
+// Helper: Format answer for display based on question type
+// ═══════════════════════════════════════════════════════════════
+const formatAnswer = (answer, questionType) => {
+  if (answer === null || answer === undefined) return '—';
+
+  const type = (questionType || '').toLowerCase();
+
+  // String or number: display directly
+  if (typeof answer === 'string' || typeof answer === 'number') {
+    if (type === 'rating') return `${answer} / 5`;
+    if (type === 'truefalse') return answer === 'true' || answer === true ? 'True' : 'False';
+    return String(answer);
+  }
+
+  // Array: join with commas (multiselect, ordering)
+  if (Array.isArray(answer)) {
+    if (type === 'ordering') {
+      return answer.map((item, idx) => `${idx + 1}. ${item}`).join(' → ');
+    }
+    if (type === 'matching') {
+      // Array of {left, right} pairs
+      return answer.map(p => `${p.left} → ${p.right}`).join('; ');
+    }
+    return answer.join(', ');
+  }
+
+  // Object: format key-value pairs
+  if (typeof answer === 'object') {
+    const entries = Object.entries(answer);
+    if (entries.length === 0) return '—';
+
+    if (type === 'matching' || type === 'dragdropclassification') {
+      return entries.map(([k, v]) => `${k} → ${v}`).join('; ');
+    }
+    return entries.map(([k, v]) => `${k}: ${v}`).join('; ');
+  }
+
+  return String(answer);
+};
+
+// ═══════════════════════════════════════════════════════════════
+// Helper: Get status badge for question result
+// ═══════════════════════════════════════════════════════════════
+const QuestionStatusBadge = ({ detail }) => {
+  if (detail.isUnanswered) {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+        <Minus className="w-3 h-3" /> Unanswered
+      </span>
+    );
+  }
+  if (detail.isCorrect) {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
+        <CheckCircle2 className="w-3 h-3" /> Correct
+      </span>
+    );
+  }
+  if (detail.isPartial) {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700">
+        <AlertCircle className="w-3 h-3" /> Partial
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">
+      <XCircle className="w-3 h-3" /> Incorrect
+    </span>
+  );
+};
+
+// ═══════════════════════════════════════════════════════════════
+// Helper: Question type badge
+// ═══════════════════════════════════════════════════════════════
+const QuestionTypeBadge = ({ type }) => {
+  const typeLabels = {
+    mcq: 'Multiple Choice',
+    scenariomcq: 'Scenario MCQ',
+    truefalse: 'True / False',
+    rating: 'Rating',
+    multiselect: 'Multi-Select',
+    matching: 'Matching',
+    ordering: 'Ordering',
+    dragdropclassification: 'Classification',
+    shortanswer: 'Short Answer'
+  };
+
+  const label = typeLabels[(type || '').toLowerCase()] || type || 'Unknown';
+
+  return (
+    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-50 text-indigo-700">
+      {label}
+    </span>
+  );
+};
+
+// ═══════════════════════════════════════════════════════════════
+// Question Detail Row (expandable)
+// ═══════════════════════════════════════════════════════════════
+const QuestionDetailRow = ({ detail, isExpanded, onToggle }) => {
+  const scoreColor = detail.isCorrect
+    ? 'text-green-700'
+    : detail.isPartial
+      ? 'text-yellow-700'
+      : detail.isUnanswered
+        ? 'text-gray-400'
+        : 'text-red-700';
+
+  return (
+    <div className="border border-gray-200 rounded-lg overflow-hidden">
+      {/* Summary Row (always visible) */}
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors text-left"
+      >
+        {/* Question Number */}
+        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
+          <span className="text-xs font-bold text-gray-600">
+            {detail.questionNumber || '?'}
+          </span>
+        </div>
+
+        {/* Question Text (truncated) */}
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-gray-900 truncate">
+            {detail.questionText}
+          </p>
+          <div className="flex items-center gap-2 mt-0.5">
+            <QuestionTypeBadge type={detail.questionType} />
+            <QuestionStatusBadge detail={detail} />
+          </div>
+        </div>
+
+        {/* Score */}
+        <div className="flex-shrink-0 text-right">
+          <p className={`text-sm font-bold ${scoreColor}`}>
+            {detail.scoreAwarded} / {detail.maxScore}
+          </p>
+          <p className="text-xs text-gray-400">
+            {detail.scorePercentage ?? 0}%
+          </p>
+        </div>
+
+        {/* Expand chevron */}
+        <div className="flex-shrink-0 ml-1">
+          {isExpanded
+            ? <ChevronUp className="w-4 h-4 text-gray-400" />
+            : <ChevronDown className="w-4 h-4 text-gray-400" />
+          }
+        </div>
+      </button>
+
+      {/* Expanded Detail */}
+      {isExpanded && (
+        <div className="px-4 pb-4 pt-2 bg-gray-50 border-t border-gray-200">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Employee's Answer */}
+            <div>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                Employee's Answer
+              </p>
+              <div className={`text-sm p-2 rounded border ${
+                detail.isUnanswered
+                  ? 'bg-gray-50 border-gray-200 text-gray-400 italic'
+                  : detail.isCorrect
+                    ? 'bg-green-50 border-green-200 text-green-800'
+                    : detail.isPartial
+                      ? 'bg-yellow-50 border-yellow-200 text-yellow-800'
+                      : 'bg-red-50 border-red-200 text-red-800'
+              }`}>
+                {detail.isUnanswered
+                  ? 'No answer provided'
+                  : formatAnswer(detail.userAnswer, detail.questionType)
+                }
+              </div>
+            </div>
+
+            {/* Correct Answer */}
+            <div>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                Correct Answer
+              </p>
+              <div className="text-sm p-2 rounded border bg-blue-50 border-blue-200 text-blue-800">
+                {formatAnswer(detail.correctAnswer, detail.questionType)}
+              </div>
+            </div>
+          </div>
+
+          {/* Options if available */}
+          {detail.options && detail.options.length > 0 && (
+            <div className="mt-3">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                Available Options
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {detail.options.map((opt, idx) => {
+                  const optValue = typeof opt === 'object' ? (opt.text || opt.label || opt.value || JSON.stringify(opt)) : opt;
+                  const isSelected = Array.isArray(detail.userAnswer)
+                    ? detail.userAnswer.includes(optValue)
+                    : detail.userAnswer === optValue;
+                  const isCorrectOpt = Array.isArray(detail.correctAnswer)
+                    ? detail.correctAnswer.includes(optValue)
+                    : detail.correctAnswer === optValue;
+
+                  return (
+                    <span
+                      key={idx}
+                      className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium border ${
+                        isSelected && isCorrectOpt
+                          ? 'bg-green-100 border-green-300 text-green-800'
+                          : isSelected && !isCorrectOpt
+                            ? 'bg-red-100 border-red-300 text-red-800'
+                            : isCorrectOpt
+                              ? 'bg-blue-50 border-blue-200 text-blue-700'
+                              : 'bg-white border-gray-200 text-gray-600'
+                      }`}
+                    >
+                      {isSelected && isCorrectOpt && <CheckCircle2 className="w-3 h-3 mr-1" />}
+                      {isSelected && !isCorrectOpt && <XCircle className="w-3 h-3 mr-1" />}
+                      {optValue}
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Score bar */}
+          <div className="mt-3">
+            <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
+              <span>Score Progress</span>
+              <span className={`font-semibold ${scoreColor}`}>
+                {detail.scoreAwarded} / {detail.maxScore} pts ({detail.scorePercentage ?? 0}%)
+              </span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-2">
+              <div
+                className={`h-2 rounded-full transition-all ${
+                  detail.isCorrect ? 'bg-green-500'
+                    : detail.isPartial ? 'bg-yellow-500'
+                      : detail.isUnanswered ? 'bg-gray-300'
+                        : 'bg-red-500'
+                }`}
+                style={{ width: `${detail.scorePercentage ?? 0}%` }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════════════════
+// Question Details Section (used inside the modal)
+// ═══════════════════════════════════════════════════════════════
+const QuestionDetailsSection = ({ questionDetails, summary, loading, error }) => {
+  const [expandedQuestions, setExpandedQuestions] = useState({});
+  const [expandAll, setExpandAll] = useState(false);
+  const [filterType, setFilterType] = useState('all'); // all, correct, partial, incorrect, unanswered
+
+  const toggleQuestion = (idx) => {
+    setExpandedQuestions(prev => ({ ...prev, [idx]: !prev[idx] }));
+  };
+
+  const toggleExpandAll = () => {
+    const newState = !expandAll;
+    setExpandAll(newState);
+    const newExpanded = {};
+    if (newState && questionDetails) {
+      questionDetails.forEach((_, idx) => { newExpanded[idx] = true; });
+    }
+    setExpandedQuestions(newExpanded);
+  };
+
+  if (loading) {
+    return (
+      <div className="bg-gray-50 rounded-xl p-6 text-center">
+        <div className="w-8 h-8 border-3 border-brand-red border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+        <p className="text-sm text-gray-500">Loading question details...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="bg-red-50 rounded-xl p-4 border border-red-100">
+        <div className="flex items-center gap-2 text-red-700">
+          <AlertCircle className="w-5 h-5" />
+          <p className="text-sm font-medium">Failed to load question details: {error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!questionDetails || questionDetails.length === 0) {
+    return (
+      <div className="bg-gray-50 rounded-xl p-6 text-center">
+        <HelpCircle className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+        <p className="text-sm text-gray-500">No question-level details available for this result.</p>
+        <p className="text-xs text-gray-400 mt-1">
+          Question details are stored when assessments are scored. Previously scored results may not have this data.
+        </p>
+      </div>
+    );
+  }
+
+  // Filter questions
+  const filteredDetails = questionDetails.filter(d => {
+    if (filterType === 'all') return true;
+    if (filterType === 'correct') return d.isCorrect;
+    if (filterType === 'partial') return d.isPartial;
+    if (filterType === 'incorrect') return !d.isCorrect && !d.isPartial && !d.isUnanswered;
+    if (filterType === 'unanswered') return d.isUnanswered;
+    return true;
+  });
+
+  return (
+    <div className="bg-gray-50 rounded-xl p-4">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <ListChecks className="w-5 h-5 text-indigo-600" />
+          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+            Question-by-Question Breakdown
+          </h4>
+        </div>
+        <button
+          onClick={toggleExpandAll}
+          className="text-xs text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1"
+        >
+          {expandAll ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+          {expandAll ? 'Collapse All' : 'Expand All'}
+        </button>
+      </div>
+
+      {/* Summary Cards */}
+      {summary && (
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-4">
+          <div className="bg-white rounded-lg p-2.5 border border-gray-200 text-center">
+            <p className="text-lg font-bold text-gray-900">{summary.totalQuestions}</p>
+            <p className="text-xs text-gray-500">Total</p>
+          </div>
+          <div className="bg-white rounded-lg p-2.5 border border-green-200 text-center">
+            <p className="text-lg font-bold text-green-700">{summary.fullyCorrect}</p>
+            <p className="text-xs text-green-600">Correct</p>
+          </div>
+          <div className="bg-white rounded-lg p-2.5 border border-yellow-200 text-center">
+            <p className="text-lg font-bold text-yellow-700">{summary.partialCredit}</p>
+            <p className="text-xs text-yellow-600">Partial</p>
+          </div>
+          <div className="bg-white rounded-lg p-2.5 border border-red-200 text-center">
+            <p className="text-lg font-bold text-red-700">{summary.incorrect}</p>
+            <p className="text-xs text-red-600">Incorrect</p>
+          </div>
+          <div className="bg-white rounded-lg p-2.5 border border-gray-200 text-center">
+            <p className="text-lg font-bold text-gray-400">{summary.unanswered}</p>
+            <p className="text-xs text-gray-500">Unanswered</p>
+          </div>
+        </div>
+      )}
+
+      {/* Filter Tabs */}
+      <div className="flex flex-wrap gap-1.5 mb-4">
+        {[
+          { key: 'all', label: 'All', count: questionDetails.length },
+          { key: 'correct', label: 'Correct', count: summary?.fullyCorrect || 0 },
+          { key: 'partial', label: 'Partial', count: summary?.partialCredit || 0 },
+          { key: 'incorrect', label: 'Incorrect', count: summary?.incorrect || 0 },
+          { key: 'unanswered', label: 'Unanswered', count: summary?.unanswered || 0 }
+        ].map(tab => (
+          <button
+            key={tab.key}
+            onClick={() => setFilterType(tab.key)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+              filterType === tab.key
+                ? 'bg-indigo-600 text-white'
+                : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-100'
+            }`}
+          >
+            {tab.label} ({tab.count})
+          </button>
+        ))}
+      </div>
+
+      {/* Score Summary Bar */}
+      {summary && (
+        <div className="bg-white rounded-lg p-3 border border-gray-200 mb-4">
+          <div className="flex items-center justify-between text-sm mb-2">
+            <span className="text-gray-600">Total Score</span>
+            <span className="font-bold text-gray-900">
+              {summary.totalScore?.toFixed(1)} / {summary.totalPossible} pts
+              ({summary.totalPossible > 0
+                ? ((summary.totalScore / summary.totalPossible) * 100).toFixed(1)
+                : 0}%)
+            </span>
+          </div>
+          <div className="w-full bg-gray-200 rounded-full h-2.5">
+            <div
+              className="h-2.5 rounded-full bg-gradient-to-r from-indigo-500 to-purple-600 transition-all"
+              style={{
+                width: `${summary.totalPossible > 0
+                  ? (summary.totalScore / summary.totalPossible) * 100
+                  : 0}%`
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Question List */}
+      <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
+        {filteredDetails.length === 0 ? (
+          <div className="text-center py-6">
+            <p className="text-sm text-gray-500">No questions match the selected filter.</p>
+          </div>
+        ) : (
+          filteredDetails.map((detail, idx) => (
+            <QuestionDetailRow
+              key={detail.questionId || idx}
+              detail={detail}
+              isExpanded={!!expandedQuestions[idx]}
+              onToggle={() => toggleQuestion(idx)}
+            />
+          ))
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════════════════
+// Detail Modal Component (UPDATED with Question Details)
+// ═══════════════════════════════════════════════════════════════
+const ResultDetailModal = ({ result, isOpen, onClose, isAdmin, questionDetails, questionSummary, loadingQuestions, questionError }) => {
   if (!isOpen || !result) return null;
 
   return (
@@ -24,7 +459,7 @@ const ResultDetailModal = ({ result, isOpen, onClose, isAdmin }) => {
 
         <span className="hidden sm:inline-block sm:align-middle sm:h-screen">&#8203;</span>
 
-        <div className="inline-block align-bottom bg-white rounded-2xl text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-3xl sm:w-full">
+        <div className="inline-block align-bottom bg-white rounded-2xl text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-4xl sm:w-full">
           {/* Header */}
           <div className="bg-gradient-to-r from-brand-red to-brand-red-dark px-6 py-4 flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -42,7 +477,7 @@ const ResultDetailModal = ({ result, isOpen, onClose, isAdmin }) => {
           </div>
 
           {/* Content */}
-          <div className="px-6 py-5 max-h-[70vh] overflow-y-auto">
+          <div className="px-6 py-5 max-h-[80vh] overflow-y-auto">
             <div className="space-y-6">
               {/* Assessment Info Header */}
               <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 border border-blue-100">
@@ -166,6 +601,16 @@ const ResultDetailModal = ({ result, isOpen, onClose, isAdmin }) => {
                 )}
               </div>
 
+              {/* ═══════════════════════════════════════════════════════ */}
+              {/* NEW: Question-by-Question Breakdown Section            */}
+              {/* ═══════════════════════════════════════════════════════ */}
+              <QuestionDetailsSection
+                questionDetails={questionDetails}
+                summary={questionSummary}
+                loading={loadingQuestions}
+                error={questionError}
+              />
+
               {/* Result & Status */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="bg-gray-50 rounded-xl p-4">
@@ -253,6 +698,12 @@ export default function Results() {
   const [selectedResult, setSelectedResult] = useState(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
 
+  // NEW: Question details state for the modal
+  const [questionDetails, setQuestionDetails] = useState([]);
+  const [questionSummary, setQuestionSummary] = useState(null);
+  const [loadingQuestions, setLoadingQuestions] = useState(false);
+  const [questionError, setQuestionError] = useState(null);
+
   // Pagination state
   const [pagination, setPagination] = useState({
     page: 1,
@@ -332,6 +783,28 @@ export default function Results() {
 
     loadResultsByAssessment();
   }, [selectedAssessment, pagination.page, pagination.limit]);
+
+  // NEW: Fetch question details for a specific result
+  const fetchQuestionDetails = useCallback(async (resultId) => {
+    if (!resultId) return;
+
+    setLoadingQuestions(true);
+    setQuestionError(null);
+    setQuestionDetails([]);
+    setQuestionSummary(null);
+
+    try {
+      const { data } = await api.get(`/results/${resultId}/question-details`);
+      setQuestionDetails(data.data.questionDetails || []);
+      setQuestionSummary(data.data.summary || null);
+    } catch (error) {
+      console.error('Error loading question details:', error);
+      const errMsg = error.response?.data?.message || error.message || 'Failed to load question details';
+      setQuestionError(errMsg);
+    } finally {
+      setLoadingQuestions(false);
+    }
+  }, []);
 
   // Apply filters to results (client-side filtering)
   const getFilteredResults = () => {
@@ -504,14 +977,21 @@ export default function Results() {
     });
   };
 
+  // UPDATED: Now also fetches question details when opening modal
   const openDetailModal = (result) => {
     setSelectedResult(result);
     setShowDetailModal(true);
+    // Fetch question details for this result
+    fetchQuestionDetails(result._id);
   };
 
   const closeDetailModal = () => {
     setShowDetailModal(false);
     setSelectedResult(null);
+    // Reset question details state
+    setQuestionDetails([]);
+    setQuestionSummary(null);
+    setQuestionError(null);
   };
 
   const handleAssessmentChange = (e) => {
@@ -683,12 +1163,16 @@ export default function Results() {
 
   return (
     <div className="p-7">
-      {/* Detail Modal */}
+      {/* Detail Modal - UPDATED with question details props */}
       <ResultDetailModal
         result={selectedResult}
         isOpen={showDetailModal}
         onClose={closeDetailModal}
         isAdmin={isAdmin}
+        questionDetails={questionDetails}
+        questionSummary={questionSummary}
+        loadingQuestions={loadingQuestions}
+        questionError={questionError}
       />
 
       {/* Header */}
@@ -697,8 +1181,8 @@ export default function Results() {
           <h1 className="text-3xl font-display font-bold text-brand-black">Assessment Results</h1>
           <p className="text-gray-500 mt-1">
             {isAdmin
-              ? 'View results filtered by assessment'
-              : 'Your assessment history'}
+              ? 'View results filtered by assessment — click any result to see per-question details'
+              : 'Your assessment history — click any result to see per-question details'}
           </p>
         </div>
 
@@ -765,7 +1249,7 @@ export default function Results() {
                 styles={{
                   control: (base) => ({
                     ...base,
-                    minHeight: '40px',          // 👈 compact
+                    minHeight: '40px',
                     height: '40px',
                     borderRadius: '8px',
                     borderColor: '#d1d5db',

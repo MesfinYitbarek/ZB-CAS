@@ -18,7 +18,7 @@ const calculateAndSaveResult = async (assessment, employeeId) => {
   console.log(`╚══════════════════════════════════════════════════════════════╝`);
 
   const responses = await Response.find({ assessmentId: assessment._id, employeeId }).lean();
-  const questions = assessment.questionIds?.length > 0 
+  const questions = assessment.questionIds?.length > 0
       ? await Question.find({ _id: { $in: assessment.questionIds } }).select(SECRET_FIELDS).lean()
       : [];
 
@@ -26,12 +26,22 @@ const calculateAndSaveResult = async (assessment, employeeId) => {
   const supervisorResp = responses.find(r => r.respondentType === 'supervisor' && r.submittedAt);
 
   // 1. Calculate Individual Components
+  // UPDATED: computeRawScore now returns questionDetails alongside rawScore & percentage
   const selfRes = computeRawScore(questions, selfResponses);
   const selfPerc = selfRes.percentage;
+  const selfQuestionDetails = selfRes.questionDetails; // NEW: per-question breakdown
+
   const supPerc = Number(supervisorResp?.score) || 0;
 
   let finalScore = 0;
-  let scoreDetails = { selfScore: selfPerc, supervisorScore: supPerc, weightUsed: {}, calculation: "" };
+  let scoreDetails = {
+    selfScore: selfPerc,
+    supervisorScore: supPerc,
+    weightUsed: {},
+    calculation: "",
+    // NEW: Store per-question answers, correct answers, and scores
+    questionDetails: selfQuestionDetails
+  };
 
   // 2. Apply Assessment Type Logic
   if (assessment.type === 'Combined') {
@@ -53,8 +63,9 @@ const calculateAndSaveResult = async (assessment, employeeId) => {
   const rec = await Recommendation.findOne({ competencyId: assessment.competencyId, level }).lean();
 
   console.log(`[STAGE] Logic: ${assessment.type} | Final Score: ${finalScore}% | Level: ${level}`);
+  console.log(`[STAGE] Question Details Stored: ${selfQuestionDetails.length} questions`);
 
-  // 3. Persist Result
+  // 3. Persist Result (now includes questionDetails in scoreDetails)
   const result = await Result.findOneAndUpdate(
       { userId: employeeId, assessmentId: assessment._id, competencyId: assessment.competencyId },
       { finalScore, level, recommendation: rec?.recommendation || '', status: 'FINAL', scoreDetails },
@@ -73,7 +84,7 @@ const calculateAndSaveResult = async (assessment, employeeId) => {
       { upsert: true }
   );
 
-  console.log(`✅ Success: Result for ${emp.name} finalized.\n`);
+  console.log(`✅ Success: Result for ${emp.name} finalized with ${selfQuestionDetails.length} question details.\n`);
   return result;
 };
 
@@ -87,7 +98,7 @@ export const scoreFullAssessment = async (assessmentId) => {
 
   const employees = await User.find(filter).select('_id').lean();
   console.log(`🚀 Bulk Scoring triggered for ${employees.length} employees...`);
-  
+
   const results = [];
   for (const emp of employees) {
       const res = await calculateAndSaveResult(assessment, emp._id);
