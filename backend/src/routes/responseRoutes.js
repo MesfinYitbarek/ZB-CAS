@@ -14,6 +14,14 @@ router.post('/save', rCtrl.saveAnswer);
 router.post('/submit', rCtrl.submitAssessment);
 router.get('/progress/:assessmentId', rCtrl.getProgress);
 
+// ─── SECURITY VIOLATION TRACKING ─────────────────────────────────────────────
+// Record individual violations in real-time (any authenticated user taking an assessment)
+router.post('/security-violation', rCtrl.recordSecurityViolation);
+
+// Retrieve security violations for a specific assessment + user
+// Authorization: own data, HR_ADMIN, or supervisor of the user
+router.get('/security-violations/:assessmentId/:userId', rCtrl.getSecurityViolations);
+
 // ─── SUPERVISOR ACTIONS ─────────────────────────────────────────────────────
 // Supervisor evaluation routes
 router.post('/supervisor/save', authorize('SUPERVISOR'), rCtrl.saveSupervisorEvaluation);
@@ -23,6 +31,7 @@ router.get('/supervisor/:assessmentId/:employeeId', authorize('SUPERVISOR'), rCt
 // ─── HR_ADMIN ACTIONS ───────────────────────────────────────────────────────
 // Restricted to HR_ADMIN only
 router.get('/admin/:assessmentId/all', authorize('HR_ADMIN'), rCtrl.getAllResponses);
+router.get('/admin/:assessmentId/security-summary', authorize('HR_ADMIN'), rCtrl.getAssessmentSecuritySummary);
 router.patch('/admin/manual-score/:id', authorize('HR_ADMIN'), rCtrl.setManualScore);
 
 export default router;
