@@ -1,3 +1,4 @@
+/* App.jsx */
 import { useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
@@ -14,6 +15,7 @@ import ResetPassword from './pages/ResetPassword';
 import Dashboard from './pages/Dashboard';
 import AdminDashboard from './pages/AdminDashboard';
 import SupervisorDashboard from './pages/SupervisorDashboard';
+import EmployeeDashboard from './pages/EmployeeDashboard';
 
 // User Management
 import Users from './pages/Users';
@@ -39,24 +41,27 @@ import ActivityLog from './pages/ActivityLog';
 import MyTeam from './pages/MyTeam';
 import PendingEvaluations from './pages/PendingEvaluations';
 import SupervisorEvaluation from './pages/SupervisorEvaluation';
-import EmployeeDashboard from './pages/EmployeeDashboard';
 
 
 /* =========================================================
    Protected Route
+   - adminOnly      → activeRole must be HR_ADMIN
+   - supervisorOnly → activeRole must be SUPERVISOR
+   - allowedRoles   → activeRole must be in the list
 ========================================================= */
-
-function ProtectedRoute({ children, adminOnly, supervisorOnly }) {
-  const { user, loading, isAdmin } = useAuth();
+function ProtectedRoute({ children, adminOnly, supervisorOnly, allowedRoles }) {
+  const { user, loading, activeRole } = useAuth();
 
   if (loading) return <LoadingPage />;
+  if (!user)   return <Navigate to="/login" replace />;
 
-  if (!user) return <Navigate to="/login" replace />;
-
-  if (adminOnly && !isAdmin)
+  if (adminOnly && activeRole !== 'HR_ADMIN')
     return <Navigate to="/dashboard" replace />;
 
-  if (supervisorOnly && user.role !== 'SUPERVISOR')
+  if (supervisorOnly && activeRole !== 'SUPERVISOR')
+    return <Navigate to="/dashboard" replace />;
+
+  if (allowedRoles && !allowedRoles.includes(activeRole))
     return <Navigate to="/dashboard" replace />;
 
   return children;
@@ -64,154 +69,96 @@ function ProtectedRoute({ children, adminOnly, supervisorOnly }) {
 
 
 /* =========================================================
-   App Shell Layout (FIXED MOBILE MENU SUPPORT)
+   App Shell Layout
 ========================================================= */
-
 function AppShell({ children }) {
-
-  // Desktop collapse state
-  const [collapsed, setCollapsed] = useState(false);
-
-  // Mobile open state (THIS FIXES YOUR ISSUE)
-  const [mobileOpen, setMobileOpen] = useState(false);
-
-
-  const toggleCollapsed = () => {
-    setCollapsed(prev => !prev);
-  };
-
-  const toggleMobile = () => {
-    setMobileOpen(prev => !prev);
-  };
-
-  const closeMobile = () => {
-    setMobileOpen(false);
-  };
-
+  const [collapsed,   setCollapsed]   = useState(false);
+  const [mobileOpen,  setMobileOpen]  = useState(false);
 
   return (
     <div className="flex min-h-screen bg-gray-50">
-
-      {/* Sidebar */}
       <Sidebar
         collapsed={collapsed}
-        onToggle={toggleCollapsed}
+        onToggle={() => setCollapsed((p) => !p)}
         mobileOpen={mobileOpen}
-        onNavClick={closeMobile}
-        onMobileClose={closeMobile}
+        onNavClick={() => setMobileOpen(false)}
+        onMobileClose={() => setMobileOpen(false)}
       />
 
-
-      {/* Main content */}
       <div
-        className={`
-          flex-1 flex flex-col min-w-0 transition-all duration-200
-          ${collapsed ? 'lg:ml-20' : 'lg:ml-64'}
-        `}
+        className={`flex-1 flex flex-col min-w-0 transition-all duration-200 ${
+          collapsed ? 'lg:ml-20' : 'lg:ml-64'
+        }`}
       >
+        <Header onMobileToggle={() => setMobileOpen((p) => !p)} />
 
-        {/* Header */}
-        <Header onMobileToggle={toggleMobile} />
-
-
-        {/* Page Content */}
-        <main className="flex-1">
-          {children}
-        </main>
-
+        <main className="flex-1">{children}</main>
       </div>
-
     </div>
   );
 }
 
 
-
 /* =========================================================
-   Smart Dashboard Routing
+   Smart Dashboard – renders the correct dashboard based on
+   the user's current activeRole
 ========================================================= */
-
 function SmartDashboard() {
+  const { activeRole } = useAuth();
 
-  const { user } = useAuth();
-
-  if (user.role === 'HR_ADMIN')
-    return <AdminDashboard />;
-
-  if (user.role === 'SUPERVISOR')
-    return <SupervisorDashboard />;
-  
-  if (user.role === 'EMPLOYEE')
-    return <EmployeeDashboard />;
+  if (activeRole === 'HR_ADMIN')   return <AdminDashboard />;
+  if (activeRole === 'SUPERVISOR') return <SupervisorDashboard />;
+  if (activeRole === 'EMPLOYEE')   return <EmployeeDashboard />;
 
   return <Dashboard />;
 }
 
 
-
 /* =========================================================
    Main App
 ========================================================= */
-
 export default function App() {
-
   return (
-
     <BrowserRouter>
-
       <Routes>
 
         {/* Public */}
         <Route path="/login" element={<Login />} />
-
-        <Route
-          path="/reset-password/:token"
-          element={<ResetPassword />}
-        />
-
-        <Route
-          path="/"
-          element={<Navigate to="/dashboard" replace />}
-        />
+        <Route path="/reset-password/:token" element={<ResetPassword />} />
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
 
 
-        {/* Dashboard */}
+        {/* ── Dashboard ─────────────────────────────────────────────────── */}
         <Route
           path="/dashboard"
           element={
             <ProtectedRoute>
-              <AppShell>
-                <SmartDashboard />
-              </AppShell>
+              <AppShell><SmartDashboard /></AppShell>
             </ProtectedRoute>
           }
         />
 
-
-        {/* Admin Dashboard */}
+        {/* Admin dashboard (direct URL access) */}
         <Route
           path="/admin"
           element={
             <ProtectedRoute adminOnly>
-              <AppShell>
-                <AdminDashboard />
-              </AppShell>
+              <AppShell><AdminDashboard /></AppShell>
             </ProtectedRoute>
           }
         />
 
-
-        {/* Supervisor Dashboard */}
+        {/* Supervisor dashboard (direct URL access) */}
         <Route
           path="/supervisor"
           element={
             <ProtectedRoute supervisorOnly>
-              <AppShell>
-                <SupervisorDashboard />
-              </AppShell>
+              <AppShell><SupervisorDashboard /></AppShell>
             </ProtectedRoute>
           }
         />
+
+        {/* Supervisor evaluation (no AppShell – full-page) */}
         <Route
           path="/assessments/:assessmentId/evaluate"
           element={
@@ -221,99 +168,78 @@ export default function App() {
           }
         />
 
-        {/* Users */}
+
+        {/* ── Users ─────────────────────────────────────────────────────── */}
         <Route
           path="/users"
           element={
             <ProtectedRoute adminOnly>
-              <AppShell>
-                <Users />
-              </AppShell>
+              <AppShell><Users /></AppShell>
             </ProtectedRoute>
           }
         />
-
         <Route
           path="/users/:id"
           element={
             <ProtectedRoute>
-              <AppShell>
-                <UserProfile />
-              </AppShell>
+              <AppShell><UserProfile /></AppShell>
             </ProtectedRoute>
           }
         />
-
         <Route
           path="/profile"
           element={
             <ProtectedRoute>
-              <AppShell>
-                <UserProfile />
-              </AppShell>
+              <AppShell><UserProfile /></AppShell>
             </ProtectedRoute>
           }
         />
 
 
-        {/* Competencies */}
+        {/* ── Competencies ──────────────────────────────────────────────── */}
         <Route
           path="/competencies"
           element={
             <ProtectedRoute adminOnly>
-              <AppShell>
-                <Competencies />
-              </AppShell>
+              <AppShell><Competencies /></AppShell>
             </ProtectedRoute>
           }
         />
-
         <Route
           path="/recommendations"
           element={
             <ProtectedRoute adminOnly>
-              <AppShell>
-                <Recommendations />
-              </AppShell>
+              <AppShell><Recommendations /></AppShell>
             </ProtectedRoute>
           }
         />
-
         <Route
           path="/questions"
           element={
             <ProtectedRoute adminOnly>
-              <AppShell>
-                <Questions />
-              </AppShell>
+              <AppShell><Questions /></AppShell>
             </ProtectedRoute>
           }
         />
 
 
-        {/* Assessments */}
+        {/* ── Assessments ───────────────────────────────────────────────── */}
         <Route
           path="/assessments"
           element={
             <ProtectedRoute>
-              <AppShell>
-                <Assessments />
-              </AppShell>
+              <AppShell><Assessments /></AppShell>
             </ProtectedRoute>
           }
         />
-
         <Route
           path="/assessments/:id"
           element={
             <ProtectedRoute>
-              <AppShell>
-                <AssessmentDetail />
-              </AppShell>
+              <AppShell><AssessmentDetail /></AppShell>
             </ProtectedRoute>
           }
         />
-
         <Route
           path="/assessments/:assessmentId/take"
           element={
@@ -324,91 +250,67 @@ export default function App() {
         />
 
 
-        {/* Results */}
+        {/* ── Results / Reports / Feedback ──────────────────────────────── */}
         <Route
           path="/results"
           element={
             <ProtectedRoute>
-              <AppShell>
-                <Results />
-              </AppShell>
+              <AppShell><Results /></AppShell>
             </ProtectedRoute>
           }
         />
-
-        {/* Reports */}
         <Route
           path="/reports"
           element={
             <ProtectedRoute>
-              <AppShell>
-                <Reports />
-              </AppShell>
+              <AppShell><Reports /></AppShell>
             </ProtectedRoute>
           }
         />
-
-
-        {/* Feedback */}
         <Route
           path="/feedback"
           element={
             <ProtectedRoute>
-              <AppShell>
-                <Feedback />
-              </AppShell>
+              <AppShell><Feedback /></AppShell>
             </ProtectedRoute>
           }
         />
 
 
-        {/* Activity Log */}
+        {/* ── Activity Log ──────────────────────────────────────────────── */}
         <Route
           path="/activity-log"
           element={
             <ProtectedRoute adminOnly>
-              <AppShell>
-                <ActivityLog />
-              </AppShell>
+              <AppShell><ActivityLog /></AppShell>
             </ProtectedRoute>
           }
         />
 
 
-        {/* Supervisor */}
+        {/* ── Supervisor ────────────────────────────────────────────────── */}
         <Route
           path="/my-team"
           element={
             <ProtectedRoute supervisorOnly>
-              <AppShell>
-                <MyTeam />
-              </AppShell>
+              <AppShell><MyTeam /></AppShell>
             </ProtectedRoute>
           }
         />
-
         <Route
           path="/my-team/evaluations"
           element={
             <ProtectedRoute supervisorOnly>
-              <AppShell>
-                <PendingEvaluations />
-              </AppShell>
+              <AppShell><PendingEvaluations /></AppShell>
             </ProtectedRoute>
           }
         />
 
 
         {/* 404 */}
-        <Route
-          path="*"
-          element={<Navigate to="/dashboard" replace />}
-        />
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
 
       </Routes>
-
     </BrowserRouter>
-
   );
-
 }

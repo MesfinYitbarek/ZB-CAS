@@ -1,13 +1,16 @@
 /* models/User.js
  * Mongoose schema for the User collection.
- * Now using ES Modules (import/export)
+ * - `roles` is now an array (1–3 values) replacing the single `role` field.
+ * - `gender` attribute added.
+ * - `toPublic()` updated accordingly.
  */
 
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 
-export const ROLES = ['HR_ADMIN', 'SUPERVISOR', 'EMPLOYEE'];
+export const ROLES  = ['HR_ADMIN', 'SUPERVISOR', 'EMPLOYEE'];
 export const STATUS = ['ACTIVE', 'INACTIVE'];
+export const GENDERS = ['Male', 'Female'];
 
 const userSchema = new mongoose.Schema(
   {
@@ -36,11 +39,24 @@ const userSchema = new mongoose.Schema(
       select: false,
       required: [true, 'Password is required.'],
     },
-    role: {
-      type: String,
-      enum: ROLES,
-      default: 'EMPLOYEE',
+
+    // ── Multi-role support ───────────────────────────────────────────────────
+    roles: {
+      type: [{ type: String, enum: ROLES }],
+      default: ['EMPLOYEE'],
+      validate: {
+        validator: (arr) => arr.length >= 1 && arr.length <= 3,
+        message: 'A user must have between 1 and 3 roles.',
+      },
     },
+
+    // ── Gender ───────────────────────────────────────────────────────────────
+    gender: {
+      type: String,
+      enum: GENDERS,
+      default: null,
+    },
+
     position: {
       type: String,
       trim: true,
@@ -61,12 +77,14 @@ const userSchema = new mongoose.Schema(
       enum: STATUS,
       default: 'ACTIVE',
     },
+
     // Token rotation
     refreshToken: {
       type: String,
       select: false,
       default: null,
     },
+
     // Password reset
     passwordResetToken: {
       type: String,
@@ -88,6 +106,18 @@ const userSchema = new mongoose.Schema(
 // ─── Indexes ────────────────────────────────────────────────────────────────
 userSchema.index({ supervisorId: 1 });
 userSchema.index({ department: 1, status: 1 });
+userSchema.index({ roles: 1 });
+
+// ─── Virtual: primary / default role (first in array, priority order) ────────
+// Priority: HR_ADMIN > SUPERVISOR > EMPLOYEE
+const ROLE_PRIORITY = { HR_ADMIN: 0, SUPERVISOR: 1, EMPLOYEE: 2 };
+
+userSchema.virtual('defaultRole').get(function () {
+  if (!this.roles || this.roles.length === 0) return 'EMPLOYEE';
+  return [...this.roles].sort(
+    (a, b) => (ROLE_PRIORITY[a] ?? 99) - (ROLE_PRIORITY[b] ?? 99)
+  )[0];
+});
 
 // ─── Pre-save: hash password only when modified ──────────────────────────────
 userSchema.pre('save', async function hashPassword(next) {
@@ -101,20 +131,22 @@ userSchema.methods.comparePassword = async function (candidatePlain) {
   return bcrypt.compare(candidatePlain, this.passwordHash);
 };
 
-// ─── Return safe public representation ─────────────────────────────────────
+// ─── Return safe public representation ──────────────────────────────────────
 userSchema.methods.toPublic = function () {
   return {
-    _id: this._id,
-    employeeId: this.employeeId,
-    name: this.name,
-    email: this.email,
-    role: this.role,
-    position: this.position,
-    department: this.department,
+    _id:          this._id,
+    employeeId:   this.employeeId,
+    name:         this.name,
+    email:        this.email,
+    roles:        this.roles,
+    defaultRole:  this.defaultRole,   // virtual
+    gender:       this.gender,
+    position:     this.position,
+    department:   this.department,
     supervisorId: this.supervisorId,
-    status: this.status,
-    createdAt: this.createdAt,
-    updatedAt: this.updatedAt,
+    status:       this.status,
+    createdAt:    this.createdAt,
+    updatedAt:    this.updatedAt,
   };
 };
 

@@ -670,13 +670,14 @@ export default function Assessments() {
                         Score Combined Results
                       </button>
                     )}
-
-                    <button
-                      onClick={() => nav(`/assessments/${a._id}`)}
-                      className="text-xs font-semibold text-gray-500 hover:text-brand-red transition-colors flex items-center gap-1"
-                    >
-                      Details <ChevronRight className="w-3 h-3" />
-                    </button>
+                    {isAdmin && (
+                      <button
+                        onClick={() => nav(`/assessments/${a._id}`)}
+                        className="text-xs font-semibold text-gray-500 hover:text-brand-red transition-colors flex items-center gap-1"
+                      >
+                        Details <ChevronRight className="w-3 h-3" />
+                      </button>
+                    )}
                   </div>
                 </div>
               );

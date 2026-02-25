@@ -1,3 +1,4 @@
+/* controllers/authController.js */
 import crypto from 'crypto';
 import User from '../models/User.js';
 import AppError from '../utils/AppError.js';
@@ -8,23 +9,27 @@ import { sendWelcomeEmail, sendPasswordResetEmail } from '../services/emailServi
 // ─── REGISTER ─────────────────────────────────────────────────────────────────
 // Only HR_ADMIN can call this (enforced at router level).
 export const register = asyncHandler(async (req, res, next) => {
-  const { employeeId, name, email, role, position, department, supervisorId } = req.body;
+  const { employeeId, name, email, roles, gender, position, department, supervisorId } = req.body;
 
-  // Generate a temporary password
   const tempPassword = crypto.randomBytes(8).toString('hex');
+
+  // Accept either `roles` (array) or legacy `role` (string) from the request body
+  const resolvedRoles = roles
+    ? (Array.isArray(roles) ? roles : [roles])
+    : (req.body.role ? [req.body.role] : ['EMPLOYEE']);
 
   const user = await User.create({
     employeeId,
     name,
     email,
-    passwordHash: tempPassword,   // will be hashed by the pre-save hook
-    role: role || 'EMPLOYEE',
+    passwordHash: tempPassword,
+    roles: resolvedRoles,
+    gender: gender || null,
     position,
     department,
     supervisorId: supervisorId || null,
   });
 
-  // Send welcome email with temp password (fire-and-forget)
   sendWelcomeEmail(user, tempPassword);
 
   res.status(201).json({
@@ -42,10 +47,8 @@ export const login = asyncHandler(async (req, res, next) => {
     return next(new AppError('Email and password are required.', 400));
   }
 
-  // select('+passwordHash') because it is select:false
   const user = await User.findOne({ email: email.toLowerCase() }).select('+passwordHash');
 
-  // Generic message to prevent user enumeration
   if (!user || !(await user.comparePassword(password))) {
     return next(new AppError('Invalid email or password.', 401));
   }
@@ -54,19 +57,57 @@ export const login = asyncHandler(async (req, res, next) => {
     return next(new AppError('Account is inactive. Please contact HR.', 403));
   }
 
-  // Issue token pair
-  const { accessToken, refreshToken } = buildTokenPair(user._id, user.role);
+  // Default active role = highest-priority role in the user's roles array
+  const activeRole = user.defaultRole;
 
-  // Store refresh token hash (so we can invalidate it on logout)
+  const { accessToken, refreshToken } = buildTokenPair(user._id, activeRole);
+
   user.refreshToken = refreshToken;
   await user.save({ validateBeforeSave: false });
 
   res.status(200).json({
     status: 'success',
     data: {
-      user:         user.toPublic(),
+      user:        user.toPublic(),   // includes `roles` array + `defaultRole`
+      activeRole,
       accessToken,
       refreshToken,
+    },
+  });
+});
+
+// ─── SWITCH ROLE ──────────────────────────────────────────────────────────────
+// Allows a multi-role user to switch their active role without logging out.
+// Issues a fresh access token (same refresh token – no rotation needed here).
+export const switchRole = asyncHandler(async (req, res, next) => {
+  const { role } = req.body;   // the role the user wants to switch to
+
+  if (!role) {
+    return next(new AppError('Target role is required.', 400));
+  }
+
+  // req.user is set by the protect middleware (contains id from current token)
+  const user = await User.findById(req.user.id).select('+refreshToken');
+
+  if (!user) {
+    return next(new AppError('User not found.', 404));
+  }
+
+  // Verify the user actually has the requested role
+  if (!user.roles.includes(role)) {
+    return next(new AppError(`You do not have the '${role}' role.`, 403));
+  }
+
+  // Issue a fresh access token for the new active role.
+  // Refresh token stays the same (no rotation on role switch).
+  const { signAccessToken } = await import('../utils/jwt.js');
+  const newAccessToken = signAccessToken(user._id, role);
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      activeRole:  role,
+      accessToken: newAccessToken,
     },
   });
 });
@@ -90,8 +131,8 @@ export const refresh = asyncHandler(async (req, res, next) => {
     return next(new AppError('Invalid refresh token.', 401));
   }
 
-  // Rotate: issue new pair
-  const newPair = buildTokenPair(user._id, user.role);
+  // Use current default role when rotating
+  const newPair = buildTokenPair(user._id, user.defaultRole);
   user.refreshToken = newPair.refreshToken;
   await user.save({ validateBeforeSave: false });
 
@@ -99,24 +140,20 @@ export const refresh = asyncHandler(async (req, res, next) => {
 });
 
 // ─── LOGOUT ───────────────────────────────────────────────────────────────────
-export const logout = asyncHandler(async (req, res, next) => {
-  // req.user is populated by protect() middleware
+export const logout = asyncHandler(async (req, res) => {
   const user = await User.findById(req.user.id).select('+refreshToken');
   if (user) {
     user.refreshToken = null;
     await user.save({ validateBeforeSave: false });
   }
-  res.status(200).json({ status: 'success', message: 'Logged out successfully.' });
+  res.status(200).json({ status: 'success', message: 'Logged out.' });
 });
 
 // ─── FORGOT PASSWORD ──────────────────────────────────────────────────────────
 export const forgotPassword = asyncHandler(async (req, res, next) => {
-  const { email } = req.body;
-  if (!email) return next(new AppError('Email is required.', 400));
+  const user = await User.findOne({ email: req.body.email?.toLowerCase() });
 
-  const user = await User.findOne({ email: email.toLowerCase() });
-
-  // Always return 200 to prevent enumeration
+  // Always return 200 to prevent email enumeration
   if (!user) {
     return res.status(200).json({
       status:  'success',
@@ -124,15 +161,12 @@ export const forgotPassword = asyncHandler(async (req, res, next) => {
     });
   }
 
-  // Generate token, hash it before storing
-  const token       = crypto.randomBytes(32).toString('hex');
-  const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
-
-  user.passwordResetToken   = hashedToken;
-  user.passwordResetExpires = Date.now() + 3600000; // 1 hour
+  const resetToken = crypto.randomBytes(32).toString('hex');
+  user.passwordResetToken   = crypto.createHash('sha256').update(resetToken).digest('hex');
+  user.passwordResetExpires = Date.now() + 60 * 60 * 1000; // 1 hour
   await user.save({ validateBeforeSave: false });
 
-  sendPasswordResetEmail(user, token);
+  sendPasswordResetEmail(user, resetToken);
 
   res.status(200).json({
     status:  'success',
@@ -140,48 +174,42 @@ export const forgotPassword = asyncHandler(async (req, res, next) => {
   });
 });
 
-// ─── RESET PASSWORD ──────────────────────────────────────────────────────────
+// ─── RESET PASSWORD ───────────────────────────────────────────────────────────
 export const resetPassword = asyncHandler(async (req, res, next) => {
-  const { token }    = req.params;
-  const { password } = req.body;
-
-  if (!password) return next(new AppError('New password is required.', 400));
-
-  const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+  const hashedToken = crypto
+    .createHash('sha256')
+    .update(req.params.token)
+    .digest('hex');
 
   const user = await User.findOne({
     passwordResetToken:   hashedToken,
     passwordResetExpires: { $gt: Date.now() },
-  });
+  }).select('+passwordHash');
 
   if (!user) {
     return next(new AppError('Token is invalid or has expired.', 400));
   }
 
-  // Update password (pre-save hook will hash it)
-  user.passwordHash          = password;
-  user.passwordResetToken    = null;
-  user.passwordResetExpires  = null;
+  user.passwordHash         = req.body.password;
+  user.passwordResetToken   = null;
+  user.passwordResetExpires = null;
   await user.save();
 
-  res.status(200).json({ status: 'success', message: 'Password has been reset.' });
+  res.status(200).json({ status: 'success', message: 'Password reset successful.' });
 });
 
-// ─── CHANGE PASSWORD (authenticated) ─────────────────────────────────────────
+// ─── CHANGE PASSWORD ──────────────────────────────────────────────────────────
 export const changePassword = asyncHandler(async (req, res, next) => {
   const { currentPassword, newPassword } = req.body;
 
-  if (!currentPassword || !newPassword) {
-    return next(new AppError('Current and new passwords are required.', 400));
-  }
-
   const user = await User.findById(req.user.id).select('+passwordHash');
+  if (!user) return next(new AppError('User not found.', 404));
 
   if (!(await user.comparePassword(currentPassword))) {
     return next(new AppError('Current password is incorrect.', 401));
   }
 
-  user.passwordHash = newPassword;   // pre-save hook hashes it
+  user.passwordHash = newPassword;
   await user.save();
 
   res.status(200).json({ status: 'success', message: 'Password changed successfully.' });
