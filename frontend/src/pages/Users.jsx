@@ -6,7 +6,7 @@ import Modal from '../components/Modal';
 import api from '../utils/api';
 
 const ALL_ROLES   = ['HR_ADMIN', 'SUPERVISOR', 'EMPLOYEE'];
-const ALL_GENDERS = ['MALE', 'FEMALE', 'OTHER', 'PREFER_NOT_TO_SAY'];
+const ALL_GENDERS = ['MALE', 'FEMALE',];
 
 const ROLE_LABELS = {
   HR_ADMIN:   'HR Admin',
@@ -17,8 +17,6 @@ const ROLE_LABELS = {
 const GENDER_LABELS = {
   MALE:              'Male',
   FEMALE:            'Female',
-  OTHER:             'Other',
-  PREFER_NOT_TO_SAY: 'Prefer not to say',
 };
 
 export default function Users() {
@@ -491,7 +489,7 @@ export default function Users() {
                 <option value="">Select Supervisor</option>
                 {supervisors.map((sup) => (
                   <option key={sup._id} value={sup._id}>
-                    {sup.name} ({sup.employeeId})
+                    {sup.name} ({sup.department})
                   </option>
                 ))}
               </select>
