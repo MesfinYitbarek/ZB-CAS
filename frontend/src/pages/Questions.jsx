@@ -10,6 +10,7 @@ import {
   Upload,
   FileText,
   Check,
+  Eye,
 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import Modal from '../components/Modal';
@@ -89,9 +90,10 @@ export default function Questions() {
   const [competencies, setCompetencies] = useState([]);
   const [filterComp, setFilterComp] = useState('');
   const [filterType, setFilterType] = useState('');
-  const [modal, setModal] = useState(null); // 'create' | 'edit' | 'upload'
+  const [modal, setModal] = useState(null); // 'create' | 'edit' | 'upload' | 'view'
   const [selected, setSelected] = useState(null);
   const [deleteModal, setDeleteModal] = useState(null);
+  const [viewQuestion, setViewQuestion] = useState(null);
 
   const fileInputRef = useRef(null);
 
@@ -126,32 +128,21 @@ export default function Questions() {
 
   // Load target groups when competency changes
   useEffect(() => {
-    console.log('Competency changed →', batchForm.competencyId);
-
     if (!batchForm.competencyId) {
-      console.log('→ Clearing target groups');
       setTargetGroupsForComp([]);
       setSelectedBatchTargetGroup('');
       return;
     }
 
-    // Safe string comparison (handles ObjectId vs string)
     const comp = competencies.find(
       (c) => String(c._id) === String(batchForm.competencyId)
     );
 
-    console.log('Found competency →', comp ? comp.name : 'NOT FOUND');
-
     if (comp?.targetGroups?.length > 0) {
       const tgs = comp.targetGroups.map((tg) => tg.targetGroup);
-      console.log('Target groups found →', tgs);
       setTargetGroupsForComp(tgs);
-
-      if (tgs.length === 1) {
-        setSelectedBatchTargetGroup(tgs[0]);
-      }
+      if (tgs.length === 1) setSelectedBatchTargetGroup(tgs[0]);
     } else {
-      console.log('→ No target groups in this competency');
       setTargetGroupsForComp([]);
       setSelectedBatchTargetGroup('');
     }
@@ -239,6 +230,11 @@ export default function Questions() {
     });
     setSelected(q);
     setModal('edit');
+  };
+
+  const openView = (q) => {
+    setViewQuestion(q);
+    setModal('view');
   };
 
   // ─── Document Upload and Parsing ────────────────────────────────────────
@@ -353,7 +349,6 @@ export default function Questions() {
 
   const parseQuestionsFromText = (text) => {
     const questions = [];
-    // Your full parsing logic (kept as-is)
     let lines;
     if (text.includes('\n')) {
       lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
@@ -436,7 +431,6 @@ export default function Questions() {
           if (currentQuestion.type === 'TrueFalse') {
             currentQuestion.correctAnswer = answer.match(/true/i) ? 'True' : 'False';
           } else if (currentQuestion.type === 'MultiSelect') {
-            // Handle multiple correct answers separated by commas or semicolons
             currentQuestion.correctAnswers = answer
               .split(/[,;]/)
               .map(a => a.trim())
@@ -462,7 +456,6 @@ export default function Questions() {
             currentQuestion.options = ['', '', '', ''];
           }
 
-          // Ensure array is large enough
           while (currentQuestion.options.length <= index) {
             currentQuestion.options.push('');
           }
@@ -490,7 +483,6 @@ export default function Questions() {
             currentQuestion.matchingPairs = [];
           }
 
-          // Replace default empty pair
           if (currentQuestion.matchingPairs.length === 1 &&
             currentQuestion.matchingPairs[0].left === '' &&
             currentQuestion.matchingPairs[0].right === '') {
@@ -526,7 +518,6 @@ export default function Questions() {
             currentQuestion.categories = {};
           }
 
-          // Remove default empty category
           if (currentQuestion.categories[''] && currentQuestion.categories[''].length === 1 && currentQuestion.categories[''][0] === '') {
             delete currentQuestion.categories[''];
           }
@@ -546,7 +537,6 @@ export default function Questions() {
 
     if (currentQuestion && currentQuestion.text) questions.push(currentQuestion);
 
-    // Clean up (your existing cleanup)
     return questions.map(q => {
       if (['MCQ', 'MultiSelect', 'ScenarioMCQ'].includes(q.type)) {
         q.options = (q.options || []).filter(opt => opt && opt.length > 0);
@@ -735,7 +725,7 @@ export default function Questions() {
     const groups = [...batchForm.questionGroups];
     const newQuestion = initQuestionForm();
     newQuestion.type = groups[groupIndex].type;
-    newQuestion.targetGroup = selectedBatchTargetGroup; // ← FIXED HERE
+    newQuestion.targetGroup = selectedBatchTargetGroup;
     groups[groupIndex].questions.push(newQuestion);
     setBatchForm({ ...batchForm, questionGroups: groups });
   };
@@ -789,23 +779,23 @@ export default function Questions() {
               <div className="mb-3">
                 <label className="block text-sm font-semibold text-gray-700 mb-1.5">Scenario</label>
                 <textarea
-                  rows={3}
+                  rows={2}
                   value={form.scenario || ''}
                   onChange={(e) => setForm({ ...form, scenario: e.target.value })}
                   placeholder="Describe the scenario..."
-                  className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-red-500 text-sm resize-none"
+                  className="w-full px-3 py-1.5 rounded-lg border border-gray-300 focus:border-red-500 text-sm resize-none"
                 />
               </div>
             )}
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">Options</label>
             {form.options.map((opt, i) => (
-              <div key={i} className="flex items-center gap-2 mb-2">
+              <div key={i} className="flex items-center gap-2 mb-1.5">
                 <input
                   type="radio"
                   name={isEdit ? 'edit-correct' : `correct-${groupIndex}-${questionIndex}`}
                   checked={form.correctAnswer === opt && opt !== ''}
                   onChange={() => setForm({ ...form, correctAnswer: opt })}
-                  className="w-4 h-4 text-red-600 focus:ring-red-500"
+                  className="w-3.5 h-3.5 text-red-600 focus:ring-red-500"
                 />
                 <input
                   value={opt}
@@ -820,7 +810,7 @@ export default function Questions() {
                     });
                   }}
                   placeholder={`Option ${String.fromCharCode(65 + i)}`}
-                  className="flex-1 h-10 px-3 rounded-lg border border-gray-300 focus:border-red-500 text-sm"
+                  className="flex-1 h-8 px-2 rounded-lg border border-gray-300 focus:border-red-500 text-sm"
                 />
                 {form.options.length > 2 && (
                   <button
@@ -833,9 +823,9 @@ export default function Questions() {
                         correctAnswer: form.correctAnswer === opt ? '' : form.correctAnswer,
                       });
                     }}
-                    className="p-1 text-gray-400 hover:text-red-500"
+                    className="p-0.5 text-gray-400 hover:text-red-500"
                   >
-                    <X className="w-4 h-4" />
+                    <X className="w-3.5 h-3.5" />
                   </button>
                 )}
               </div>
@@ -843,7 +833,7 @@ export default function Questions() {
             <button
               type="button"
               onClick={() => setForm({ ...form, options: [...form.options, ''] })}
-              className="text-sm text-red-600 hover:underline mt-1"
+              className="text-xs text-red-600 hover:underline mt-1"
             >
               + Add option
             </button>
@@ -857,7 +847,7 @@ export default function Questions() {
             <select
               value={form.correctAnswer || ''}
               onChange={(e) => setForm({ ...form, correctAnswer: e.target.value })}
-              className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:border-red-500 text-sm"
+              className="w-full h-8 px-2 rounded-lg border border-gray-300 focus:border-red-500 text-sm"
             >
               <option value="">— Select —</option>
               <option value="True">True</option>
@@ -867,14 +857,14 @@ export default function Questions() {
         );
 
       case 'Rating':
-        return <p className="text-sm text-gray-500">Rating questions are auto-scored (1-5 scale).</p>;
+        return <p className="text-xs text-gray-500">Rating questions are auto-scored (1-5 scale).</p>;
 
       case 'MultiSelect':
         return (
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Options (check correct answers)</label>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Options (check correct)</label>
             {form.options.map((opt, i) => (
-              <div key={i} className="flex items-center gap-2 mb-2">
+              <div key={i} className="flex items-center gap-2 mb-1.5">
                 <input
                   type="checkbox"
                   checked={form.correctAnswers?.includes(opt) && opt !== ''}
@@ -887,7 +877,7 @@ export default function Questions() {
                     }
                     setForm({ ...form, correctAnswers: ca });
                   }}
-                  className="w-4 h-4 text-red-600 rounded focus:ring-red-500"
+                  className="w-3.5 h-3.5 text-red-600 rounded focus:ring-red-500"
                 />
                 <input
                   value={opt}
@@ -899,7 +889,7 @@ export default function Questions() {
                     setForm({ ...form, options: o, correctAnswers: ca });
                   }}
                   placeholder={`Option ${String.fromCharCode(65 + i)}`}
-                  className="flex-1 h-10 px-3 rounded-lg border border-gray-300 focus:border-red-500 text-sm"
+                  className="flex-1 h-8 px-2 rounded-lg border border-gray-300 focus:border-red-500 text-sm"
                 />
                 {form.options.length > 2 && (
                   <button
@@ -909,9 +899,9 @@ export default function Questions() {
                       const ca = form.correctAnswers.filter(a => a !== opt);
                       setForm({ ...form, options: o, correctAnswers: ca });
                     }}
-                    className="p-1 text-gray-400 hover:text-red-500"
+                    className="p-0.5 text-gray-400 hover:text-red-500"
                   >
-                    <X className="w-4 h-4" />
+                    <X className="w-3.5 h-3.5" />
                   </button>
                 )}
               </div>
@@ -919,11 +909,10 @@ export default function Questions() {
             <button
               type="button"
               onClick={() => setForm({ ...form, options: [...form.options, ''] })}
-              className="text-sm text-red-600 hover:underline mt-1"
+              className="text-xs text-red-600 hover:underline mt-1"
             >
               + Add option
             </button>
-            <p className="text-xs text-gray-500 mt-1">Partial credit: hits minus misses.</p>
           </div>
         );
 
@@ -931,9 +920,9 @@ export default function Questions() {
         return (
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">Matching Pairs</label>
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               {form.matchingPairs.map((pair, i) => (
-                <div key={i} className="grid grid-cols-[1fr_auto_1fr_auto] gap-2 items-center">
+                <div key={i} className="grid grid-cols-[1fr_auto_1fr_auto] gap-1.5 items-center">
                   <input
                     value={pair.left}
                     onChange={(e) => {
@@ -942,9 +931,9 @@ export default function Questions() {
                       setForm({ ...form, matchingPairs: p });
                     }}
                     placeholder={`Term ${i + 1}`}
-                    className="h-10 px-3 rounded-lg border border-gray-300 focus:border-red-500 text-sm"
+                    className="h-8 px-2 rounded-lg border border-gray-300 focus:border-red-500 text-sm"
                   />
-                  <span className="text-gray-400">↔</span>
+                  <span className="text-gray-400 text-xs">↔</span>
                   <input
                     value={pair.right}
                     onChange={(e) => {
@@ -953,7 +942,7 @@ export default function Questions() {
                       setForm({ ...form, matchingPairs: p });
                     }}
                     placeholder={`Match ${i + 1}`}
-                    className="h-10 px-3 rounded-lg border border-gray-300 focus:border-red-500 text-sm"
+                    className="h-8 px-2 rounded-lg border border-gray-300 focus:border-red-500 text-sm"
                   />
                   {form.matchingPairs.length > 2 && (
                     <button
@@ -962,12 +951,12 @@ export default function Questions() {
                         ...form,
                         matchingPairs: form.matchingPairs.filter((_, idx) => idx !== i)
                       })}
-                      className="p-1 text-gray-400 hover:text-red-500"
+                      className="p-0.5 text-gray-400 hover:text-red-500"
                     >
-                      <X className="w-4 h-4" />
+                      <X className="w-3.5 h-3.5" />
                     </button>
                   )}
-                  {form.matchingPairs.length <= 2 && <span className="w-8" />}
+                  {form.matchingPairs.length <= 2 && <span className="w-5" />}
                 </div>
               ))}
             </div>
@@ -977,11 +966,10 @@ export default function Questions() {
                 ...form,
                 matchingPairs: [...form.matchingPairs, { left: '', right: '' }]
               })}
-              className="text-sm text-red-600 hover:underline mt-2"
+              className="text-xs text-red-600 hover:underline mt-1"
             >
               + Add pair
             </button>
-            <p className="text-xs text-gray-500 mt-1">Partial credit per correct pair.</p>
           </div>
         );
 
@@ -990,11 +978,11 @@ export default function Questions() {
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">Items in Correct Order</label>
             {form.correctOrder.map((item, i) => (
-              <div key={i} className="flex items-center gap-2 mb-2">
-                <span className="w-7 h-7 flex items-center justify-center bg-gray-100 rounded text-xs font-bold text-gray-500">
+              <div key={i} className="flex items-center gap-1.5 mb-1.5">
+                <span className="w-5 h-5 flex items-center justify-center bg-gray-100 rounded text-xs font-bold text-gray-500">
                   {i + 1}
                 </span>
-                <GripVertical className="w-4 h-4 text-gray-300" />
+                <GripVertical className="w-3.5 h-3.5 text-gray-300" />
                 <input
                   value={item}
                   onChange={(e) => {
@@ -1003,7 +991,7 @@ export default function Questions() {
                     setForm({ ...form, correctOrder: o });
                   }}
                   placeholder={`Step ${i + 1}`}
-                  className="flex-1 h-10 px-3 rounded-lg border border-gray-300 focus:border-red-500 text-sm"
+                  className="flex-1 h-8 px-2 rounded-lg border border-gray-300 focus:border-red-500 text-sm"
                 />
                 {form.correctOrder.length > 2 && (
                   <button
@@ -1012,9 +1000,9 @@ export default function Questions() {
                       ...form,
                       correctOrder: form.correctOrder.filter((_, idx) => idx !== i)
                     })}
-                    className="p-1 text-gray-400 hover:text-red-500"
+                    className="p-0.5 text-gray-400 hover:text-red-500"
                   >
-                    <X className="w-4 h-4" />
+                    <X className="w-3.5 h-3.5" />
                   </button>
                 )}
               </div>
@@ -1022,21 +1010,20 @@ export default function Questions() {
             <button
               type="button"
               onClick={() => setForm({ ...form, correctOrder: [...form.correctOrder, ''] })}
-              className="text-sm text-red-600 hover:underline mt-1"
+              className="text-xs text-red-600 hover:underline mt-1"
             >
               + Add item
             </button>
-            <p className="text-xs text-gray-500 mt-1">Partial credit per correct position.</p>
           </div>
         );
 
       case 'DragDropClassification':
         return (
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Categories & Items</label>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Categories & Items</label>
             {Object.entries(form.categories || { '': [''] }).map(([cat, catItems], ci) => (
-              <div key={ci} className="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                <div className="flex items-center gap-2 mb-2">
+              <div key={ci} className="mb-3 p-2 bg-gray-50 rounded-lg border border-gray-200">
+                <div className="flex items-center gap-1.5 mb-1.5">
                   <input
                     value={cat}
                     onChange={(e) => {
@@ -1046,7 +1033,7 @@ export default function Questions() {
                       setForm({ ...form, categories: newCats });
                     }}
                     placeholder={`Category ${ci + 1}`}
-                    className="flex-1 h-10 px-3 rounded-lg border border-gray-300 focus:border-red-500 text-sm font-semibold"
+                    className="flex-1 h-8 px-2 rounded-lg border border-gray-300 focus:border-red-500 text-sm font-semibold"
                   />
                   {Object.keys(form.categories || {}).length > 1 && cat !== '' && (
                     <button
@@ -1056,14 +1043,14 @@ export default function Questions() {
                         delete newCats[cat];
                         setForm({ ...form, categories: newCats });
                       }}
-                      className="p-1 text-gray-400 hover:text-red-500"
+                      className="p-0.5 text-gray-400 hover:text-red-500"
                     >
-                      <X className="w-4 h-4" />
+                      <X className="w-3.5 h-3.5" />
                     </button>
                   )}
                 </div>
                 {(catItems || []).map((item, ii) => (
-                  <div key={ii} className="flex items-center gap-2 mb-1 ml-4">
+                  <div key={ii} className="flex items-center gap-1.5 mb-1 ml-2">
                     <span className="text-gray-400 text-xs">•</span>
                     <input
                       value={item}
@@ -1075,7 +1062,7 @@ export default function Questions() {
                         setForm({ ...form, categories: newCats });
                       }}
                       placeholder={`Item ${ii + 1}`}
-                      className="flex-1 h-9 px-3 rounded-lg border border-gray-200 focus:border-red-500 text-sm"
+                      className="flex-1 h-7 px-2 rounded-lg border border-gray-200 focus:border-red-500 text-sm"
                     />
                     {(catItems || []).length > 1 && (
                       <button
@@ -1085,7 +1072,7 @@ export default function Questions() {
                           newCats[cat] = newCats[cat].filter((_, idx) => idx !== ii);
                           setForm({ ...form, categories: newCats });
                         }}
-                        className="p-1 text-gray-400 hover:text-red-500"
+                        className="p-0.5 text-gray-400 hover:text-red-500"
                       >
                         <X className="w-3 h-3" />
                       </button>
@@ -1099,7 +1086,7 @@ export default function Questions() {
                     newCats[cat] = [...(newCats[cat] || []), ''];
                     setForm({ ...form, categories: newCats });
                   }}
-                  className="text-xs text-red-600 hover:underline mt-1 ml-4"
+                  className="text-xs text-red-600 hover:underline mt-0.5 ml-2"
                 >
                   + Add item
                 </button>
@@ -1111,11 +1098,10 @@ export default function Questions() {
                 const newCats = { ...(form.categories || {}), '': [''] };
                 setForm({ ...form, categories: newCats });
               }}
-              className="text-sm text-red-600 hover:underline mt-2"
+              className="text-xs text-red-600 hover:underline mt-1"
             >
               + Add category
             </button>
-            <p className="text-xs text-gray-500 mt-1">Partial credit per correctly classified item.</p>
           </div>
         );
 
@@ -1124,41 +1110,168 @@ export default function Questions() {
     }
   };
 
-  return (
-    <div className="p-7 bg-gray-50 min-h-screen">
-      {/* Header */}
-      <div className="flex justify-between items-start mb-6">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Question Bank</h1>
-          <p className="text-gray-600 mt-1">Manage questions for competencies and target groups</p>
+  // ─── Render question details for view modal ─────────────────────────────
+  const renderQuestionDetails = (q) => {
+    if (!q) return null;
+
+    return (
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <p className="text-xs font-semibold text-gray-500 uppercase">Type</p>
+            <span className={`inline-block mt-1 px-2 py-0.5 text-xs rounded ${TYPE_BADGES[q.type]}`}>
+              {TYPE_LABELS[q.type] || q.type}
+            </span>
+          </div>
+          <div>
+            <p className="text-xs font-semibold text-gray-500 uppercase">Score</p>
+            <p className="mt-1 text-sm font-medium">{q.score ?? 1}</p>
+          </div>
         </div>
-        <div className="flex gap-3">
+
+        <div>
+          <p className="text-xs font-semibold text-gray-500 uppercase">Competency</p>
+          <p className="mt-1 text-sm">{q.competencyId?.name || '—'}</p>
+        </div>
+
+        <div>
+          <p className="text-xs font-semibold text-gray-500 uppercase">Target Group</p>
+          <p className="mt-1 text-sm capitalize">{q.targetGroup || '—'}</p>
+        </div>
+
+        <div>
+          <p className="text-xs font-semibold text-gray-500 uppercase">Question</p>
+          <p className="mt-1 text-sm whitespace-pre-wrap">{q.text}</p>
+        </div>
+
+        {q.scenario && (
+          <div>
+            <p className="text-xs font-semibold text-gray-500 uppercase">Scenario</p>
+            <p className="mt-1 text-sm whitespace-pre-wrap bg-gray-50 p-3 rounded-lg border">{q.scenario}</p>
+          </div>
+        )}
+
+        {['MCQ', 'MultiSelect', 'ScenarioMCQ'].includes(q.type) && q.options?.length > 0 && (
+          <div>
+            <p className="text-xs font-semibold text-gray-500 uppercase mb-2">
+              {q.type === 'MultiSelect' ? 'Options (Multi-Select)' : 'Options'}
+            </p>
+            <div className="space-y-1.5">
+              {q.options.map((opt, idx) => {
+                const isCorrect = q.type === 'MultiSelect' 
+                  ? q.correctAnswers?.includes(opt)
+                  : q.correctAnswer === opt;
+                
+                return (
+                  <div key={idx} className={`flex items-center gap-2 p-2 rounded-lg border ${isCorrect ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'}`}>
+                    <span className="text-xs font-medium w-6">{String.fromCharCode(65 + idx)}</span>
+                    <span className="text-sm flex-1">{opt}</span>
+                    {isCorrect && <Check className="w-4 h-4 text-green-600" />}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {q.type === 'TrueFalse' && (
+          <div>
+            <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Correct Answer</p>
+            <div className="p-2 bg-green-50 border border-green-200 rounded-lg">
+              <span className="text-sm font-medium">{q.correctAnswer}</span>
+            </div>
+          </div>
+        )}
+
+        {q.type === 'Matching' && q.matchingPairs?.length > 0 && (
+          <div>
+            <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Matching Pairs</p>
+            <div className="space-y-1.5">
+              {q.matchingPairs.map((pair, idx) => (
+                <div key={idx} className="grid grid-cols-[1fr_auto_1fr] gap-2 items-center p-2 bg-gray-50 rounded-lg border">
+                  <span className="text-sm">{pair.left}</span>
+                  <span className="text-gray-400 text-xs">→</span>
+                  <span className="text-sm font-medium">{pair.right}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {q.type === 'Ordering' && q.correctOrder?.length > 0 && (
+          <div>
+            <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Correct Order</p>
+            <div className="space-y-1.5">
+              {q.correctOrder.map((item, idx) => (
+                <div key={idx} className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg border">
+                  <span className="w-5 h-5 flex items-center justify-center bg-gray-200 rounded text-xs font-bold">
+                    {idx + 1}
+                  </span>
+                  <span className="text-sm">{item}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {q.type === 'DragDropClassification' && q.categories && Object.keys(q.categories).length > 0 && (
+          <div>
+            <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Categories</p>
+            <div className="space-y-2">
+              {Object.entries(q.categories).map(([cat, items], idx) => (
+                <div key={idx} className="p-2 bg-gray-50 rounded-lg border">
+                  <p className="text-sm font-semibold mb-1">{cat}</p>
+                  <div className="flex flex-wrap gap-1">
+                    {items.map((item, itemIdx) => (
+                      <span key={itemIdx} className="px-2 py-0.5 bg-white border rounded text-xs">
+                        {item}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="p-4 bg-gray-50 min-h-screen">
+      {/* Header */}
+      <div className="flex justify-between items-center mb-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Question Bank</h1>
+          <p className="text-sm text-gray-600">Manage questions for competencies</p>
+        </div>
+        <div className="flex gap-2">
           <button
             onClick={openUpload}
-            className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm"
           >
-            <Upload className="w-4 h-4" /> Upload Document
+            <Upload className="w-3.5 h-3.5" /> Upload
           </button>
           <button
             onClick={openCreate}
-            className="flex items-center gap-2 px-5 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition text-sm"
           >
-            <Plus className="w-4 h-4" /> Add Questions
+            <Plus className="w-3.5 h-3.5" /> Add Questions
           </button>
         </div>
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-4 mb-6">
+      <div className="flex flex-wrap gap-2 mb-4">
         <select
           value={filterComp}
           onChange={(e) => setFilterComp(e.target.value)}
-          className="h-10 px-4 border rounded-lg min-w-[240px]"
+          className="h-8 px-2 border rounded-lg text-sm min-w-[200px]"
         >
           <option value="">All Competencies</option>
           {competencies.map(c => (
             <option key={c._id} value={c._id}>
-              {c.name} ({c.category})
+              {c.name}
             </option>
           ))}
         </select>
@@ -1166,7 +1279,7 @@ export default function Questions() {
         <select
           value={filterType}
           onChange={(e) => setFilterType(e.target.value)}
-          className="h-10 px-4 border rounded-lg w-56"
+          className="h-8 px-2 border rounded-lg text-sm w-44"
         >
           <option value="">All Types</option>
           {TYPES.map(t => (
@@ -1180,24 +1293,22 @@ export default function Questions() {
             const lim = Number(e.target.value);
             setPagination(p => ({ ...p, page: 1, limit: lim }));
           }}
-          className="h-10 px-4 border rounded-lg"
+          className="h-8 px-2 border rounded-lg text-sm"
         >
-          <option value="10">10 per page</option>
-          <option value="20">20 per page</option>
-          <option value="30">30 per page</option>
-          <option value="50">50 per page</option>
+          <option value="10">10</option>
+          <option value="20">20</option>
+          <option value="30">30</option>
+          <option value="50">50</option>
         </select>
       </div>
 
       {/* Bulk action bar */}
       {selectedIds.size > 0 && (
-        <div className="bg-red-50 border border-red-200 p-4 mb-6 rounded-lg flex justify-between items-center">
-          <span className="font-medium">
-            {selectedIds.size} question{selectedIds.size !== 1 ? 's' : ''} selected
-          </span>
+        <div className="bg-red-50 border border-red-200 p-2 mb-4 rounded-lg flex justify-between items-center text-sm">
+          <span className="font-medium">{selectedIds.size} selected</span>
           <button
             onClick={() => setBulkDeleteModal(true)}
-            className="bg-red-600 text-white px-5 py-2 rounded-lg hover:bg-red-700"
+            className="bg-red-600 text-white px-3 py-1 rounded-lg hover:bg-red-700 text-sm"
           >
             Delete Selected
           </button>
@@ -1205,68 +1316,71 @@ export default function Questions() {
       )}
 
       {/* Questions Table */}
-      <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+      <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
         {loading ? (
-          <div className="flex justify-center items-center p-20">
-            <div className="w-10 h-10 border-4 border-red-500 border-t-transparent rounded-full animate-spin" />
+          <div className="flex justify-center items-center p-12">
+            <div className="w-8 h-8 border-3 border-red-500 border-t-transparent rounded-full animate-spin" />
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full">
+            <table className="w-full text-sm">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="w-12 p-4">
+                  <th className="w-10 p-2">
                     <input
                       type="checkbox"
                       checked={isAllSelected}
                       onChange={toggleSelectAll}
-                      className="w-4 h-4"
+                      className="w-3.5 h-3.5"
                     />
                   </th>
-                  <th className="text-left p-4 font-semibold text-gray-700">Question</th>
-                  <th className="text-left p-4 font-semibold text-gray-700 w-40">Type</th>
-                  <th className="text-left p-4 font-semibold text-gray-700">Competency</th>
-                  <th className="text-left p-4 font-semibold text-gray-700 w-44">Target Group</th>
-                  <th className="text-right p-4 font-semibold text-gray-700 w-20">Score</th>
-                  <th className="text-left p-4 font-semibold text-gray-700 w-24">Actions</th>
+                  <th className="text-left p-2 font-semibold text-gray-700">Question</th>
+                  <th className="text-left p-2 font-semibold text-gray-700 w-28">Type</th>
+                  <th className="text-left p-2 font-semibold text-gray-700">Competency</th>
+                  <th className="text-left p-2 font-semibold text-gray-700 w-28">Target</th>
+                  <th className="text-right p-2 font-semibold text-gray-700 w-16">Score</th>
+                  <th className="text-left p-2 font-semibold text-gray-700 w-20">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
                 {items.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="p-12 text-center text-gray-500">
+                    <td colSpan={7} className="p-8 text-center text-gray-500 text-sm">
                       No questions found
                     </td>
                   </tr>
                 ) : (
                   items.map(q => (
                     <tr key={q._id} className="hover:bg-gray-50">
-                      <td className="p-4">
+                      <td className="p-2">
                         <input
                           type="checkbox"
                           checked={selectedIds.has(q._id)}
                           onChange={() => toggleSelect(q._id)}
-                          className="w-4 h-4"
+                          className="w-3.5 h-3.5"
                         />
                       </td>
-                      <td className="p-4 max-w-lg">
-                        <div className="line-clamp-2 font-medium">{q.text}</div>
+                      <td className="p-2 max-w-md">
+                        <div className="line-clamp-1 font-medium text-sm">{q.text}</div>
                       </td>
-                      <td className="p-4">
-                        <span className={`px-2.5 py-1 text-xs rounded ${TYPE_BADGES[q.type]}`}>
-                          {TYPE_LABELS[q.type] || q.type}
+                      <td className="p-2">
+                        <span className={`px-2 py-0.5 text-xs rounded ${TYPE_BADGES[q.type]}`}>
+                          {TYPE_LABELS[q.type]?.split(' ')[0] || q.type}
                         </span>
                       </td>
-                      <td className="p-4">{q.competencyId?.name || '—'}</td>
-                      <td className="p-4 capitalize">{q.targetGroup || '—'}</td>
-                      <td className="p-4 text-right font-medium">{q.score ?? 1}</td>
-                      <td className="p-4">
-                        <div className="flex gap-3">
-                          <button onClick={() => openEdit(q)}>
-                            <Edit2 size={18} className="text-gray-600 hover:text-blue-600" />
+                      <td className="p-2 text-sm">{q.competencyId?.name || '—'}</td>
+                      <td className="p-2 text-sm capitalize">{q.targetGroup?.[0]?.toUpperCase() + q.targetGroup?.slice(1) || '—'}</td>
+                      <td className="p-2 text-right text-sm font-medium">{q.score ?? 1}</td>
+                      <td className="p-2">
+                        <div className="flex gap-2">
+                          <button onClick={() => openView(q)} title="View Details">
+                            <Eye size={16} className="text-gray-600 hover:text-blue-600" />
                           </button>
-                          <button onClick={() => setDeleteModal(q)}>
-                            <Trash2 size={18} className="text-red-600 hover:text-red-800" />
+                          <button onClick={() => openEdit(q)} title="Edit">
+                            <Edit2 size={16} className="text-gray-600 hover:text-blue-600" />
+                          </button>
+                          <button onClick={() => setDeleteModal(q)} title="Delete">
+                            <Trash2 size={16} className="text-red-600 hover:text-red-800" />
                           </button>
                         </div>
                       </td>
@@ -1279,23 +1393,65 @@ export default function Questions() {
         )}
       </div>
 
+      {/* Pagination */}
+      {pagination.totalPages > 1 && (
+        <div className="flex justify-between items-center mt-4 text-sm">
+          <span className="text-gray-600">
+            Page {pagination.page} of {pagination.totalPages}
+          </span>
+          <div className="flex gap-1">
+            <button
+              onClick={() => goToPage(pagination.page - 1)}
+              disabled={pagination.page === 1}
+              className="p-1 border rounded hover:bg-gray-50 disabled:opacity-50"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => goToPage(pagination.page + 1)}
+              disabled={pagination.page === pagination.totalPages}
+              className="p-1 border rounded hover:bg-gray-50 disabled:opacity-50"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── VIEW MODAL ──────────────────────────────────────────────────── */}
+      <Modal open={modal === 'view'} onClose={() => setModal(null)} title="Question Details">
+        {viewQuestion && (
+          <div className="max-h-[70vh] overflow-y-auto pr-1">
+            {renderQuestionDetails(viewQuestion)}
+          </div>
+        )}
+        <div className="flex justify-end gap-3 mt-6">
+          <button
+            onClick={() => setModal(null)}
+            className="px-4 py-2 border border-gray-300 rounded-lg font-semibold text-gray-700 hover:bg-gray-50 transition-colors text-sm"
+          >
+            Close
+          </button>
+        </div>
+      </Modal>
+
       {/* ── CREATE MODAL ──────────────────────────────────────────────────── */}
       <Modal open={modal === 'create'} onClose={() => setModal(null)} title="Add Questions" large>
-        <div className="space-y-6 max-h-[78vh] overflow-y-auto pr-3 pb-4">
+        <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
           {/* Competency */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+            <label className="block text-sm font-medium text-gray-700 mb-1">
               Competency <span className="text-red-600">*</span>
             </label>
             <select
               value={batchForm.competencyId}
               onChange={(e) => setBatchForm({ ...batchForm, competencyId: e.target.value })}
-              className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:border-red-500 focus:ring-red-200"
+              className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:border-red-500"
             >
-              <option value="">— Select Competency —</option>
+              <option value="">— Select —</option>
               {competencies.map(c => (
                 <option key={c._id} value={c._id}>
-                  {c.name} • {c.category}
+                  {c.name}
                 </option>
               ))}
             </select>
@@ -1303,17 +1459,17 @@ export default function Questions() {
 
           {/* Target Group Buttons */}
           {batchForm.competencyId && (
-            <div className="mt-2">
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">
                 Target Group <span className="text-red-600">*</span>
               </label>
 
               {targetGroupsForComp.length === 0 ? (
-                <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-sm">
-                  This competency has no target groups defined yet.
+                <div className="p-2 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-xs">
+                  No target groups defined
                 </div>
               ) : (
-                <div className="flex flex-wrap gap-3 min-h-[48px] items-center">
+                <div className="flex flex-wrap gap-2">
                   {TARGET_GROUPS.map((tg) => {
                     const isAvailable = targetGroupsForComp.includes(tg);
                     const isSelected = selectedBatchTargetGroup === tg;
@@ -1325,27 +1481,20 @@ export default function Questions() {
                         disabled={!isAvailable}
                         onClick={() => setSelectedBatchTargetGroup(isSelected ? '' : tg)}
                         className={`
-                          px-5 py-2.5 rounded-full text-sm font-medium transition-all shadow-sm
+                          px-3 py-1 rounded-full text-xs font-medium transition-all
                           ${!isAvailable
                             ? 'bg-gray-100 text-gray-400 cursor-not-allowed opacity-60 line-through'
                             : isSelected
-                            ? 'bg-red-600 text-white ring-2 ring-red-300 ring-offset-2'
-                            : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 active:bg-gray-100'
+                            ? 'bg-red-600 text-white ring-2 ring-red-300'
+                            : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
                           }
                         `}
                       >
-                        {tg.charAt(0).toUpperCase() + tg.slice(1)}
-                        {!isAvailable && ' (not available)'}
+                        {tg}
                       </button>
                     );
                   })}
                 </div>
-              )}
-
-              {!selectedBatchTargetGroup && targetGroupsForComp.length > 0 && (
-                <p className="mt-2 text-sm text-amber-700 bg-amber-50/50 p-2 rounded border border-amber-200">
-                  Please select one target group for all questions in this batch.
-                </p>
               )}
             </div>
           )}
@@ -1354,13 +1503,11 @@ export default function Questions() {
           {batchForm.questionGroups.map((group, groupIndex) => (
             <div
               key={groupIndex}
-              className="border border-gray-200 rounded-xl p-5 bg-white shadow-sm"
+              className="border border-gray-200 rounded-lg p-3 bg-white shadow-sm"
             >
-              <div className="flex justify-between items-center mb-4 pb-3 border-b">
-                <div className="flex items-center gap-3">
-                  <h3 className="font-semibold text-gray-800">
-                    Group {groupIndex + 1}
-                  </h3>
+              <div className="flex justify-between items-center mb-2 pb-2 border-b">
+                <div className="flex items-center gap-2">
+                  <h3 className="font-semibold text-sm">Group {groupIndex + 1}</h3>
                   <select
                     value={group.type}
                     onChange={(e) => {
@@ -1368,39 +1515,37 @@ export default function Questions() {
                       const updatedQs = group.questions.map(q => ({
                         ...q,
                         type: newType,
-                        targetGroup: selectedBatchTargetGroup, // keep sync
+                        targetGroup: selectedBatchTargetGroup,
                       }));
                       updateQuestionGroup(groupIndex, { type: newType, questions: updatedQs });
                     }}
-                    className="border border-gray-300 rounded px-3 py-1.5 text-sm"
+                    className="border border-gray-300 rounded px-2 py-0.5 text-xs"
                   >
                     {TYPES.map(t => (
                       <option key={t} value={t}>{TYPE_LABELS[t]}</option>
                     ))}
                   </select>
-                  <span className={`px-3 py-1 text-xs rounded-full ${TYPE_BADGES[group.type]}`}>
-                    {group.questions.length} {group.questions.length === 1 ? 'question' : 'questions'}
+                  <span className={`px-2 py-0.5 text-xs rounded-full ${TYPE_BADGES[group.type]}`}>
+                    {group.questions.length}
                   </span>
                 </div>
 
                 {batchForm.questionGroups.length > 1 && (
                   <button
                     onClick={() => removeQuestionGroup(groupIndex)}
-                    className="text-red-600 hover:text-red-700 text-sm font-medium"
+                    className="text-red-600 hover:text-red-700 text-xs font-medium"
                   >
-                    Remove Group
+                    Remove
                   </button>
                 )}
               </div>
 
-              <div className="space-y-5">
+              <div className="space-y-3">
                 {group.questions.map((q, qIndex) => (
-                  <div key={qIndex} className="p-4 border border-gray-200 rounded-lg bg-gray-50">
-                    <div className="flex justify-between items-start mb-4">
-                      <h4 className="font-medium text-gray-800">
-                        Question {qIndex + 1}
-                      </h4>
-                      <div className="flex items-center gap-4">
+                  <div key={qIndex} className="p-3 border border-gray-200 rounded-lg bg-gray-50">
+                    <div className="flex justify-between items-start mb-2">
+                      <h4 className="font-medium text-xs">Q{qIndex + 1}</h4>
+                      <div className="flex items-center gap-2">
                         <input
                           type="number"
                           min="0.5"
@@ -1409,34 +1554,29 @@ export default function Questions() {
                           onChange={e => updateQuestionInGroup(groupIndex, qIndex, {
                             score: parseFloat(e.target.value) || 1
                           })}
-                          className="w-20 px-3 py-1.5 border rounded text-sm"
+                          className="w-16 px-2 py-0.5 border rounded text-xs"
                         />
                         {group.questions.length > 1 && (
                           <button
                             onClick={() => removeQuestionFromGroup(groupIndex, qIndex)}
                             className="text-gray-500 hover:text-red-600"
                           >
-                            <X size={20} />
+                            <X size={14} />
                           </button>
                         )}
                       </div>
                     </div>
 
-                    {/* Question Text */}
-                    <div className="mb-4">
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                        Question Text
-                      </label>
+                    <div className="mb-3">
                       <textarea
-                        rows={2}
+                        rows={1}
                         value={q.text}
                         onChange={e => updateQuestionInGroup(groupIndex, qIndex, { text: e.target.value })}
-                        placeholder="Enter question text..."
-                        className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:border-red-500 focus:ring-1 focus:ring-red-200 resize-none"
+                        placeholder="Enter question..."
+                        className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-xs focus:border-red-500 resize-none"
                       />
                     </div>
 
-                    {/* Type-specific fields */}
                     {renderQuestionOptions(q, groupIndex, qIndex)}
                   </div>
                 ))}
@@ -1444,9 +1584,9 @@ export default function Questions() {
                 <button
                   type="button"
                   onClick={() => addQuestionToGroup(groupIndex)}
-                  className="w-full py-3 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-red-500 hover:text-red-600 transition font-medium"
+                  className="w-full py-2 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-red-500 hover:text-red-600 transition text-xs font-medium"
                 >
-                  + Add another {TYPE_LABELS[group.type]} question
+                  + Add question
                 </button>
               </div>
             </div>
@@ -1455,50 +1595,40 @@ export default function Questions() {
           <button
             type="button"
             onClick={addQuestionGroup}
-            className="w-full py-4 border-2 border-dashed border-red-500 rounded-xl text-red-600 hover:bg-red-50 font-semibold transition"
+            className="w-full py-2 border-2 border-dashed border-red-500 rounded-lg text-red-600 hover:bg-red-50 font-medium text-sm transition"
           >
-            + Add New Question Type Group
+            + Add Group
           </button>
         </div>
 
-        <div className="flex justify-end gap-4 mt-6 pt-4 border-t">
+        <div className="flex justify-end gap-3 mt-4 pt-3 border-t">
           <button
             onClick={() => setModal(null)}
-            className="px-6 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+            className="px-4 py-1.5 border border-gray-300 rounded-lg hover:bg-gray-50 transition text-sm"
           >
             Cancel
           </button>
           <button
             onClick={handleSave}
             disabled={!batchForm.competencyId || !selectedBatchTargetGroup}
-            className={`px-6 py-2.5 rounded-lg text-white font-medium ${
+            className={`px-4 py-1.5 rounded-lg text-white font-medium text-sm ${
               batchForm.competencyId && selectedBatchTargetGroup
                 ? 'bg-red-600 hover:bg-red-700'
                 : 'bg-gray-400 cursor-not-allowed'
             }`}
           >
-            Create Questions
+            Create
           </button>
         </div>
       </Modal>
 
       {/* Upload Modal */}
-      <Modal open={modal === 'upload'} onClose={() => setModal(null)} title="Upload Questions Document">
-        <div className="space-y-4">
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <h4 className="font-semibold text-blue-900 mb-2">Document Format Guidelines</h4>
-            <ul className="text-sm text-blue-800 space-y-1 list-disc list-inside">
-              <li>Start each question with "Question:" or "Q:" or a number (e.g., "1.")</li>
-              <li>Specify type with "Type: MCQ" (supports: MCQ, True/False, Rating, Multi-Select, Matching, Ordering, Scenario MCQ, Classification)</li>
-              <li>For MCQ/Multi-Select, use "a)" or "a." for options, mark correct with "*" or "(correct)"</li>
-              <li>Specify "Answer:" or "Correct:" for the correct answer</li>
-              <li>For Scenario MCQ, add "Scenario: ..." before options</li>
-              <li>For Matching, use "left item -> right item" format</li>
-              <li>For Ordering, list items with "1.", "2.", etc.</li>
-              <li>Optional: "Score: 2" to set point value</li>
-            </ul>
+      <Modal open={modal === 'upload'} onClose={() => setModal(null)} title="Upload Questions">
+        <div className="space-y-3">
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+            <p className="text-xs text-blue-800">Support: PDF, DOCX, TXT</p>
           </div>
-          <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-red-500 transition-colors">
+          <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-red-500 transition-colors">
             <input
               ref={fileInputRef}
               type="file"
@@ -1508,56 +1638,47 @@ export default function Questions() {
               id="file-upload"
             />
             <label htmlFor="file-upload" className="cursor-pointer">
-              <FileText className="w-12 h-12 mx-auto text-gray-400 mb-3" />
-              <p className="text-sm font-medium text-gray-700 mb-1">
-                Click to upload or drag and drop
-              </p>
-              <p className="text-xs text-gray-500">
-                PDF, DOCX, or TXT (max 10MB)
-              </p>
+              <FileText className="w-8 h-8 mx-auto text-gray-400 mb-2" />
+              <p className="text-xs font-medium text-gray-700">Click to upload</p>
             </label>
           </div>
           {uploadLoading && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-center p-4">
-                <div className="w-8 h-8 border-4 border-red-500 border-t-transparent rounded-full animate-spin" />
-                <span className="ml-3 text-gray-600">Parsing document...</span>
+            <div className="space-y-1">
+              <div className="flex items-center justify-center gap-2">
+                <div className="w-5 h-5 border-3 border-red-500 border-t-transparent rounded-full animate-spin" />
+                <span className="text-xs text-gray-600">Parsing...</span>
               </div>
-              <div className="w-full bg-gray-200 rounded-full h-2.5">
+              <div className="w-full bg-gray-200 rounded-full h-1">
                 <div
-                  className="bg-red-500 h-2.5 rounded-full transition-all duration-300"
+                  className="bg-red-500 h-1 rounded-full transition-all duration-300"
                   style={{ width: `${uploadProgress}%` }}
                 />
               </div>
-              <p className="text-xs text-gray-500 text-center">{uploadProgress}% complete</p>
             </div>
           )}
           {uploadedQuestions && (
-            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-              <div className="flex items-start gap-3">
-                <Check className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+            <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+              <div className="flex items-start gap-2">
+                <Check className="w-4 h-4 text-green-600 flex-shrink-0 mt-0.5" />
                 <div className="flex-1">
-                  <h4 className="font-semibold text-green-900 mb-1">
-                    Successfully extracted {uploadedQuestions.questionGroups.reduce((sum, g) => sum + g.questions.length, 0)} questions
-                  </h4>
-                  <p className="text-sm text-green-800 mb-3">
-                    Review and edit the questions before creating them.
+                  <p className="text-xs text-green-800 mb-2">
+                    {uploadedQuestions.questionGroups.reduce((sum, g) => sum + g.questions.length, 0)} questions extracted
                   </p>
                   <button
                     onClick={useUploadedQuestions}
-                    className="px-4 py-2 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition-colors text-sm"
+                    className="px-3 py-1 bg-green-600 text-white rounded-lg hover:bg-green-700 text-xs"
                   >
-                    Review & Edit Questions
+                    Review
                   </button>
                 </div>
               </div>
             </div>
           )}
         </div>
-        <div className="flex justify-end gap-3 mt-6">
+        <div className="flex justify-end gap-3 mt-4">
           <button
             onClick={() => setModal(null)}
-            className="px-4 py-2 border border-gray-300 rounded-lg font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+            className="px-4 py-1.5 border border-gray-300 rounded-lg font-medium text-gray-700 hover:bg-gray-50 text-sm"
           >
             Close
           </button>
@@ -1567,14 +1688,14 @@ export default function Questions() {
       {/* Edit Modal */}
       <Modal open={modal === 'edit'} onClose={() => setModal(null)} title="Edit Question" large>
         {editForm && (
-          <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
-            <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
+            <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Competency</label>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">Competency</label>
                 <select
                   value={editForm.competencyId}
                   onChange={(e) => setEditForm({ ...editForm, competencyId: e.target.value })}
-                  className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:border-red-500 text-sm"
+                  className="w-full h-8 px-2 rounded-lg border border-gray-300 focus:border-red-500 text-xs"
                 >
                   <option value="">— Select —</option>
                   {competencies.map((c) => (
@@ -1583,7 +1704,7 @@ export default function Questions() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Question Type</label>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">Type</label>
                 <select
                   value={editForm.type}
                   onChange={(e) => setEditForm({
@@ -1593,7 +1714,7 @@ export default function Questions() {
                     score: editForm.score,
                     type: e.target.value,
                   })}
-                  className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:border-red-500 text-sm"
+                  className="w-full h-8 px-2 rounded-lg border border-gray-300 focus:border-red-500 text-xs"
                 >
                   {TYPES.map((t) => (
                     <option key={t} value={t}>{TYPE_LABELS[t]}</option>
@@ -1603,25 +1724,25 @@ export default function Questions() {
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Score</label>
+              <label className="block text-xs font-semibold text-gray-700 mb-1">Score</label>
               <input
                 type="number"
                 min="0"
                 step="0.5"
                 value={editForm.score}
                 onChange={(e) => setEditForm({ ...editForm, score: parseFloat(e.target.value) || 1 })}
-                className="w-32 h-10 px-3 rounded-lg border border-gray-300 focus:border-red-500 text-sm"
+                className="w-20 h-8 px-2 rounded-lg border border-gray-300 focus:border-red-500 text-xs"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Question Text</label>
+              <label className="block text-xs font-semibold text-gray-700 mb-1">Question Text</label>
               <textarea
-                rows={3}
+                rows={2}
                 value={editForm.text}
                 onChange={(e) => setEditForm({ ...editForm, text: e.target.value })}
                 placeholder="Enter the question..."
-                className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:border-red-500 text-sm resize-none"
+                className="w-full px-3 py-1.5 rounded-lg border border-gray-300 focus:border-red-500 text-xs resize-none"
               />
             </div>
 
@@ -1629,16 +1750,16 @@ export default function Questions() {
           </div>
         )}
 
-        <div className="flex justify-end gap-3 mt-6">
+        <div className="flex justify-end gap-3 mt-4">
           <button
             onClick={() => setModal(null)}
-            className="px-4 py-2 border border-gray-300 rounded-lg font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+            className="px-4 py-1.5 border border-gray-300 rounded-lg font-medium text-gray-700 hover:bg-gray-50 text-sm"
           >
             Cancel
           </button>
           <button
             onClick={handleSave}
-            className="px-4 py-2 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition-colors"
+            className="px-4 py-1.5 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 text-sm"
           >
             Save
           </button>
@@ -1652,22 +1773,21 @@ export default function Questions() {
           onClick={() => setDeleteModal(null)}
         >
           <div
-            className="bg-white p-6 rounded-xl shadow-lg max-w-sm w-full mx-4"
+            className="bg-white p-4 rounded-lg shadow-lg max-w-sm w-full mx-4"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-lg font-bold text-gray-900 mb-2">Delete Question</h3>
-            <p className="text-gray-600 mb-1 text-sm">Are you sure you want to delete this question?</p>
-            <p className="text-gray-500 text-xs mb-5 line-clamp-2">{deleteModal.text}</p>
-            <div className="flex justify-end gap-3">
+            <h3 className="text-base font-bold text-gray-900 mb-2">Delete Question</h3>
+            <p className="text-sm text-gray-600 mb-3 line-clamp-2">{deleteModal.text}</p>
+            <div className="flex justify-end gap-2">
               <button
                 onClick={() => setDeleteModal(null)}
-                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-semibold transition-colors"
+                className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg font-medium"
               >
                 Cancel
               </button>
               <button
                 onClick={handleDelete}
-                className="px-4 py-2 bg-red-600 text-white hover:bg-red-700 rounded-lg font-semibold transition-colors"
+                className="px-3 py-1.5 text-sm bg-red-600 text-white hover:bg-red-700 rounded-lg font-medium"
               >
                 Delete
               </button>
@@ -1683,49 +1803,32 @@ export default function Questions() {
           onClick={() => setBulkDeleteModal(false)}
         >
           <div
-            className="bg-white p-6 rounded-xl shadow-lg max-w-md w-full mx-4"
+            className="bg-white p-4 rounded-lg shadow-lg max-w-md w-full mx-4"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
-                <Trash2 className="w-5 h-5 text-red-600" />
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
+                <Trash2 className="w-4 h-4 text-red-600" />
               </div>
-              <div>
-                <h3 className="text-lg font-bold text-gray-900">
-                  Delete {selectedIds.size} Question{selectedIds.size !== 1 ? 's' : ''}
-                </h3>
-              </div>
+              <h3 className="text-base font-bold text-gray-900">
+                Delete {selectedIds.size} Question{selectedIds.size !== 1 ? 's' : ''}
+              </h3>
             </div>
-            <p className="text-gray-600 mb-2 text-sm">
-              Are you sure you want to delete{' '}
-              <span className="font-semibold text-red-600">{selectedIds.size}</span> selected question
-              {selectedIds.size !== 1 ? 's' : ''}?
+            <p className="text-sm text-gray-600 mb-4">
+              Are you sure? This action cannot be undone.
             </p>
-            <p className="text-gray-500 text-xs mb-5">
-              This action cannot be undone. All selected questions will be permanently removed.
-            </p>
-            {selectedIds.size <= 5 && (
-              <div className="mb-5 bg-gray-50 rounded-lg p-3 max-h-32 overflow-y-auto">
-                <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Selected questions:</p>
-                {items.filter(q => selectedIds.has(q._id)).map(q => (
-                  <p key={q._id} className="text-xs text-gray-600 line-clamp-1 mb-1">
-                    • {q.text}
-                  </p>
-                ))}
-              </div>
-            )}
-            <div className="flex justify-end gap-3">
+            <div className="flex justify-end gap-2">
               <button
                 onClick={() => setBulkDeleteModal(false)}
-                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-semibold transition-colors"
+                className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg font-medium"
               >
                 Cancel
               </button>
               <button
                 onClick={handleBulkDelete}
-                className="px-4 py-2 bg-red-600 text-white hover:bg-red-700 rounded-lg font-semibold transition-colors"
+                className="px-3 py-1.5 text-sm bg-red-600 text-white hover:bg-red-700 rounded-lg font-medium"
               >
-                Delete {selectedIds.size} Question{selectedIds.size !== 1 ? 's' : ''}
+                Delete
               </button>
             </div>
           </div>
