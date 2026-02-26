@@ -50,9 +50,9 @@ export const getCompetency = asyncHandler(async (req, res, next) => {
 
 // ─── CREATE ──────────────────────────────────────────────────────────────────
 export const createCompetency = asyncHandler(async (req, res, next) => {
-  const { name, category, description } = req.body;
+  const { name, category,targetGroup, description } = req.body;
 
-  const competency = await Competency.create({ name, category, description });
+  const competency = await Competency.create({ name, category,targetGroup, description });
 
   res.status(201).json({
     status: 'success',
@@ -62,12 +62,12 @@ export const createCompetency = asyncHandler(async (req, res, next) => {
 
 // ─── UPDATE ──────────────────────────────────────────────────────────────────
 export const updateCompetency = asyncHandler(async (req, res, next) => {
-  const { name, category, description } = req.body;
+  const { name, category, targetGroup, description } = req.body;
   const updates = {};
   if (name !== undefined)        updates.name        = name;
   if (category !== undefined)    updates.category    = category;
   if (description !== undefined) updates.description = description;
-
+if (targetGroup !== undefined) updates.targetGroup = targetGroup;
   const competency = await Competency.findByIdAndUpdate(req.params.id, updates, {
     new: true, runValidators: true,
   });
