@@ -2,14 +2,8 @@
 import mongoose from 'mongoose';
 
 export const QUESTION_TYPES = [
-  'MCQ',
-  'Rating',
-  'TrueFalse',
-  'MultiSelect',
-  'Matching',
-  'Ordering',
-  'ScenarioMCQ',
-  'DragDropClassification',
+  'MCQ', 'Rating', 'TrueFalse', 'MultiSelect',
+  'Matching', 'Ordering', 'ScenarioMCQ', 'DragDropClassification',
 ];
 
 const questionSchema = new mongoose.Schema(
@@ -17,7 +11,13 @@ const questionSchema = new mongoose.Schema(
     competencyId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Competency',
-      required: [true, 'Competency ID is required.'],
+      required: [true, 'Competency is required.'],
+    },
+
+    targetGroup: {
+      type: String,
+      required: [true, 'Target group is required.'],
+      enum: ['managerial', 'non-managerial', 'common'],
     },
 
     type: {
@@ -26,84 +26,30 @@ const questionSchema = new mongoose.Schema(
       enum: QUESTION_TYPES,
     },
 
-    text: {
-      type: String,
-      required: [true, 'Question text is required.'],
-      trim: true,
-      maxlength: 2000,
-    },
+    text: { type: String, required: true, trim: true, maxlength: 2000 },
+    score: { type: Number, default: 1, min: 0.5 },
 
-    score: {
-      type: Number,
-      default: 1,
-      min: [0.5, 'Score must be positive.'],
-    },
+    
+    options: { type: [String], default: [] },
+    correctAnswer: { type: String, default: null, select: false },
+    correctAnswers: { type: [String], default: [], select: false },
+    scenario: { type: String, default: '', trim: true, maxlength: 5000 },
+    matchingPairs: { type: [{ left: String, right: String }], default: [], select: false },
+    correctOrder: { type: [String], default: [], select: false },
+    categories: { type: mongoose.Schema.Types.Mixed, default: null, select: false },
 
-    // ─────────── MCQ / MultiSelect ───────────
-    options: {
-      type: [String],
-      default: [],
-    },
-
-    correctAnswer: {
-      type: String,
-      select: false,
-      default: null,
-    },
-
-    correctAnswers: {
-      type: [String],
-      select: false,
-      default: [],
-    },
-
-    // ─────────── Scenario ───────────
-    scenario: {
-      type: String,
-      default: '',
-      trim: true,
-      maxlength: 5000,
-    },
-
-    // ─────────── Matching ───────────
-    matchingPairs: {
-      type: [
-        {
-          left: { type: String, required: true },
-          right: { type: String, required: true },
-        },
-      ],
-      select: false,
-      default: [],
-    },
-
+    // derived/shuffled fields
     matchingLeft: { type: [String], default: [] },
     matchingRight: { type: [String], default: [] },
-
-    // ─────────── Ordering ───────────
-    correctOrder: {
-      type: [String],
-      select: false,
-      default: [],
-    },
-
     orderItems: { type: [String], default: [] },
-
-    // ─────────── DragDrop ───────────
-    categories: {
-      type: mongoose.Schema.Types.Mixed,
-      select: false,
-      default: null,
-    },
-
     classificationItems: { type: [String], default: [] },
     categoryNames: { type: [String], default: [] },
   },
   { timestamps: true, strict: true }
 );
 
-questionSchema.index({ competencyId: 1 });
-questionSchema.index({ competencyId: 1, type: 1 });
+questionSchema.index({ competencyId: 1, targetGroup: 1 });
+questionSchema.index({ competencyId: 1, type: 1, targetGroup: 1 });
 
 // ─────────────────────────────────────────────
 // Utility

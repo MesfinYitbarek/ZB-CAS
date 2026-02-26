@@ -4,6 +4,8 @@ import Recommendation from '../models/Recommendation.js';
 import AppError from '../utils/AppError.js';
 import asyncHandler from '../utils/asyncHandler.js';
 
+const TARGET_GROUPS = ['managerial', 'non-managerial', 'common'];
+
 // ─── LIST ─────────────────────────────────────────────────────────────────────
 export const getCompetencies = asyncHandler(async (req, res) => {
   const { category, page = 1, limit = 50 } = req.query;
@@ -14,22 +16,18 @@ export const getCompetencies = asyncHandler(async (req, res) => {
   const skip = (parseInt(page, 10) - 1) * parseInt(limit, 10);
 
   const [competencies, total] = await Promise.all([
-    Competency.find(filter).skip(skip).limit(parseInt(limit, 10)).sort({ name: 1 }).lean(),
+    Competency.find(filter)
+      .skip(skip)
+      .limit(parseInt(limit, 10))
+      .sort({ name: 1 })
+      .lean(),
     Competency.countDocuments(filter),
   ]);
-
-  // Attach question count for each competency
-  const withCount = await Promise.all(
-    competencies.map(async (c) => ({
-      ...c,
-      noOfQuestions: await Question.countDocuments({ competencyId: c._id }),
-    }))
-  );
 
   res.status(200).json({
     status: 'success',
     data: {
-      competencies: withCount,
+      competencies,
       pagination: { total, page: parseInt(page, 10), limit: parseInt(limit, 10) },
     },
   });
@@ -40,45 +38,110 @@ export const getCompetency = asyncHandler(async (req, res, next) => {
   const competency = await Competency.findById(req.params.id).lean();
   if (!competency) return next(new AppError('Competency not found.', 404));
 
-  const noOfQuestions = await Question.countDocuments({ competencyId: competency._id });
-
   res.status(200).json({
     status: 'success',
-    data:   { competency: { ...competency, noOfQuestions } },
+    data: { competency },
   });
 });
 
-// ─── CREATE ──────────────────────────────────────────────────────────────────
+// ─── CREATE / MERGE TARGET GROUPS ────────────────────────────────────────────
 export const createCompetency = asyncHandler(async (req, res, next) => {
-  const { name, category,targetGroup, description } = req.body;
+  const { name, category, targetGroups } = req.body;
 
-  const competency = await Competency.create({ name, category,targetGroup, description });
+  if (!name || !category) return next(new AppError('Name and category are required.', 400));
+  if (!Array.isArray(targetGroups) || targetGroups.length === 0) {
+    return next(new AppError('At least one target group is required.', 400));
+  }
 
-  res.status(201).json({
+  const uniqueTG = new Set();
+  for (const tg of targetGroups) {
+    if (!tg.targetGroup || !TARGET_GROUPS.includes(tg.targetGroup)) {
+      return next(new AppError('Invalid target group provided.', 400));
+    }
+    if (uniqueTG.has(tg.targetGroup)) {
+      return next(new AppError('Duplicate target groups not allowed.', 400));
+    }
+    uniqueTG.add(tg.targetGroup);
+  }
+
+  let competency = await Competency.findOne({ name, category });
+
+  if (competency) {
+    const existingMap = new Map(competency.targetGroups.map(t => [t.targetGroup, t.description]));
+    targetGroups.forEach(tg => {
+      existingMap.set(tg.targetGroup, tg.description || '');
+    });
+    competency.targetGroups = Array.from(existingMap, ([targetGroup, description]) => ({
+      targetGroup,
+      description,
+    }));
+    await competency.save();
+  } else {
+    competency = await Competency.create({
+      name,
+      category,
+      targetGroups: targetGroups.map(tg => ({
+        targetGroup: tg.targetGroup,
+        description: tg.description || '',
+      })),
+    });
+  }
+
+  res.status(competency ? 200 : 201).json({
     status: 'success',
-    data:   { competency: { ...competency.toObject(), noOfQuestions: 0 } },
+    message: competency ? 'Target groups merged/updated.' : 'Competency created.',
+    data: { competency: competency.toObject() },
   });
 });
 
 // ─── UPDATE ──────────────────────────────────────────────────────────────────
 export const updateCompetency = asyncHandler(async (req, res, next) => {
-  const { name, category, targetGroup, description } = req.body;
-  const updates = {};
-  if (name !== undefined)        updates.name        = name;
-  if (category !== undefined)    updates.category    = category;
-  if (description !== undefined) updates.description = description;
-if (targetGroup !== undefined) updates.targetGroup = targetGroup;
-  const competency = await Competency.findByIdAndUpdate(req.params.id, updates, {
-    new: true, runValidators: true,
-  });
+  const { name, category, targetGroups } = req.body;
 
+  let competency = await Competency.findById(req.params.id);
   if (!competency) return next(new AppError('Competency not found.', 404));
 
-  const noOfQuestions = await Question.countDocuments({ competencyId: competency._id });
+  let updated = false;
+
+  let newName = name !== undefined ? name : competency.name;
+  let newCategory = category !== undefined ? category : competency.category;
+
+  if (name !== undefined || category !== undefined) {
+    const existing = await Competency.findOne({ name: newName, category: newCategory });
+    if (existing && existing._id.toString() !== competency._id.toString()) {
+      return next(new AppError('A competency with this name and category already exists.', 409));
+    }
+    competency.name = newName;
+    competency.category = newCategory;
+    updated = true;
+  }
+
+  if (Array.isArray(targetGroups)) {
+    if (targetGroups.length === 0) {
+      return next(new AppError('At least one target group is required.', 400));
+    }
+    const uniqueTG = new Set();
+    for (const tg of targetGroups) {
+      if (!tg.targetGroup || !TARGET_GROUPS.includes(tg.targetGroup)) {
+        return next(new AppError('Invalid target group provided.', 400));
+      }
+      if (uniqueTG.has(tg.targetGroup)) {
+        return next(new AppError('Duplicate target groups not allowed.', 400));
+      }
+      uniqueTG.add(tg.targetGroup);
+    }
+    competency.targetGroups = targetGroups.map(tg => ({
+      targetGroup: tg.targetGroup,
+      description: tg.description || '',
+    }));
+    updated = true;
+  }
+
+  if (updated) await competency.save();
 
   res.status(200).json({
     status: 'success',
-    data:   { competency: { ...competency.toObject(), noOfQuestions } },
+    data: { competency: competency.toObject() },
   });
 });
 
@@ -87,7 +150,6 @@ export const deleteCompetency = asyncHandler(async (req, res, next) => {
   const competency = await Competency.findById(req.params.id);
   if (!competency) return next(new AppError('Competency not found.', 404));
 
-  // Cascade: remove related questions and recommendations
   await Question.deleteMany({ competencyId: competency._id });
   await Recommendation.deleteMany({ competencyId: competency._id });
   await competency.deleteOne();

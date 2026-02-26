@@ -8,19 +8,20 @@ const SECRET_FIELDS =
 
 // ───────────────────────── GET LIST ─────────────────────────
 export const getQuestions = asyncHandler(async (req, res) => {
-  const { competencyId, type, page = 1, limit = 30 } = req.query;
+  const { competencyId, targetGroup, type, page = 1, limit = 30 } = req.query;
 
   const filter = {};
   if (competencyId) filter.competencyId = competencyId;
+  if (targetGroup) filter.targetGroup = targetGroup;
   if (type) filter.type = type;
 
   const skip = (page - 1) * limit;
 
   const [questions, total] = await Promise.all([
     Question.find(filter)
-      .populate('competencyId', 'name category')
-      .skip(parseInt(skip))
-      .limit(parseInt(limit))
+      .populate('competencyId', 'name category targetGroups')
+      .skip(skip)
+      .limit(limit)
       .sort({ createdAt: -1 })
       .lean(),
     Question.countDocuments(filter),
@@ -28,10 +29,7 @@ export const getQuestions = asyncHandler(async (req, res) => {
 
   res.status(200).json({
     status: 'success',
-    data: {
-      questions,
-      pagination: { total, page: +page, limit: +limit },
-    },
+    data: { questions, pagination: { total, page: +page, limit: +limit } },
   });
 });
 
