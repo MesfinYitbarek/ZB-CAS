@@ -477,3 +477,143 @@ export const exportReports = asyncHandler(async (req, res, next) => {
   res.setHeader('Content-Disposition', `attachment; filename="reports_${userId}.json"`);
   res.status(200).json(reports);
 });
+
+// ─── COMPREHENSIVE REPORT STATS ──────────────────────────────────────────────
+export const getReportStats = asyncHandler(async (req, res) => {
+  const {
+    department, competencyId, assessmentId, level, assessmentType,
+    targetGroup, purpose, gender, dateFrom, dateTo,
+  } = req.query;
+
+  // Build base match for aggregation
+  const match = {};
+  if (department)  match['user.department'] = department;
+  if (competencyId) match.competencyId = toObjectId(competencyId);
+  if (assessmentId) match.assessmentId = toObjectId(assessmentId);
+  if (level) match.level = level;
+  if (dateFrom || dateTo) {
+    match.generatedAt = {};
+    if (dateFrom) match.generatedAt.$gte = new Date(dateFrom);
+    if (dateTo) { const e = new Date(dateTo); e.setHours(23,59,59,999); match.generatedAt.$lte = e; }
+  }
+
+  const [
+    overallStats,
+    levelDist,
+    deptStats,
+    competencyStats,
+    trendData,
+    topPerformers,
+    bottomPerformers,
+  ] = await Promise.all([
+    // Overall summary
+    Report.aggregate([
+      { $match: match },
+      { $group: {
+        _id: null,
+        total: { $sum: 1 },
+        avgScore: { $avg: '$finalScore' },
+        maxScore: { $max: '$finalScore' },
+        minScore: { $min: '$finalScore' },
+        uniqueEmployees: { $addToSet: '$user.userId' },
+        uniqueDepts: { $addToSet: '$user.department' },
+        uniqueCompetencies: { $addToSet: '$competencyName' },
+      }},
+      { $project: {
+        total: 1, avgScore: { $round: ['$avgScore', 1] },
+        maxScore: 1, minScore: 1,
+        uniqueEmployees: { $size: '$uniqueEmployees' },
+        uniqueDepts: { $size: '$uniqueDepts' },
+        uniqueCompetencies: { $size: '$uniqueCompetencies' },
+      }},
+    ]),
+    // Level distribution
+    Report.aggregate([
+      { $match: match },
+      { $group: { _id: '$level', count: { $sum: 1 }, avgScore: { $avg: '$finalScore' } } },
+      { $sort: { _id: 1 } },
+    ]),
+    // Department breakdown
+    Report.aggregate([
+      { $match: match },
+      { $group: {
+        _id: '$user.department',
+        count: { $sum: 1 },
+        avgScore: { $avg: '$finalScore' },
+        maxScore: { $max: '$finalScore' },
+        minScore: { $min: '$finalScore' },
+      }},
+      { $sort: { avgScore: -1 } },
+      { $limit: 10 },
+    ]),
+    // Competency breakdown
+    Report.aggregate([
+      { $match: match },
+      { $group: {
+        _id: '$competencyName',
+        count: { $sum: 1 },
+        avgScore: { $avg: '$finalScore' },
+        competencyId: { $first: '$competencyId' },
+      }},
+      { $sort: { avgScore: -1 } },
+    ]),
+    // Monthly trend (last 12 months)
+    Report.aggregate([
+      { $match: { ...match, generatedAt: { $gte: new Date(Date.now() - 365*24*60*60*1000) } } },
+      { $group: {
+        _id: { year: { $year: '$generatedAt' }, month: { $month: '$generatedAt' } },
+        count: { $sum: 1 },
+        avgScore: { $avg: '$finalScore' },
+      }},
+      { $sort: { '_id.year': 1, '_id.month': 1 } },
+    ]),
+    // Top 5 performers
+    Report.aggregate([
+      { $match: match },
+      { $group: { _id: '$user.userId', name: { $first: '$user.name' }, dept: { $first: '$user.department' }, avgScore: { $avg: '$finalScore' }, count: { $sum: 1 } } },
+      { $sort: { avgScore: -1 } },
+      { $limit: 5 },
+    ]),
+    // Bottom 5 (needing support)
+    Report.aggregate([
+      { $match: match },
+      { $group: { _id: '$user.userId', name: { $first: '$user.name' }, dept: { $first: '$user.department' }, avgScore: { $avg: '$finalScore' }, count: { $sum: 1 } } },
+      { $sort: { avgScore: 1 } },
+      { $limit: 5 },
+    ]),
+  ]);
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      overall: overallStats[0] || { total: 0, avgScore: 0, maxScore: 0, minScore: 0, uniqueEmployees: 0, uniqueDepts: 0, uniqueCompetencies: 0 },
+      levelDistribution: levelDist,
+      departmentBreakdown: deptStats,
+      competencyBreakdown: competencyStats,
+      monthlyTrend: trendData,
+      topPerformers,
+      bottomPerformers,
+    },
+  });
+});
+
+// ─── GET FILTER OPTIONS FOR REPORTS ─────────────────────────────────────────
+export const getReportFilterOptions = asyncHandler(async (req, res) => {
+  const [departments, competencies, assessments] = await Promise.all([
+    Report.distinct('user.department'),
+    Report.distinct('competencyName'),
+    Report.distinct('assessmentId').then(ids =>
+      Assessment.find({ _id: { $in: ids } }).select('description type targetGroup purpose status').lean()
+    ),
+  ]);
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      departments: departments.filter(Boolean).sort(),
+      competencies: competencies.filter(Boolean).sort(),
+      assessments,
+      levels: ['Basic', 'Intermediate', 'Advanced', 'Expert'],
+    },
+  });
+});

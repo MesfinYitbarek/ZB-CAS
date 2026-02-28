@@ -2,11 +2,11 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
-import { Users, Mail } from 'lucide-react';
+import { Users, Mail, UserCircle } from 'lucide-react';
 import api from '../utils/api';
 
 export default function MyTeam() {
-  const { user } = useAuth();
+  const { user, isSupervisor, isAdmin } = useAuth(); // Added role flags
   const nav = useNavigate();
   const { show } = useToast();
 
@@ -28,7 +28,7 @@ export default function MyTeam() {
 
       console.log('API Response:', response.data);
 
-      // ✅ FIXED: Use employees instead of teamMembers
+      // Use employees instead of teamMembers
       const team = Array.isArray(response?.data?.data?.employees)
         ? response.data.data.employees
         : [];
@@ -41,6 +41,26 @@ export default function MyTeam() {
       setLoading(false);
     }
   };
+
+  // Redirect if not supervisor or admin
+  if (!isSupervisor && !isAdmin) {
+    return (
+      <div className="p-7">
+        <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-lg">
+          <div className="flex">
+            <div className="flex-shrink-0">
+              <UserCircle className="h-5 w-5 text-yellow-400" />
+            </div>
+            <div className="ml-3">
+              <p className="text-sm text-yellow-700">
+                You don't have permission to view this page. This page is only accessible to supervisors and administrators.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -59,7 +79,7 @@ export default function MyTeam() {
             My Team
           </h1>
           <p className="text-gray-500 mt-1">
-            Manage and monitor your team members
+            {isAdmin ? 'View all team members (Admin View)' : 'Manage and monitor your team members'}
           </p>
         </div>
 
@@ -88,6 +108,7 @@ export default function MyTeam() {
             <div
               key={member._id}
               className="bg-white rounded-xl p-6 shadow-card hover:shadow-card-hover transition-all border border-gray-100 cursor-pointer"
+              onClick={() => nav(`/employees/${member._id}`)}
             >
               {/* Header */}
               <div className="flex items-start gap-4 mb-2">
@@ -135,10 +156,10 @@ export default function MyTeam() {
                 </div>
               </div>
 
-              {/* Optional Supervisor Info */}
+              {/* Supervisor Info */}
               {member.supervisorId && (
                 <div className="text-xs text-gray-500">
-                  Supervisor: {member.supervisorId.name}
+                  Supervisor: {member.supervisorId.name || 'Assigned'}
                 </div>
               )}
             </div>
