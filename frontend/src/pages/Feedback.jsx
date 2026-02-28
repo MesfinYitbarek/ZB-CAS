@@ -2,43 +2,49 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import {
-  Plus, Star, CheckCircle2, ChevronLeft, ChevronRight, Filter,
-  MessageSquare, BarChart3, X, Eye, ArrowLeft, Clock,
-  Users, RefreshCw, AlertCircle, Calendar
+  Plus, Star, ChevronLeft, ChevronRight, Filter,
+  MessageSquare, BarChart3, X, Eye, ArrowLeft,
+  Users, RefreshCw, AlertCircle, Calendar, Search
 } from 'lucide-react';
 import Modal from '../components/Modal';
 import api from '../utils/api';
 
-// ─── sub-components ───────────────────────────────────────────────────────────
+// ─── StarRating ───────────────────────────────────────────────────────────────
 function StarRating({ value, onChange, size = 'md' }) {
-  const sz = size === 'sm' ? 'w-4 h-4' : 'w-5 h-5';
+  const sz = size === 'sm' ? 'w-3.5 h-3.5' : 'w-4 h-4';
   return (
     <div className="flex gap-0.5">
       {[1, 2, 3, 4, 5].map(v => (
-        <button key={v} type="button" onClick={() => onChange && onChange(value === v ? 0 : v)}
-          className={`${onChange ? 'cursor-pointer hover:scale-110' : 'cursor-default'} transition-transform`}>
-          <Star className={sz} fill={value >= v ? '#EA580C' : 'none'} color={value >= v ? '#EA580C' : '#D1D5DB'} />
+        <button key={v} type="button"
+          onClick={() => onChange && onChange(value === v ? 0 : v)}
+          className={onChange ? 'cursor-pointer' : 'cursor-default'}>
+          <Star
+            className={sz}
+            fill={value >= v ? '#EA580C' : 'none'}
+            color={value >= v ? '#EA580C' : '#CBD5E1'}
+          />
         </button>
       ))}
     </div>
   );
 }
 
+// ─── RatingBar ────────────────────────────────────────────────────────────────
 function RatingDistribution({ summary }) {
-  const { ratedCount, rating5 = 0, rating4 = 0, rating3 = 0, rating2 = 0, rating1 = 0 } = summary;
+  const { ratedCount } = summary;
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-1">
       {[5, 4, 3, 2, 1].map(star => {
         const count = summary[`rating${star}`] || 0;
         const pct = ratedCount > 0 ? (count / ratedCount) * 100 : 0;
         return (
-          <div key={star} className="flex items-center gap-2 text-xs">
-            <span className="w-3 text-right text-gray-500 font-medium">{star}</span>
-            <Star className="w-3 h-3 text-orange-400 flex-shrink-0" fill="#FB923C" color="#FB923C" />
-            <div className="flex-1 bg-gray-100 rounded-full h-1.5">
-              <div className="bg-orange-400 h-1.5 rounded-full transition-all" style={{ width: `${pct}%` }} />
+          <div key={star} className="flex items-center gap-1.5 text-xs">
+            <span className="w-2.5 text-right text-slate-400 tabular-nums">{star}</span>
+            <Star className="w-2.5 h-2.5 text-orange-400 flex-shrink-0" fill="#FB923C" color="#FB923C" />
+            <div className="flex-1 bg-slate-100 rounded-full h-1">
+              <div className="bg-orange-400 h-1 rounded-full transition-all duration-300" style={{ width: `${pct}%` }} />
             </div>
-            <span className="w-5 text-gray-500">{count}</span>
+            <span className="w-4 text-slate-400 tabular-nums text-right">{count}</span>
           </div>
         );
       })}
@@ -46,18 +52,73 @@ function RatingDistribution({ summary }) {
   );
 }
 
+// ─── Paginator ────────────────────────────────────────────────────────────────
 function Paginator({ pagination, goToPage }) {
   if (!pagination || pagination.total <= pagination.limit) return null;
   const tp = pagination.totalPages, cp = pagination.page;
   const start = Math.max(1, Math.min(cp - 2, tp - 4));
   const pages = Array.from({ length: Math.min(5, tp) }, (_, i) => start + i);
   return (
-    <div className="flex justify-between items-center pt-4 border-t border-gray-100">
-      <p className="text-sm text-gray-500">{(cp-1)*pagination.limit+1}–{Math.min(cp*pagination.limit, pagination.total)} of {pagination.total}</p>
+    <div className="flex justify-between items-center pt-3 border-t border-slate-100 mt-3">
+      <p className="text-xs text-slate-400">
+        {(cp - 1) * pagination.limit + 1}–{Math.min(cp * pagination.limit, pagination.total)} of {pagination.total}
+      </p>
       <div className="flex items-center gap-1">
-        <button onClick={() => goToPage(cp-1)} disabled={cp===1} className="p-2 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"><ChevronLeft className="w-4 h-4"/></button>
-        {pages.map(p => <button key={p} onClick={() => goToPage(p)} className={`w-9 h-9 rounded-lg text-sm font-medium ${cp===p?'bg-brand-red text-white':'border border-gray-200 text-gray-700 hover:bg-gray-50'}`}>{p}</button>)}
-        <button onClick={() => goToPage(cp+1)} disabled={cp===tp} className="p-2 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"><ChevronRight className="w-4 h-4"/></button>
+        <button onClick={() => goToPage(cp - 1)} disabled={cp === 1}
+          className="p-1.5 rounded-md border border-slate-200 text-slate-400 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed">
+          <ChevronLeft className="w-3.5 h-3.5" />
+        </button>
+        {pages.map(p => (
+          <button key={p} onClick={() => goToPage(p)}
+            className={`w-7 h-7 rounded-md text-xs font-semibold transition-colors ${cp === p ? 'bg-brand-red text-white' : 'border border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+            {p}
+          </button>
+        ))}
+        <button onClick={() => goToPage(cp + 1)} disabled={cp === tp}
+          className="p-1.5 rounded-md border border-slate-200 text-slate-400 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed">
+          <ChevronRight className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Avatar initials ──────────────────────────────────────────────────────────
+function Avatar({ name, size = 'sm' }) {
+  const initials = name?.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase() || '?';
+  const sz = size === 'sm' ? 'w-7 h-7 text-xs' : 'w-8 h-8 text-sm';
+  return (
+    <div className={`${sz} rounded-full bg-brand-red/10 text-brand-red font-bold flex items-center justify-center flex-shrink-0`}>
+      {initials}
+    </div>
+  );
+}
+
+// ─── Chip ─────────────────────────────────────────────────────────────────────
+function Chip({ children, color = 'slate' }) {
+  const styles = {
+    slate:  'bg-slate-100 text-slate-600',
+    indigo: 'bg-indigo-50 text-indigo-600',
+    teal:   'bg-teal-50 text-teal-600',
+    orange: 'bg-orange-50 text-orange-600',
+  };
+  return (
+    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${styles[color]}`}>
+      {children}
+    </span>
+  );
+}
+
+// ─── KPI Card ─────────────────────────────────────────────────────────────────
+function KpiCard({ label, value, icon: Icon, accent }) {
+  return (
+    <div className="bg-white rounded-lg border border-slate-200 px-4 py-3 flex items-center gap-3">
+      <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${accent}`}>
+        <Icon className="w-4 h-4" />
+      </div>
+      <div>
+        <p className="text-[10px] uppercase tracking-wide font-semibold text-slate-400">{label}</p>
+        <p className="text-lg font-bold text-slate-800 leading-tight">{value}</p>
       </div>
     </div>
   );
@@ -68,38 +129,32 @@ export default function Feedback() {
   const { user, isAdmin } = useAuth();
   const { show } = useToast();
 
-  // ── admin: summary card view vs detail drill-down ─────────────────────────
   const [adminView, setAdminView] = useState('summary');
   const [selectedSummary, setSelectedSummary] = useState(null);
-
-  // ── loading ───────────────────────────────────────────────────────────────
   const [loading, setLoading] = useState(true);
 
-  // ── modal ─────────────────────────────────────────────────────────────────
+  // modal
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState({ assessmentId: '', content: '', rating: 0 });
 
-  // ── admin: summary state ──────────────────────────────────────────────────
+  // admin summary
   const [summaries, setSummaries] = useState([]);
   const [summaryFilters, setSummaryFilters] = useState({ competencyId: '', dateFrom: '', dateTo: '' });
   const [competencies, setCompetencies] = useState([]);
 
-  // ── admin: detail drill-down state ───────────────────────────────────────
+  // admin detail
   const [detailFeedbacks, setDetailFeedbacks] = useState([]);
-  const [detailFilter, setDetailFilter] = useState('');
   const [detailPagination, setDetailPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 0 });
 
-  // ── employee state ────────────────────────────────────────────────────────
+  // employee
   const [myFeedbacks, setMyFeedbacks] = useState([]);
   const [myPagination, setMyPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 0 });
   const [eligibleAssessments, setEligibleAssessments] = useState([]);
 
-  // ── load competencies (for admin filter) ──────────────────────────────────
   useEffect(() => {
     api.get('/competencies').then(({ data }) => setCompetencies(data.data?.competencies || [])).catch(() => {});
   }, []);
 
-  // ── load eligible assessments for employee ────────────────────────────────
   useEffect(() => {
     if (!isAdmin) {
       api.get('/feedback/eligible-assessments')
@@ -108,7 +163,6 @@ export default function Feedback() {
     }
   }, [isAdmin]);
 
-  // ── admin: load summaries ─────────────────────────────────────────────────
   const loadSummaries = useCallback(async () => {
     setLoading(true);
     try {
@@ -122,22 +176,19 @@ export default function Feedback() {
     setLoading(false);
   }, [summaryFilters]);
 
-  // ── admin: load detail feedbacks for one assessment ───────────────────────
   const loadDetail = useCallback(async () => {
     if (!selectedSummary) return;
     setLoading(true);
     try {
       const params = { page: detailPagination.page, limit: detailPagination.limit };
-      if (detailFilter !== '') params.reviewed = detailFilter;
       const { data } = await api.get(`/feedback/admin/by-assessment/${selectedSummary.assessmentId}`, { params });
       setDetailFeedbacks(data.data?.feedbacks || []);
       const pg = data.data?.pagination;
       if (pg) setDetailPagination(prev => ({ ...prev, total: pg.total, totalPages: Math.ceil(pg.total / prev.limit) }));
     } catch { show('Failed to load feedback details.', 'error'); }
     setLoading(false);
-  }, [selectedSummary, detailFilter, detailPagination.page, detailPagination.limit]);
+  }, [selectedSummary, detailPagination.page, detailPagination.limit]);
 
-  // ── employee: load own feedbacks ──────────────────────────────────────────
   const loadMyFeedbacks = useCallback(async () => {
     setLoading(true);
     try {
@@ -149,7 +200,6 @@ export default function Feedback() {
     setLoading(false);
   }, [myPagination.page, myPagination.limit]);
 
-  // ── trigger loads ─────────────────────────────────────────────────────────
   useEffect(() => {
     if (isAdmin) {
       if (adminView === 'summary') loadSummaries();
@@ -159,18 +209,6 @@ export default function Feedback() {
     }
   }, [isAdmin, adminView, loadSummaries, loadDetail, loadMyFeedbacks]);
 
-  // ── admin: mark reviewed ──────────────────────────────────────────────────
-  const reviewItem = async (id) => {
-    try {
-      await api.patch(`/feedback/${id}/review`);
-      show('Marked as reviewed.', 'success');
-      setDetailFeedbacks(prev => prev.map(f => f._id === id ? { ...f, reviewed: true } : f));
-      // update pending count in selected summary
-      setSelectedSummary(prev => prev ? { ...prev, pendingReview: Math.max(0, prev.pendingReview - 1), reviewedCount: prev.reviewedCount + 1 } : prev);
-    } catch { show('Failed to mark as reviewed.', 'error'); }
-  };
-
-  // ── employee: submit feedback ─────────────────────────────────────────────
   const handleSubmit = async () => {
     if (!form.assessmentId || !form.content.trim()) return show('Please select an assessment and write feedback.', 'error');
     try {
@@ -183,67 +221,63 @@ export default function Feedback() {
     } catch (err) { show(err.response?.data?.message || 'Failed to submit feedback.', 'error'); }
   };
 
-  // ─── EMPLOYEE VIEW ────────────────────────────────────────────────────────
+  const Spinner = () => (
+    <div className="flex items-center justify-center py-16">
+      <div className="w-7 h-7 border-2 border-brand-red border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+
+  // ─── EMPLOYEE VIEW ──────────────────────────────────────────────────────────
   if (!isAdmin) {
     const pending = eligibleAssessments.filter(a => !a.alreadySubmitted);
     return (
-      <div className="p-7">
-        <div className="flex justify-between items-start mb-6">
+      <div className="p-6 max-w-3xl">
+        {/* Header */}
+        <div className="flex justify-between items-center mb-5">
           <div>
-            <h1 className="text-3xl font-display font-bold text-brand-black">My Feedback</h1>
-            <p className="text-gray-500 mt-1">Submit feedback for assessments you have completed.</p>
+            <h1 className="text-xl font-bold text-slate-800">My Feedback</h1>
+            <p className="text-xs text-slate-400 mt-0.5">Submit feedback for completed assessments</p>
           </div>
-          <button onClick={() => { setForm({ assessmentId: '', content: '', rating: 0 }); setModal(true); }}
+          <button
+            onClick={() => { setForm({ assessmentId: '', content: '', rating: 0 }); setModal(true); }}
             disabled={pending.length === 0}
-            className="flex items-center gap-2 px-5 py-2.5 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-            <Plus className="w-4 h-4" /> Submit Feedback
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-brand-red text-white rounded-lg text-sm font-semibold hover:bg-brand-red-dark transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+            <Plus className="w-3.5 h-3.5" /> New Feedback
           </button>
         </div>
 
-        {pending.length === 0 && eligibleAssessments.length > 0 && (
-          <div className="bg-green-50 border border-green-200 rounded-xl p-4 mb-5 flex items-center gap-3">
-            <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
-            <p className="text-sm text-green-800">You have submitted feedback for all your completed assessments.</p>
-          </div>
-        )}
+        {/* Notice banners */}
         {eligibleAssessments.length === 0 && (
-          <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 mb-5 flex items-center gap-3">
-            <AlertCircle className="w-5 h-5 text-blue-600 flex-shrink-0" />
-            <p className="text-sm text-blue-800">Complete assessments first to be able to submit feedback.</p>
+          <div className="flex items-center gap-2.5 bg-slate-50 border border-slate-200 rounded-lg px-3.5 py-2.5 mb-4 text-xs text-slate-500">
+            <AlertCircle className="w-4 h-4 flex-shrink-0 text-slate-400" />
+            Complete assessments first to be able to submit feedback.
           </div>
         )}
 
-        {loading ? (
-          <div className="flex items-center justify-center p-16">
-            <div className="w-10 h-10 border-4 border-brand-red border-t-transparent rounded-full animate-spin" />
-          </div>
-        ) : (
+        {loading ? <Spinner /> : (
           <>
             {myFeedbacks.length === 0 ? (
-              <div className="text-center py-20 text-gray-400">
-                <MessageSquare className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                <p className="text-base font-medium">No feedback submitted yet.</p>
+              <div className="text-center py-16">
+                <MessageSquare className="w-9 h-9 mx-auto mb-2 text-slate-200" />
+                <p className="text-sm text-slate-400 font-medium">No feedback submitted yet</p>
               </div>
             ) : (
-              <div className="space-y-4 mb-4">
+              <div className="space-y-3 mb-3">
                 {myFeedbacks.map(f => (
-                  <div key={f._id} className="bg-white rounded-xl p-5 shadow-card border border-gray-100">
+                  <div key={f._id} className="bg-white border border-slate-200 rounded-xl p-4 hover:border-slate-300 transition-colors">
                     <div className="flex justify-between items-start mb-2">
-                      <div>
-                        <p className="font-semibold text-sm text-gray-900">{f.assessmentId?.description || 'Assessment'}</p>
-                        <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-1.5">
-                          <Calendar className="w-3 h-3" />
-                          {new Date(f.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {f.rating > 0 && <StarRating value={f.rating} size="sm" />}
-                        <span className={`text-xs px-2 py-1 rounded-full font-medium ${f.reviewed ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                          {f.reviewed ? 'Reviewed' : 'Pending'}
-                        </span>
-                      </div>
+                      <p className="font-semibold text-sm text-slate-800 leading-snug">
+                        {f.assessmentId?.description || 'Assessment'}
+                      </p>
+                      {f.rating > 0 && <StarRating value={f.rating} size="sm" />}
                     </div>
-                    <p className="text-sm text-gray-700 leading-relaxed bg-gray-50 rounded-lg p-3 mt-2">{f.content}</p>
+                    <p className="text-xs text-slate-400 mb-2.5 flex items-center gap-1">
+                      <Calendar className="w-3 h-3" />
+                      {new Date(f.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
+                    </p>
+                    <p className="text-sm text-slate-600 leading-relaxed bg-slate-50 rounded-lg px-3 py-2.5 border border-slate-100">
+                      {f.content}
+                    </p>
                   </div>
                 ))}
               </div>
@@ -252,142 +286,126 @@ export default function Feedback() {
           </>
         )}
 
-        {/* Submit modal */}
+        {/* Modal */}
         <Modal open={modal} onClose={() => setModal(false)} title="Submit Feedback">
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Assessment *</label>
-              <select value={form.assessmentId} onChange={e => setForm(p => ({ ...p, assessmentId: e.target.value }))}
-                className="w-full h-10 px-3 rounded-lg border border-gray-300 text-sm focus:ring-2 focus:ring-brand-red">
-                <option value="">— Select an assessment —</option>
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5">Assessment *</label>
+              <select value={form.assessmentId}
+                onChange={e => setForm(p => ({ ...p, assessmentId: e.target.value }))}
+                className="w-full h-9 px-3 rounded-lg border border-slate-300 text-sm text-slate-700 focus:ring-2 focus:ring-brand-red bg-white">
+                <option value="">— Select assessment —</option>
                 {pending.map(a => (
                   <option key={a._id} value={a._id}>
-                    {a.description || 'Assessment'}{a.competencyId?.name ? ` — ${a.competencyId.name}` : ''}{a.targetGroup ? ` (${a.targetGroup})` : ''}
+                    {a.description || 'Assessment'}{a.competencyId?.name ? ` · ${a.competencyId.name}` : ''}{a.targetGroup ? ` (${a.targetGroup})` : ''}
                   </option>
                 ))}
               </select>
             </div>
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Rating (optional)</label>
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5">Rating <span className="font-normal text-slate-400">(optional)</span></label>
               <StarRating value={form.rating} onChange={v => setForm(p => ({ ...p, rating: v }))} />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Your Feedback *</label>
-              <textarea rows={4} value={form.content} onChange={e => setForm(p => ({ ...p, content: e.target.value }))}
-                placeholder="Share your honest thoughts on the assessment experience..."
-                className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm resize-none focus:ring-2 focus:ring-brand-red"
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5">Feedback *</label>
+              <textarea rows={4} value={form.content}
+                onChange={e => setForm(p => ({ ...p, content: e.target.value }))}
+                placeholder="Share your thoughts on the assessment experience..."
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-700 resize-none focus:ring-2 focus:ring-brand-red"
                 maxLength={2000} />
-              <p className="text-xs text-gray-400 text-right mt-1">{form.content.length}/2000</p>
+              <p className="text-[10px] text-slate-400 text-right mt-0.5">{form.content.length} / 2000</p>
             </div>
           </div>
-          <div className="flex justify-end gap-3 mt-5 pt-4 border-t border-gray-100">
-            <button onClick={() => setModal(false)} className="px-4 py-2 border border-gray-300 rounded-lg font-semibold text-gray-700 hover:bg-gray-50">Cancel</button>
-            <button onClick={handleSubmit} className="px-5 py-2 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark">Submit</button>
+          <div className="flex justify-end gap-2 mt-4 pt-3 border-t border-slate-100">
+            <button onClick={() => setModal(false)} className="px-3.5 py-2 border border-slate-300 rounded-lg text-sm font-semibold text-slate-600 hover:bg-slate-50">Cancel</button>
+            <button onClick={handleSubmit} className="px-4 py-2 bg-brand-red text-white rounded-lg text-sm font-semibold hover:bg-brand-red-dark">Submit</button>
           </div>
         </Modal>
       </div>
     );
   }
 
-  // ─── ADMIN DETAIL VIEW ────────────────────────────────────────────────────
+  // ─── ADMIN DETAIL VIEW ──────────────────────────────────────────────────────
   if (adminView === 'detail' && selectedSummary) {
     return (
-      <div className="p-7">
-        <div className="flex items-center gap-4 mb-6">
-          <button onClick={() => { setAdminView('summary'); setSelectedSummary(null); }}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0">
-            <ArrowLeft className="w-5 h-5 text-gray-600" />
+      <div className="p-6">
+        {/* Back + header */}
+        <div className="flex items-start gap-3 mb-5">
+          <button
+            onClick={() => { setAdminView('summary'); setSelectedSummary(null); }}
+            className="mt-0.5 p-1.5 hover:bg-slate-100 rounded-lg transition-colors flex-shrink-0">
+            <ArrowLeft className="w-4 h-4 text-slate-500" />
           </button>
-          <div className="flex-1">
-            <h1 className="text-2xl font-display font-bold text-brand-black line-clamp-1">
+          <div>
+            <h1 className="text-lg font-bold text-slate-800 leading-snug line-clamp-1">
               {selectedSummary.assessmentDescription || 'Assessment Feedback'}
             </h1>
-            <div className="flex items-center gap-2 mt-1 flex-wrap">
-              {selectedSummary.competencyName && <span className="text-sm text-gray-500">{selectedSummary.competencyName}</span>}
-              {selectedSummary.targetGroup && <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full capitalize">{selectedSummary.targetGroup.replace('-', ' ')}</span>}
-              {selectedSummary.purpose && <span className="text-xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full">{selectedSummary.purpose}</span>}
+            <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+              {selectedSummary.competencyName && (
+                <span className="text-xs text-slate-500">{selectedSummary.competencyName}</span>
+              )}
+              {selectedSummary.targetGroup && (
+                <Chip color="slate">{selectedSummary.targetGroup.replace('-', ' ')}</Chip>
+              )}
+              {selectedSummary.purpose && (
+                <Chip color="indigo">{selectedSummary.purpose}</Chip>
+              )}
             </div>
           </div>
         </div>
 
-        {/* Stats strip */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          {[
-            { label: 'Total Feedback', value: selectedSummary.totalFeedbacks, color: 'bg-blue-50 text-blue-600', icon: MessageSquare },
-            { label: 'Avg Rating', value: selectedSummary.avgRating ? `${selectedSummary.avgRating.toFixed(1)}/5` : '—', color: 'bg-orange-50 text-orange-600', icon: Star },
-            { label: 'Pending Review', value: selectedSummary.pendingReview, color: 'bg-yellow-50 text-yellow-600', icon: Clock },
-            { label: 'Reviewed', value: selectedSummary.reviewedCount, color: 'bg-green-50 text-green-600', icon: CheckCircle2 },
-          ].map(({ label, value, color, icon: Icon }) => (
-            <div key={label} className="bg-white rounded-xl p-4 shadow-card border border-gray-100 flex items-center gap-3">
-              <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${color}`}><Icon className="w-5 h-5" /></div>
-              <div><p className="text-xs text-gray-500 font-medium">{label}</p><p className="text-xl font-bold text-brand-black">{value}</p></div>
-            </div>
-          ))}
+        {/* KPI strip */}
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-5">
+          <KpiCard label="Total Feedback" value={selectedSummary.totalFeedbacks} icon={MessageSquare} accent="bg-blue-50 text-blue-500" />
+          <KpiCard label="Avg Rating" value={selectedSummary.avgRating ? `${selectedSummary.avgRating.toFixed(1)} / 5` : '—'} icon={Star} accent="bg-orange-50 text-orange-500" />
+          <KpiCard label="With Rating" value={selectedSummary.ratedCount} icon={BarChart3} accent="bg-teal-50 text-teal-500" />
         </div>
 
         {/* Rating distribution */}
         {selectedSummary.ratedCount > 0 && (
-          <div className="bg-white rounded-xl p-5 shadow-card border border-gray-100 mb-6">
-            <h3 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2"><BarChart3 className="w-4 h-4 text-brand-red" />Rating Distribution</h3>
+          <div className="bg-white border border-slate-200 rounded-xl p-4 mb-5">
+            <p className="text-xs font-bold text-slate-600 uppercase tracking-wide mb-3 flex items-center gap-1.5">
+              <BarChart3 className="w-3.5 h-3.5 text-brand-red" /> Rating Breakdown
+            </p>
             <RatingDistribution summary={selectedSummary} />
           </div>
         )}
 
-        {/* Filter bar */}
-        <div className="flex items-center gap-2 mb-5">
-          <span className="text-sm font-semibold text-gray-600">Filter:</span>
-          {[['', 'All'], ['false', 'Pending Review'], ['true', 'Reviewed']].map(([val, label]) => (
-            <button key={val} onClick={() => { setDetailFilter(val); setDetailPagination(prev => ({ ...prev, page: 1 })); }}
-              className={`px-3 py-1.5 rounded-lg text-sm font-semibold border-2 transition-all ${detailFilter === val ? 'border-brand-red bg-brand-red/10 text-brand-red' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}>
-              {label}
-            </button>
-          ))}
-          <span className="ml-auto text-sm text-gray-400">{detailPagination.total} entries</span>
+        {/* Entries */}
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-sm font-semibold text-slate-700">Feedback Entries</p>
+          <span className="text-xs text-slate-400">{detailPagination.total} total</span>
         </div>
 
-        {loading ? (
-          <div className="flex items-center justify-center p-16">
-            <div className="w-10 h-10 border-4 border-brand-red border-t-transparent rounded-full animate-spin" />
-          </div>
-        ) : (
+        {loading ? <Spinner /> : (
           <>
-            <div className="space-y-4 mb-4">
+            <div className="space-y-3 mb-3">
               {detailFeedbacks.length === 0 ? (
-                <div className="text-center py-16 text-gray-400">
-                  <MessageSquare className="w-10 h-10 mx-auto mb-3 opacity-30" />
-                  <p className="text-sm">No feedback entries found.</p>
+                <div className="text-center py-12">
+                  <MessageSquare className="w-8 h-8 mx-auto mb-2 text-slate-200" />
+                  <p className="text-sm text-slate-400">No feedback entries found.</p>
                 </div>
               ) : detailFeedbacks.map(f => (
-                <div key={f._id} className={`bg-white rounded-xl p-5 shadow-card border transition-all ${f.reviewed ? 'border-green-100' : 'border-gray-100'}`}>
-                  <div className="flex justify-between items-start mb-3">
-                    <div className="flex items-start gap-3">
-                      <div className="w-9 h-9 rounded-full bg-brand-red/10 flex items-center justify-center flex-shrink-0">
-                        <span className="text-brand-red font-bold text-sm">{f.userId?.name?.charAt(0) || '?'}</span>
-                      </div>
+                <div key={f._id} className="bg-white border border-slate-200 rounded-xl p-4 hover:border-slate-300 transition-colors">
+                  <div className="flex justify-between items-start mb-2.5">
+                    <div className="flex items-center gap-2.5">
+                      <Avatar name={f.userId?.name} />
                       <div>
-                        <p className="font-semibold text-sm text-gray-900">{f.userId?.name || 'Anonymous'}</p>
-                        <p className="text-xs text-gray-400">{f.userId?.department || '—'} · {f.userId?.position || '—'}</p>
-                        <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-1"><Calendar className="w-3 h-3" />{new Date(f.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</p>
+                        <p className="text-sm font-semibold text-slate-800 leading-tight">{f.userId?.name || 'Anonymous'}</p>
+                        <p className="text-[11px] text-slate-400">{f.userId?.department || '—'} · {f.userId?.position || '—'}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
                       {f.rating > 0 && <StarRating value={f.rating} size="sm" />}
-                      {f.reviewed ? (
-                        <span className="inline-flex items-center gap-1 text-xs bg-green-100 text-green-700 px-2.5 py-1 rounded-full font-medium">
-                          <CheckCircle2 className="w-3 h-3" /> Reviewed
-                        </span>
-                      ) : (
-                        <button onClick={() => reviewItem(f._id)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-brand-red text-white rounded-lg hover:bg-brand-red-dark transition-colors">
-                          <CheckCircle2 className="w-3 h-3" /> Mark Reviewed
-                        </button>
-                      )}
+                      <span className="text-[11px] text-slate-400 flex items-center gap-1">
+                        <Calendar className="w-3 h-3" />
+                        {new Date(f.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </span>
                     </div>
                   </div>
-                  <p className="text-sm text-gray-700 leading-relaxed bg-gray-50 rounded-lg p-3">{f.content}</p>
-                  {f.reviewed && f.reviewedBy && (
-                    <p className="text-xs text-gray-400 mt-2">Reviewed by {f.reviewedBy?.name || '—'} on {f.reviewedAt ? new Date(f.reviewedAt).toLocaleDateString() : '—'}</p>
-                  )}
+                  <p className="text-sm text-slate-600 leading-relaxed bg-slate-50 rounded-lg px-3 py-2.5 border border-slate-100">
+                    {f.content}
+                  </p>
                 </div>
               ))}
             </div>
@@ -398,141 +416,129 @@ export default function Feedback() {
     );
   }
 
-  // ─── ADMIN SUMMARY CARD VIEW ──────────────────────────────────────────────
+  // ─── ADMIN SUMMARY VIEW ─────────────────────────────────────────────────────
   const totalFeedbacks = summaries.reduce((s, x) => s + x.totalFeedbacks, 0);
-  const totalPending = summaries.reduce((s, x) => s + x.pendingReview, 0);
   const ratedSummaries = summaries.filter(x => x.avgRating);
-  const avgOverall = ratedSummaries.length > 0 ? ratedSummaries.reduce((s, x) => s + x.avgRating, 0) / ratedSummaries.length : null;
+  const avgOverall = ratedSummaries.length > 0
+    ? ratedSummaries.reduce((s, x) => s + x.avgRating, 0) / ratedSummaries.length
+    : null;
+
+  const hasFilters = summaryFilters.competencyId || summaryFilters.dateFrom || summaryFilters.dateTo;
 
   return (
-    <div className="p-7">
-      <div className="flex justify-between items-start mb-6">
+    <div className="p-6">
+      {/* Header */}
+      <div className="flex justify-between items-center mb-5">
         <div>
-          <h1 className="text-3xl font-display font-bold text-brand-black">Feedback Overview</h1>
-          <p className="text-gray-500 mt-1">Average ratings and reviews per assessment. Click a card to view individual feedback.</p>
+          <h1 className="text-xl font-bold text-slate-800">Feedback Overview</h1>
+          <p className="text-xs text-slate-400 mt-0.5">Ratings and responses per assessment</p>
         </div>
-        <button onClick={loadSummaries} className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors">
-          <RefreshCw className="w-4 h-4" /> Refresh
+        <button onClick={loadSummaries}
+          className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 rounded-lg text-xs font-semibold text-slate-500 hover:bg-slate-50 transition-colors">
+          <RefreshCw className="w-3.5 h-3.5" /> Refresh
         </button>
       </div>
 
       {/* KPI strip */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        {[
-          { label: 'Total Feedback Entries', value: totalFeedbacks, icon: MessageSquare, color: 'bg-blue-50 text-blue-600' },
-          { label: 'Pending Review', value: totalPending, icon: Clock, color: 'bg-yellow-50 text-yellow-600' },
-          { label: 'Bank-wide Avg Rating', value: avgOverall ? `${avgOverall.toFixed(1)} / 5` : '—', icon: Star, color: 'bg-orange-50 text-orange-600' },
-        ].map(({ label, value, icon: Icon, color }) => (
-          <div key={label} className="bg-white rounded-xl p-5 shadow-card border border-gray-100 flex items-center gap-4">
-            <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${color}`}><Icon className="w-6 h-6" /></div>
-            <div>
-              <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">{label}</p>
-              <p className="text-2xl font-bold text-brand-black">{value}</p>
-            </div>
-          </div>
-        ))}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
+        <KpiCard label="Total Entries" value={totalFeedbacks} icon={MessageSquare} accent="bg-blue-50 text-blue-500" />
+        <KpiCard label="Assessments" value={summaries.length} icon={Users} accent="bg-violet-50 text-violet-500" />
+        <KpiCard label="Overall Avg Rating" value={avgOverall ? `${avgOverall.toFixed(1)} / 5` : '—'} icon={Star} accent="bg-orange-50 text-orange-500" />
       </div>
 
-      {/* Filters */}
-      <div className="bg-white rounded-xl p-5 shadow-card border border-gray-100 mb-6">
-        <h3 className="font-semibold text-sm text-gray-800 mb-3 flex items-center gap-2"><Filter className="w-4 h-4 text-brand-red" />Filter Feedback Summaries</h3>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div>
-            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Competency</label>
-            <select value={summaryFilters.competencyId} onChange={e => setSummaryFilters(p => ({ ...p, competencyId: e.target.value }))}
-              className="w-full h-9 px-3 rounded-lg border border-gray-300 text-sm focus:ring-2 focus:ring-brand-red">
-              <option value="">All Competencies</option>
-              {competencies.map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-gray-600 mb-1.5">From Date</label>
-            <input type="date" value={summaryFilters.dateFrom} onChange={e => setSummaryFilters(p => ({ ...p, dateFrom: e.target.value }))}
-              className="w-full h-9 px-3 rounded-lg border border-gray-300 text-sm focus:ring-2 focus:ring-brand-red" />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-gray-600 mb-1.5">To Date</label>
-            <input type="date" value={summaryFilters.dateTo} onChange={e => setSummaryFilters(p => ({ ...p, dateTo: e.target.value }))}
-              className="w-full h-9 px-3 rounded-lg border border-gray-300 text-sm focus:ring-2 focus:ring-brand-red" />
-          </div>
-          <div className="flex items-end gap-2">
-            <button onClick={loadSummaries} className="flex-1 h-9 bg-brand-red text-white rounded-lg text-sm font-semibold hover:bg-brand-red-dark transition-colors">Apply</button>
-            {(summaryFilters.competencyId || summaryFilters.dateFrom || summaryFilters.dateTo) && (
+      {/* Filter bar — compact single row */}
+      <div className="bg-white border border-slate-200 rounded-xl px-4 py-3 mb-5">
+        <div className="flex items-center gap-3 flex-wrap">
+          <Filter className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+          <select value={summaryFilters.competencyId}
+            onChange={e => setSummaryFilters(p => ({ ...p, competencyId: e.target.value }))}
+            className="h-8 px-2.5 rounded-lg border border-slate-200 text-xs text-slate-600 focus:ring-2 focus:ring-brand-red bg-white min-w-[160px]">
+            <option value="">All Competencies</option>
+            {competencies.map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
+          </select>
+          <input type="date" value={summaryFilters.dateFrom}
+            onChange={e => setSummaryFilters(p => ({ ...p, dateFrom: e.target.value }))}
+            className="h-8 px-2.5 rounded-lg border border-slate-200 text-xs text-slate-600 focus:ring-2 focus:ring-brand-red bg-white" />
+          <span className="text-slate-300 text-xs">—</span>
+          <input type="date" value={summaryFilters.dateTo}
+            onChange={e => setSummaryFilters(p => ({ ...p, dateTo: e.target.value }))}
+            className="h-8 px-2.5 rounded-lg border border-slate-200 text-xs text-slate-600 focus:ring-2 focus:ring-brand-red bg-white" />
+          <div className="flex items-center gap-1.5 ml-auto">
+            {hasFilters && (
               <button onClick={() => setSummaryFilters({ competencyId: '', dateFrom: '', dateTo: '' })}
-                className="h-9 w-9 flex items-center justify-center border border-gray-300 rounded-lg hover:bg-gray-50">
-                <X className="w-4 h-4 text-gray-500" />
+                className="h-8 w-8 flex items-center justify-center border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-400">
+                <X className="w-3.5 h-3.5" />
               </button>
             )}
+            <button onClick={loadSummaries}
+              className="h-8 px-4 bg-brand-red text-white rounded-lg text-xs font-semibold hover:bg-brand-red-dark transition-colors">
+              Apply
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Cards */}
-      {loading ? (
-        <div className="flex items-center justify-center p-16">
-          <div className="w-10 h-10 border-4 border-brand-red border-t-transparent rounded-full animate-spin" />
-        </div>
-      ) : summaries.length === 0 ? (
-        <div className="text-center py-20 text-gray-400">
-          <MessageSquare className="w-12 h-12 mx-auto mb-3 opacity-30" />
-          <p className="text-base font-medium">No feedback data yet.</p>
-          <p className="text-sm mt-1">Feedback will appear here once employees submit their reviews.</p>
+      {/* Cards grid */}
+      {loading ? <Spinner /> : summaries.length === 0 ? (
+        <div className="text-center py-20">
+          <MessageSquare className="w-10 h-10 mx-auto mb-2 text-slate-200" />
+          <p className="text-sm text-slate-400 font-medium">No feedback data yet</p>
+          <p className="text-xs text-slate-400 mt-1">Feedback will appear once employees submit reviews.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {summaries.map(s => (
             <div key={s.assessmentId}
-              onClick={() => { setSelectedSummary(s); setDetailFeedbacks([]); setDetailFilter(''); setDetailPagination({ page: 1, limit: 10, total: 0, totalPages: 0 }); setAdminView('detail'); }}
-              className="bg-white rounded-xl p-5 shadow-card border border-gray-100 hover:shadow-lg hover:border-brand-red/20 transition-all cursor-pointer group">
-              {/* Title */}
-              <h3 className="font-bold text-sm text-gray-900 line-clamp-2 group-hover:text-brand-red transition-colors mb-1.5">
+              onClick={() => {
+                setSelectedSummary(s);
+                setDetailFeedbacks([]);
+                setDetailPagination({ page: 1, limit: 10, total: 0, totalPages: 0 });
+                setAdminView('detail');
+              }}
+              className="bg-white border border-slate-200 rounded-xl p-4 hover:border-brand-red/40 hover:shadow-sm transition-all cursor-pointer group">
+
+              {/* Title + chips */}
+              <h3 className="font-semibold text-sm text-slate-800 line-clamp-2 group-hover:text-brand-red transition-colors mb-1.5 leading-snug">
                 {s.assessmentDescription || 'Untitled Assessment'}
               </h3>
-              <div className="flex items-center gap-2 mb-4 flex-wrap">
-                {s.competencyName && <span className="text-xs text-gray-500">{s.competencyName}</span>}
-                {s.targetGroup && <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full capitalize">{s.targetGroup.replace('-', ' ')}</span>}
-                {s.purpose && <span className="text-xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full">{s.purpose}</span>}
+              <div className="flex items-center gap-1 mb-3 flex-wrap">
+                {s.competencyName && (
+                  <span className="text-[10px] text-slate-400">{s.competencyName}</span>
+                )}
+                {s.targetGroup && (
+                  <Chip color="slate">{s.targetGroup.replace('-', ' ')}</Chip>
+                )}
+                {s.purpose && (
+                  <Chip color="indigo">{s.purpose}</Chip>
+                )}
               </div>
 
-              {/* Rating highlight */}
+              {/* Rating highlight + count */}
               <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  {s.avgRating ? (
-                    <>
-                      <div className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full font-bold text-sm ${s.avgRating >= 4 ? 'bg-green-50 text-green-700' : s.avgRating >= 3 ? 'bg-orange-50 text-orange-700' : 'bg-red-50 text-red-600'}`}>
-                        <Star className="w-3.5 h-3.5" fill="currentColor" color="currentColor" />
-                        {s.avgRating.toFixed(1)}
-                      </div>
-                      <span className="text-xs text-gray-400">avg</span>
-                    </>
-                  ) : <span className="text-xs text-gray-400 italic">No ratings yet</span>}
-                </div>
-                <p className="text-xs text-gray-400">{s.ratedCount} rated / {s.totalFeedbacks} total</p>
+                {s.avgRating ? (
+                  <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold ${s.avgRating >= 4 ? 'bg-green-50 text-green-700' : s.avgRating >= 3 ? 'bg-orange-50 text-orange-700' : 'bg-red-50 text-red-600'}`}>
+                    <Star className="w-3 h-3" fill="currentColor" color="currentColor" />
+                    {s.avgRating.toFixed(1)}
+                  </div>
+                ) : (
+                  <span className="text-[11px] text-slate-400 italic">No ratings</span>
+                )}
+                <span className="text-[11px] text-slate-400">
+                  {s.ratedCount} rated · {s.totalFeedbacks} total
+                </span>
               </div>
 
-              {/* Rating distribution mini */}
+              {/* Compact rating bars */}
               {s.ratedCount > 0 && (
-                <div className="mb-4">
+                <div className="mb-3">
                   <RatingDistribution summary={s} />
                 </div>
               )}
 
-              {/* Footer */}
-              <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-                <div className="flex items-center gap-2">
-                  {s.pendingReview > 0 && (
-                    <span className="text-xs bg-yellow-50 text-yellow-700 px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
-                      <Clock className="w-3 h-3" />{s.pendingReview} pending
-                    </span>
-                  )}
-                  {s.reviewedCount > 0 && (
-                    <span className="text-xs bg-green-50 text-green-700 px-2 py-0.5 rounded-full font-medium">
-                      {s.reviewedCount} reviewed
-                    </span>
-                  )}
-                </div>
-                <span className="text-xs text-brand-red font-semibold flex items-center gap-1 group-hover:gap-2 transition-all">
-                  View all <Eye className="w-3.5 h-3.5" />
+              {/* Footer CTA */}
+              <div className="flex items-center justify-end pt-2.5 border-t border-slate-100">
+                <span className="text-[11px] text-brand-red font-semibold flex items-center gap-1 group-hover:gap-1.5 transition-all">
+                  View entries <Eye className="w-3 h-3" />
                 </span>
               </div>
             </div>

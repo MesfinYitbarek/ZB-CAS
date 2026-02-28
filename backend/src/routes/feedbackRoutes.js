@@ -17,7 +17,5 @@ router.get('/:id', fbCtrl.getFeedback);
 router.get('/admin/summary', authorize('HR_ADMIN'), fbCtrl.getFeedbackSummaryByAssessment);
 router.get('/admin/by-assessment/:assessmentId', authorize('HR_ADMIN'), fbCtrl.getFeedbacksByAssessment);
 
-// ── HR_ADMIN: review ──────────────────────────────────────────────────────────
-router.patch('/:id/review', authorize('HR_ADMIN'), fbCtrl.reviewFeedback);
 
 export default router;

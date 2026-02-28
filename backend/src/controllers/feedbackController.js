@@ -48,10 +48,10 @@ export const createFeedback = asyncHandler(async (req, res, next) => {
   }
 
   const feedback = await Feedback.create({
-    userId: req.user.id,
+    userId:     req.user.id,
     assessmentId,
     content,
-    rating: rating || null,
+    rating:     rating || null,
   });
 
   res.status(201).json({
@@ -65,13 +65,10 @@ export const createFeedback = asyncHandler(async (req, res, next) => {
 // LIST FEEDBACKS (Employee + Admin)
 // ───────────────────────────────────────────────────────────────
 export const getFeedbacks = asyncHandler(async (req, res) => {
-  const { assessmentId, reviewed, page = 1, limit = 20 } = req.query;
+  const { assessmentId, page = 1, limit = 20 } = req.query;
 
   const filter = {};
-
   if (assessmentId) filter.assessmentId = assessmentId;
-  if (reviewed !== undefined && reviewed !== '')
-    filter.reviewed = reviewed === 'true';
 
   if (req.user.role === 'EMPLOYEE') {
     filter.userId = req.user.id;
@@ -105,7 +102,7 @@ export const getFeedbacks = asyncHandler(async (req, res) => {
 
 
 // ───────────────────────────────────────────────────────────────
-// ADMIN SUMMARY (FIXED VERSION)
+// ADMIN SUMMARY BY ASSESSMENT
 // ───────────────────────────────────────────────────────────────
 export const getFeedbackSummaryByAssessment = asyncHandler(
   async (req, res) => {
@@ -116,7 +113,6 @@ export const getFeedbackSummaryByAssessment = asyncHandler(
     if (dateFrom || dateTo) {
       matchStage.createdAt = {};
       if (dateFrom) matchStage.createdAt.$gte = new Date(dateFrom);
-
       if (dateTo) {
         const end = new Date(dateTo);
         end.setHours(23, 59, 59, 999);
@@ -127,51 +123,45 @@ export const getFeedbackSummaryByAssessment = asyncHandler(
     const pipeline = [
       ...(Object.keys(matchStage).length ? [{ $match: matchStage }] : []),
 
-      // GROUP FEEDBACK
       {
         $group: {
-          _id: '$assessmentId',
-          avgRating: { $avg: '$rating' },
-          totalFeedbacks: { $sum: 1 },
+          _id:           '$assessmentId',
+          avgRating:     { $avg: '$rating' },
+          totalFeedbacks:{ $sum: 1 },
           ratedCount: {
             $sum: { $cond: [{ $ne: ['$rating', null] }, 1, 0] },
-          },
-          reviewedCount: {
-            $sum: { $cond: ['$reviewed', 1, 0] },
           },
           ratings: { $push: '$rating' },
         },
       },
 
-      // JOIN ASSESSMENT
       {
         $lookup: {
-          from: 'assessments',
-          localField: '_id',
+          from:         'assessments',
+          localField:   '_id',
           foreignField: '_id',
-          as: 'assessment',
+          as:           'assessment',
         },
       },
       {
         $unwind: {
           path: '$assessment',
-          preserveNullAndEmptyArrays: true, // ✅ FIXED
+          preserveNullAndEmptyArrays: true,
         },
       },
 
-      // JOIN COMPETENCY
       {
         $lookup: {
-          from: 'competencies',
-          localField: 'assessment.competencyId',
+          from:         'competencies',
+          localField:   'assessment.competencyId',
           foreignField: '_id',
-          as: 'competency',
+          as:           'competency',
         },
       },
       {
         $unwind: {
           path: '$competency',
-          preserveNullAndEmptyArrays: true, // ✅ FIXED
+          preserveNullAndEmptyArrays: true,
         },
       },
 
@@ -186,68 +176,42 @@ export const getFeedbackSummaryByAssessment = asyncHandler(
           ]
         : []),
 
-      // FINAL SHAPE
       {
         $project: {
-          assessmentId: '$_id',
+          assessmentId:          '$_id',
           assessmentDescription: '$assessment.description',
-          competencyName: '$competency.name',
-          competencyCategory: '$competency.category',
-          targetGroup: '$assessment.targetGroup',
-          purpose: '$assessment.purpose',
+          competencyName:        '$competency.name',
+          competencyCategory:    '$competency.category',
+          targetGroup:           '$assessment.targetGroup',
+          purpose:               '$assessment.purpose',
 
-          avgRating: { $round: ['$avgRating', 2] },
-
+          avgRating:     { $round: ['$avgRating', 2] },
           totalFeedbacks: 1,
-          ratedCount: 1,
-          reviewedCount: 1,
-          pendingReview: {
-            $subtract: ['$totalFeedbacks', '$reviewedCount'],
-          },
+          ratedCount:    1,
 
           rating5: {
             $size: {
-              $filter: {
-                input: '$ratings',
-                as: 'r',
-                cond: { $eq: ['$$r', 5] },
-              },
+              $filter: { input: '$ratings', as: 'r', cond: { $eq: ['$$r', 5] } },
             },
           },
           rating4: {
             $size: {
-              $filter: {
-                input: '$ratings',
-                as: 'r',
-                cond: { $eq: ['$$r', 4] },
-              },
+              $filter: { input: '$ratings', as: 'r', cond: { $eq: ['$$r', 4] } },
             },
           },
           rating3: {
             $size: {
-              $filter: {
-                input: '$ratings',
-                as: 'r',
-                cond: { $eq: ['$$r', 3] },
-              },
+              $filter: { input: '$ratings', as: 'r', cond: { $eq: ['$$r', 3] } },
             },
           },
           rating2: {
             $size: {
-              $filter: {
-                input: '$ratings',
-                as: 'r',
-                cond: { $eq: ['$$r', 2] },
-              },
+              $filter: { input: '$ratings', as: 'r', cond: { $eq: ['$$r', 2] } },
             },
           },
           rating1: {
             $size: {
-              $filter: {
-                input: '$ratings',
-                as: 'r',
-                cond: { $eq: ['$$r', 1] },
-              },
+              $filter: { input: '$ratings', as: 'r', cond: { $eq: ['$$r', 1] } },
             },
           },
         },
@@ -272,19 +236,15 @@ export const getFeedbackSummaryByAssessment = asyncHandler(
 export const getFeedbacksByAssessment = asyncHandler(
   async (req, res) => {
     const { assessmentId } = req.params;
-    const { reviewed, page = 1, limit = 20 } = req.query;
+    const { page = 1, limit = 20 } = req.query;
 
     const filter = { assessmentId };
-
-    if (reviewed !== undefined && reviewed !== '')
-      filter.reviewed = reviewed === 'true';
 
     const skip = (parseInt(page, 10) - 1) * parseInt(limit, 10);
 
     const [feedbacks, total] = await Promise.all([
       Feedback.find(filter)
         .populate('userId', 'name email department position employeeId')
-        .populate('reviewedBy', 'name')
         .skip(skip)
         .limit(parseInt(limit, 10))
         .sort({ createdAt: -1 })
@@ -307,43 +267,15 @@ export const getFeedbacksByAssessment = asyncHandler(
 );
 
 
-// ───────────────────────────────────────────────────────────────
-// MARK REVIEWED
-// ───────────────────────────────────────────────────────────────
-export const reviewFeedback = asyncHandler(async (req, res, next) => {
-  const feedback = await Feedback.findById(req.params.id);
-
-  if (!feedback) {
-    return next(new AppError('Feedback not found.', 404));
-  }
-
-  feedback.reviewed = true;
-  feedback.reviewedBy = req.user.id;
-  feedback.reviewedAt = new Date();
-
-  await feedback.save();
-
-  res.status(200).json({
-    status: 'success',
-    data: { feedback },
-  });
-});
-
-
-// ─── GET EMPLOYEE'S ELIGIBLE ASSESSMENTS (for employee feedback form) ─────────
+// ─── GET EMPLOYEE'S ELIGIBLE ASSESSMENTS ──────────────────────────────────────
 export const getEligibleAssessmentsForFeedback = asyncHandler(async (req, res) => {
-  // Find assessments where the employee has results (participated)
-  const results = await Result.find({ userId: req.user.id })
-    .distinct('assessmentId');
+  const results = await Result.find({ userId: req.user.id }).distinct('assessmentId');
 
-  // Find assessments where the employee hasn't submitted feedback yet
-  const existingFeedback = await Feedback.find({ userId: req.user.id })
-    .distinct('assessmentId');
-
+  const existingFeedback = await Feedback.find({ userId: req.user.id }).distinct('assessmentId');
   const existingIds = existingFeedback.map(id => id.toString());
 
   const assessments = await Assessment.find({
-    _id: { $in: results },
+    _id:    { $in: results },
     status: { $in: ['COMPLETED', 'ARCHIVED', 'ACTIVE'] },
   })
     .populate('competencyId', 'name category')
@@ -351,7 +283,6 @@ export const getEligibleAssessmentsForFeedback = asyncHandler(async (req, res) =
     .sort({ createdAt: -1 })
     .lean();
 
-  // Mark which ones already have feedback
   const assessmentsWithStatus = assessments.map(a => ({
     ...a,
     alreadySubmitted: existingIds.includes(a._id.toString()),
@@ -360,7 +291,8 @@ export const getEligibleAssessmentsForFeedback = asyncHandler(async (req, res) =
   res.status(200).json({ status: 'success', data: { assessments: assessmentsWithStatus } });
 });
 
-// ─── GET ONE ─────────────────────────────────────────────────────────────────
+
+// ─── GET ONE ──────────────────────────────────────────────────────────────────
 export const getFeedback = asyncHandler(async (req, res, next) => {
   const feedback = await Feedback.findById(req.params.id)
     .populate('userId', 'name email department position')
@@ -369,7 +301,10 @@ export const getFeedback = asyncHandler(async (req, res, next) => {
 
   if (!feedback) return next(new AppError('Feedback not found.', 404));
 
-  if (req.user.role === 'EMPLOYEE' && feedback.userId._id?.toString() !== req.user.id) {
+  if (
+    req.user.role === 'EMPLOYEE' &&
+    feedback.userId._id?.toString() !== req.user.id
+  ) {
     return next(new AppError('Access denied.', 403));
   }
 
