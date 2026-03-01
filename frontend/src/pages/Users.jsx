@@ -6,7 +6,7 @@ import Modal from '../components/Modal';
 import api from '../utils/api';
 
 const ALL_ROLES   = ['HR_ADMIN', 'SUPERVISOR', 'EMPLOYEE'];
-const ALL_GENDERS = ['MALE', 'FEMALE',];
+const ALL_GENDERS = ['Male', 'Female'];
 
 const ROLE_LABELS = {
   HR_ADMIN:   'HR Admin',
@@ -15,8 +15,8 @@ const ROLE_LABELS = {
 };
 
 const GENDER_LABELS = {
-  MALE:              'Male',
-  FEMALE:            'Female',
+  Male:              'Male',
+  Female:            'Female',
 };
 
 export default function Users() {
