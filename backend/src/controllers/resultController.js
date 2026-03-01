@@ -226,17 +226,26 @@ export const getResultsByAssessment = asyncHandler(async (req, res, next) => {
 // Helper function for non-admin users (group by competency)
 const processResults = (results) => {
   const grouped = results.reduce((acc, result) => {
-    const key = `${result.competencyId._id}-${result.assessmentId._id}`;
+    // Handle missing/null competencyId or assessmentId
+    const competencyId = result.competencyId?._id || result.competencyId;
+    const assessmentId = result.assessmentId?._id || result.assessmentId;
+    
+    if (!competencyId || !assessmentId) {
+      // Skip results with missing references
+      return acc;
+    }
+    
+    const key = `${competencyId}-${assessmentId}`;
 
     if (!acc[key]) {
       acc[key] = {
         _id: result._id,
         competencyId: result.competencyId,
-        competencyName: result.competencyId.name,
-        competencyCategory: result.competencyId.category,
+        competencyName: result.competencyId?.name || 'N/A',
+        competencyCategory: result.competencyId?.category || 'N/A',
         assessmentId: result.assessmentId,
-        assessmentDescription: result.assessmentId.description,
-        assessmentType: result.assessmentId.type,
+        assessmentDescription: result.assessmentId?.description || 'N/A',
+        assessmentType: result.assessmentId?.type || 'N/A',
         userId: result.userId,
         userName: result.userId?.name || 'N/A',
         userEmail: result.userId?.email || 'N/A',
@@ -255,7 +264,7 @@ const processResults = (results) => {
         date: result.createdAt,
         formattedDate: new Date(result.createdAt).toLocaleDateString(),
         hasBoth: result.scoreDetails?.selfScore !== null && result.scoreDetails?.supervisorScore !== null,
-        isCombined: result.assessmentId.type === 'Combined'
+        isCombined: result.assessmentId?.type === 'Combined'
       };
     }
 

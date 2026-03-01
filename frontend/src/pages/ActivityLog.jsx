@@ -153,8 +153,9 @@ export default function ActivityLog() {
   };
 
   return (
-    <div className="p-7">
-      <div className="flex justify-between items-start mb-6">
+    <div className="h-[calc(100vh-4rem)] flex flex-col p-7">
+      {/* Sticky Header */}
+      <div className="flex justify-between items-start mb-6 flex-shrink-0">
         <div>
           <h1 className="text-3xl font-display font-bold text-brand-black">Activity Log</h1>
           <p className="text-gray-500 mt-1">System-wide activity tracking and audit trail</p>
@@ -164,8 +165,8 @@ export default function ActivityLog() {
         </button>
       </div>
 
-      {/* Filters */}
-      <div className="flex gap-3 mb-6">
+      {/* Sticky Filters */}
+      <div className="flex gap-3 mb-6 flex-shrink-0">
         <select value={filterType} onChange={(e) => setFilterType(e.target.value)} className="h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm">
           <option value="">All Types</option>
           <option value="user">User Activities</option>
@@ -175,7 +176,7 @@ export default function ActivityLog() {
         </select>
 
         {isAdmin && (
-          <select value={filterUser} onChange={(e) => setFilterUser(e.target.value)} className="h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm flex-1 max-w-xs">
+          <select value={filterUser} onChange={(e) => setFilterUser(e.target.value)} className="h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm w-48">
             <option value="">All Users</option>
             {users.map(u => (
               <option key={u._id} value={u._id}>{u.name}</option>
@@ -184,8 +185,8 @@ export default function ActivityLog() {
         )}
       </div>
 
-      {/* Activity Timeline */}
-      <div className="bg-white rounded-xl shadow-card border border-gray-100">
+      {/* Scrollable Activity Timeline */}
+      <div className="flex-1 overflow-y-auto custom-scrollbar bg-white rounded-xl shadow-card border border-gray-100">
         {loading ? (
           <div className="flex items-center justify-center p-16">
             <div className="w-10 h-10 border-4 border-brand-red border-t-transparent rounded-full animate-spin" />

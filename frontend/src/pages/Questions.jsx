@@ -1238,9 +1238,9 @@ export default function Questions() {
   };
 
   return (
-    <div className="p-4 bg-gray-50 min-h-screen">
+    <div className="p-4 bg-gray-50 h-[calc(100vh-4rem)] flex flex-col">
       {/* Header */}
-      <div className="flex justify-between items-center mb-4">
+      <div className="flex justify-between items-center mb-4 flex-shrink-0">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Question Bank</h1>
           <p className="text-sm text-gray-600">Manage questions for competencies</p>
@@ -1262,7 +1262,7 @@ export default function Questions() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-2 mb-4">
+      <div className="flex flex-wrap gap-2 mb-4 flex-shrink-0">
         <select
           value={filterComp}
           onChange={(e) => setFilterComp(e.target.value)}
@@ -1304,7 +1304,7 @@ export default function Questions() {
 
       {/* Bulk action bar */}
       {selectedIds.size > 0 && (
-        <div className="bg-red-50 border border-red-200 p-2 mb-4 rounded-lg flex justify-between items-center text-sm">
+        <div className="bg-red-50 border border-red-200 p-2 mb-4 rounded-lg flex justify-between items-center text-sm flex-shrink-0">
           <span className="font-medium">{selectedIds.size} selected</span>
           <button
             onClick={() => setBulkDeleteModal(true)}
@@ -1315,16 +1315,16 @@ export default function Questions() {
         </div>
       )}
 
-      {/* Questions Table */}
-      <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
+      {/* Questions Table - Scrollable */}
+      <div className="bg-white rounded-lg shadow-sm border overflow-hidden flex flex-col flex-1 min-h-0">
         {loading ? (
-          <div className="flex justify-center items-center p-12">
+          <div className="flex justify-center items-center p-12 flex-1">
             <div className="w-8 h-8 border-3 border-red-500 border-t-transparent rounded-full animate-spin" />
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-auto flex-1">
             <table className="w-full text-sm">
-              <thead className="bg-gray-50">
+              <thead className="bg-gray-50 sticky top-0 z-10">
                 <tr>
                   <th className="w-10 p-2">
                     <input
@@ -1395,7 +1395,7 @@ export default function Questions() {
 
       {/* Pagination */}
       {pagination.totalPages > 1 && (
-        <div className="flex justify-between items-center mt-4 text-sm">
+        <div className="flex justify-between items-center mt-4 text-sm flex-shrink-0">
           <span className="text-gray-600">
             Page {pagination.page} of {pagination.totalPages}
           </span>

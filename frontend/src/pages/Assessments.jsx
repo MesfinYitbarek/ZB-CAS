@@ -502,8 +502,8 @@ export default function Assessments() {
   );
 
   return (
-    <div className="p-7">
-      <div className="flex justify-between items-start mb-6">
+    <div className="p-7 h-[calc(100vh-4rem)] flex flex-col">
+      <div className="flex justify-between items-start mb-6 flex-shrink-0">
         <div>
           <h1 className="text-3xl font-display font-bold text-brand-black">Assessments</h1>
           <p className="text-gray-500 mt-1">
@@ -535,8 +535,8 @@ export default function Assessments() {
         </div>
       </div>
 
-      {isSupervisor && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      {user?.role === 'SUPERVISOR' && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 flex-shrink-0">
           <div className="bg-white rounded-xl p-5 shadow-card border border-gray-100">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center"><Target className="w-5 h-5 text-blue-600" /></div>
@@ -559,7 +559,7 @@ export default function Assessments() {
       )}
 
       {isAdmin && (
-        <div className="flex justify-between items-center mb-6">
+        <div className="flex justify-between items-center mb-6 flex-shrink-0">
           <div className="flex gap-2 flex-wrap">
             <button onClick={() => { setFilterStatus(''); setPagination(prev => ({ ...prev, page: 1 })); }}
               className={`px-4 py-2 rounded-lg border-2 font-semibold text-sm transition-all ${filterStatus === '' ? 'border-brand-red bg-brand-red/10 text-brand-red' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'}`}>
@@ -585,527 +585,244 @@ export default function Assessments() {
         </div>
       )}
 
-      {!isAdmin && (
-        <div className="mb-6">
-          <p className="text-sm text-gray-500">
-            Showing {isEmployee ? 'assessments assigned to you' : 'assessments requiring your evaluation'}
-          </p>
-        </div>
-      )}
+      <div className="flex-1 overflow-auto min-h-0">
+        {loading ? (
+          <div className="flex items-center justify-center p-16">
+            <div className="w-10 h-10 border-4 border-brand-red border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mb-4">
+              {items.length === 0 && (
+                <div className="col-span-full text-center py-12 text-gray-400">
+                  {user?.role === 'SUPERVISOR'
+                    ? 'No assessments requiring your evaluation at the moment.'
+                    : user?.role === 'EMPLOYEE'
+                      ? 'No scheduled or active assessments for you at the moment.'
+                      : 'No assessments found.'
+                  }
+                </div>
+              )}
+              {items.map((a, index) => {
+                const next = getNextStatus(a.status);
+                const isActive = a.status === 'ACTIVE';
+                const isScheduled = a.status === 'SCHEDULED';
+                const requiresSupervisor = requiresSupervisorEvaluation(a);
 
-      {loading ? (
-        <div className="flex items-center justify-center p-16">
-          <div className="w-10 h-10 border-4 border-brand-red border-t-transparent rounded-full animate-spin" />
-        </div>
-      ) : (
-        <>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-            {items.length === 0 && (
-              <div className="col-span-full text-center py-16 text-gray-400">
-                {isSupervisor ? 'No assessments requiring your evaluation at the moment.'
-                  : isEmployee ? 'No scheduled or active assessments for you at the moment.'
-                    : 'No assessments found.'}
+                return (
+                  <div 
+                    key={a._id} 
+                    className="bg-white rounded-lg shadow-sm hover:shadow-lg hover:-translate-y-1 hover:scale-[1.02] transition-all duration-300 ease-out border border-gray-200 overflow-hidden flex flex-col group"
+                    style={{ animation: `fadeIn 0.4s ease-out ${index * 50}ms both` }}
+                  >
+                    <div className={`h-1.5 ${getStatusColor(a.status)}`} />
+                    <div className="p-3 flex-1">
+                      {/* Header: Type & Status */}
+                      <div className="flex justify-between items-center mb-2">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide ${getAssessmentTypeColor(a.type)}`}>
+                          {a.type}
+                        </span>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${a.status === 'DRAFT' ? 'bg-gray-100 text-gray-600' :
+                          a.status === 'SCHEDULED' ? 'bg-blue-100 text-blue-700' :
+                            a.status === 'ACTIVE' ? 'bg-green-100 text-green-700' :
+                              a.status === 'COMPLETED' ? 'bg-red-100 text-red-700' :
+                                'bg-gray-100 text-gray-600'
+                          }`}>
+                          {getStatusText(a.status)}
+                        </span>
+                      </div>
+
+                      {/* Title */}
+                      <h3 className="text-sm font-semibold text-gray-900 mb-1.5 line-clamp-2 leading-tight">
+                        {a.description || 'Untitled Assessment'}
+                      </h3>
+
+                      {/* Competency */}
+                      <p className="text-xs text-gray-500 mb-2 flex items-center gap-1">
+                        <Target className="w-3 h-3 text-gray-400" />
+                        {a.competencyId?.name || 'No competency'}
+                      </p>
+
+                      {/* Target - inline */}
+                      {a.target?.department && (
+                        <p className="text-[11px] text-gray-400 mb-2 flex items-center gap-1">
+                          <Users className="w-3 h-3" />
+                          {a.target.department}{a.target.position && ` • ${a.target.position}`}
+                        </p>
+                      )}
+
+                      {/* Scheduled countdown - compact */}
+                      {isScheduled && (
+                        <div className="bg-blue-50/70 border border-blue-100 rounded-md px-2 py-1.5 mb-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] text-blue-700 font-medium flex items-center gap-1">
+                              <Clock className="w-3 h-3" />
+                              Starts {getTimeUntil(a.startDate)}
+                            </span>
+                            <span className="text-[10px] text-blue-500">
+                              {new Date(a.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Date & Duration - inline */}
+                      <div className="flex items-center justify-between text-[11px] text-gray-400">
+                        <span className="flex items-center gap-1">
+                          <Calendar className="w-3 h-3" />
+                          {new Date(a.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <Clock className="w-3 h-3" />
+                          {a.timeLimit ? `${a.timeLimit}m` : '∞'}
+                        </span>
+                      </div>
+
+                      {/* Combined weights - subtle */}
+                      {a.type === 'Combined' && (
+                        <div className="mt-2 pt-2 border-t border-gray-100 flex justify-between text-[10px] text-gray-500">
+                          <span>Self: {a.weight?.selfAssessment || 20}%</span>
+                          <span>Sup: {a.weight?.supervisor || 80}%</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Action Footer */}
+                    <div className="border-t border-gray-100 px-3 py-2 bg-gray-50/50 flex justify-between items-center">
+                      {isAdmin && next && a.status !== 'SCHEDULED' && (
+                        <button
+                          onClick={() => changeStatus(a._id, next)}
+                          className="px-2 py-1 text-[11px] font-medium text-brand-red border border-brand-red/30 rounded hover:bg-brand-red/5 transition-colors"
+                        >
+                          {getStatusText(next)}
+                        </button>
+                      )}
+
+                      {isAdmin && isScheduled && (
+                        <span className="text-[10px] text-blue-600 flex items-center gap-1">
+                          <Clock className="w-3 h-3" />
+                          Auto
+                        </span>
+                      )}
+
+                      {!isAdmin && isActive && !requiresSupervisor && (
+                        <button
+                          onClick={() => nav(`/assessments/${a._id}/take`)}
+                          className="px-2.5 py-1 text-[11px] font-medium bg-brand-red text-white rounded hover:bg-brand-red-dark transition-colors"
+                        >
+                          Start
+                        </button>
+                      )}
+
+                      {!isAdmin && isScheduled && (
+                        <button
+                          onClick={() => nav(`/assessments/${a._id}/take`)}
+                          className="px-2.5 py-1 text-[11px] font-medium bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors flex items-center gap-1"
+                        >
+                          <Eye className="w-3 h-3" />
+                          View
+                        </button>
+                      )}
+
+                      {user?.role === 'SUPERVISOR' && isActive && requiresSupervisor && (
+                        <button
+                          onClick={() => nav(`/assessments/${a._id}/evaluate`)}
+                          className="px-2.5 py-1 text-[11px] font-medium bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
+                        >
+                          Evaluate
+                        </button>
+                      )}
+
+                      {user?.role === 'EMPLOYEE' && isActive && a.type === 'Combined' && (
+                        <button
+                          onClick={() => nav(`/assessments/${a._id}/take`)}
+                          className="px-2.5 py-1 text-[11px] font-medium bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                        >
+                          Self-Assess
+                        </button>
+                      )}
+
+                      {isAdmin && a.status === 'COMPLETED' && a.type === 'Combined' && (
+                        <button
+                          onClick={() => handleScoreResults(a._id)}
+                          className="px-2.5 py-1 text-[11px] font-medium text-white bg-purple-600 rounded hover:bg-purple-700 transition-colors flex items-center gap-1"
+                        >
+                          <Target className="w-3 h-3" />
+                          Score
+                        </button>
+                      )}
+                      {isAdmin && (
+                        <button
+                          onClick={() => nav(`/assessments/${a._id}`)}
+                          className="text-[11px] font-medium text-gray-400 hover:text-brand-red transition-colors flex items-center gap-0.5"
+                        >
+                          Details <ChevronRight className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {pagination.total > pagination.limit && (
+              <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mt-8 pt-6 border-t border-gray-200">
+                <div className="text-sm text-gray-600">
+                  Showing {(pagination.page - 1) * pagination.limit + 1} to{' '}
+                  {Math.min(pagination.page * pagination.limit, pagination.total)} of{' '}
+                  {pagination.total} assessments
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => goToPage(pagination.page - 1)}
+                    disabled={pagination.page === 1}
+                    className="flex items-center gap-1 px-3 py-2 rounded-lg border border-gray-300 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                  >
+                    <ChevronLeft className="w-4 h-4" /> Previous
+                  </button>
+
+                  <div className="flex items-center gap-1">
+                    {Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
+                      let pageNum;
+                      if (pagination.totalPages <= 5) {
+                        pageNum = i + 1;
+                      } else if (pagination.page <= 3) {
+                        pageNum = i + 1;
+                      } else if (pagination.page >= pagination.totalPages - 2) {
+                        pageNum = pagination.totalPages - 4 + i;
+                      } else {
+                        pageNum = pagination.page - 2 + i;
+                      }
+
+                      return (
+                        <button
+                          key={pageNum}
+                          onClick={() => goToPage(pageNum)}
+                          className={`w-9 h-9 rounded-lg text-sm font-medium ${pagination.page === pageNum
+                            ? 'bg-brand-red text-white'
+                            : 'border border-gray-300 text-gray-700 hover:bg-gray-50'
+                            }`}
+                        >
+                          {pageNum}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <button
+                    onClick={() => goToPage(pagination.page + 1)}
+                    disabled={pagination.page === pagination.totalPages}
+                    className="flex items-center gap-1 px-3 py-2 rounded-lg border border-gray-300 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                  >
+                    Next <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             )}
-            {items.map((a) => {
-              const next = getNextStatus(a.status);
-              const isActive = a.status === 'ACTIVE';
-              const isScheduled = a.status === 'SCHEDULED';
-              const requiresSupervisor = requiresSupervisorEvaluation(a);
-
-              return (
-                <div key={a._id} className="bg-white rounded-xl shadow-card hover:shadow-card-hover transition-all border border-gray-100 overflow-hidden">
-                  <div className={`h-2 ${getStatusColor(a.status)}`} />
-                  <div className="p-5">
-                    <div className="flex justify-between items-start mb-3">
-                      <span className={`px-2 py-1 rounded-full text-xs font-bold ${getAssessmentTypeColor(a.type)}`}>{a.type}</span>
-                      <span className={`px-2 py-1 rounded-full text-xs font-bold ${
-                        a.status === 'DRAFT' ? 'bg-gray-100 text-gray-800' :
-                        a.status === 'SCHEDULED' ? 'bg-blue-100 text-blue-800' :
-                        a.status === 'ACTIVE' ? 'bg-green-100 text-green-800' :
-                        a.status === 'COMPLETED' ? 'bg-red-100 text-red-800' :
-                        'bg-gray-100 text-gray-800'}`}>
-                        {getStatusText(a.status)}
-                      </span>
-                    </div>
-
-                    <h3 className="text-base font-bold text-brand-black mb-1 line-clamp-2">
-                      {a.description || 'Untitled Assessment'}
-                    </h3>
-
-                    {a.purpose && (
-                      <span className="inline-block mb-2 text-xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full font-medium">
-                        {a.purpose}
-                      </span>
-                    )}
-
-                    <p className="text-sm text-gray-500 mb-2 flex items-center gap-1">
-                      <Target className="w-3 h-3" />
-                      {a.competencyId?.name || 'No competency'}
-                      {a.targetGroup && (
-                        <span className="ml-1 text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">{a.targetGroup}</span>
-                      )}
-                    </p>
-
-                    <div className="text-xs text-gray-500 mb-3 flex items-center gap-1">
-                      <Users className="w-3 h-3" />
-                      {formatTargetAudience(a)}
-                    </div>
-
-                    {isScheduled && (
-                      <div className="bg-blue-50 border-l-4 border-blue-500 rounded p-2 mb-3">
-                        <div className="text-xs text-blue-800 font-semibold flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
-                          Starts {getTimeUntil(a.startDate)}
-                        </div>
-                        <div className="text-[10px] text-blue-600 mt-0.5">
-                          {new Date(a.startDate).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="flex gap-4 text-xs text-gray-400 mb-4">
-                      <span className="flex items-center gap-1">
-                        <Calendar className="w-3 h-3" />
-                        {new Date(a.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
-                        {a.timeLimit ? `${a.timeLimit} min` : 'No limit'}
-                      </span>
-                    </div>
-
-                    {a.type === 'Combined' && (
-                      <div className="text-xs text-gray-600 bg-gray-50 p-2 rounded-lg mb-3">
-                        <div className="flex justify-between">
-                          <span>Self: {a.weight?.selfAssessment || 20}%</span>
-                          <span>Supervisor: {a.weight?.supervisor || 80}%</span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="border-t border-gray-100 px-5 py-3 flex justify-between items-center bg-gray-50">
-                    {isAdmin && next && a.status !== 'SCHEDULED' && (
-                      <button onClick={() => changeStatus(a._id, next)}
-                        className="px-3 py-1.5 text-xs font-semibold text-brand-red border border-brand-red rounded-lg hover:bg-brand-red-muted transition-colors">
-                        Move to {getStatusText(next)}
-                      </button>
-                    )}
-                    {isAdmin && isScheduled && (
-                      <span className="text-xs text-blue-600 flex items-center gap-1 font-medium">
-                        <Clock className="w-3 h-3" />
-                        Auto-activates {new Date(a.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                    )}
-                    {!isAdmin && isActive && !requiresSupervisor && (
-                      <button onClick={() => nav(`/assessments/${a._id}/take`)}
-                        className="px-3 py-1.5 text-xs font-semibold bg-brand-red text-white rounded-lg hover:bg-brand-red-dark transition-colors">
-                        Start Assessment
-                      </button>
-                    )}
-                    {!isAdmin && isScheduled && (
-                      <button onClick={() => nav(`/assessments/${a._id}/take`)}
-                        className="px-3 py-1.5 text-xs font-semibold bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors flex items-center gap-1">
-                        <Eye className="w-3 h-3" /> View Details
-                      </button>
-                    )}
-                    {isSupervisor && isActive && requiresSupervisor && (
-                      <button onClick={() => nav(`/assessments/${a._id}/evaluate`)}
-                        className="px-3 py-1.5 text-xs font-semibold bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
-                        Evaluate Team
-                      </button>
-                    )}
-                    {isEmployee && isActive && a.type === 'Combined' && (
-                      <button onClick={() => nav(`/assessments/${a._id}/take`)}
-                        className="px-3 py-1.5 text-xs font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-                        Start Self-Assessment
-                      </button>
-                    )}
-                    {isAdmin && a.status === 'COMPLETED' && a.type === 'Combined' && (
-                      <button onClick={() => handleScoreResults(a._id)}
-                        className="px-3 py-1.5 text-xs font-semibold text-white bg-purple-600 rounded-lg hover:bg-purple-700 transition-colors flex items-center gap-1">
-                        <Target className="w-3 h-3" /> Score Combined Results
-                      </button>
-                    )}
-                    {isAdmin && (
-                      <button onClick={() => nav(`/assessments/${a._id}`)}
-                        className="text-xs font-semibold text-gray-500 hover:text-brand-red transition-colors flex items-center gap-1">
-                        Details <ChevronRight className="w-3 h-3" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {pagination.total > pagination.limit && (
-            <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mt-8 pt-6 border-t border-gray-200">
-              <div className="text-sm text-gray-600">
-                Showing {(pagination.page - 1) * pagination.limit + 1} to{' '}
-                {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} assessments
-              </div>
-              <div className="flex items-center gap-2">
-                <button onClick={() => goToPage(pagination.page - 1)} disabled={pagination.page === 1}
-                  className="flex items-center gap-1 px-3 py-2 rounded-lg border border-gray-300 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50">
-                  <ChevronLeft className="w-4 h-4" /> Previous
-                </button>
-                <div className="flex items-center gap-1">
-                  {Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
-                    let pageNum;
-                    if (pagination.totalPages <= 5) pageNum = i + 1;
-                    else if (pagination.page <= 3) pageNum = i + 1;
-                    else if (pagination.page >= pagination.totalPages - 2) pageNum = pagination.totalPages - 4 + i;
-                    else pageNum = pagination.page - 2 + i;
-                    return (
-                      <button key={pageNum} onClick={() => goToPage(pageNum)}
-                        className={`w-9 h-9 rounded-lg text-sm font-medium ${pagination.page === pageNum ? 'bg-brand-red text-white' : 'border border-gray-300 text-gray-700 hover:bg-gray-50'}`}>
-                        {pageNum}
-                      </button>
-                    );
-                  })}
-                </div>
-                <button onClick={() => goToPage(pagination.page + 1)} disabled={pagination.page === pagination.totalPages}
-                  className="flex items-center gap-1 px-3 py-2 rounded-lg border border-gray-300 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50">
-                  Next <ChevronRight className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          )}
-        </>
-      )}
-
-      {/* Score Confirm Dialog */}
-      {scoreConfirm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-lg max-w-md w-full p-6">
-            <div className="w-12 h-12 rounded-full bg-purple-100 flex items-center justify-center mx-auto mb-4">
-              <Target className="w-6 h-6 text-purple-600" />
-            </div>
-            <h3 className="text-lg font-bold text-brand-black text-center mb-2">Score Combined Results?</h3>
-            <p className="text-sm text-gray-600 text-center mb-4">Missing responses will be treated as 0. This action cannot be undone.</p>
-            <div className="flex gap-3">
-              <button onClick={() => setScoreConfirm(null)} className="flex-1 py-2.5 border border-gray-300 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-50">Cancel</button>
-              <button onClick={() => executeScoreResults(scoreConfirm)} className="flex-1 py-2.5 bg-purple-600 text-white rounded-lg text-sm font-semibold hover:bg-purple-700">Score Results</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Create Assessment Modal */}
-      <Modal open={modal === 'create'} onClose={() => setModal(null)} title="Create Assessment" large>
-        <div className="space-y-5">
-
-          {/* ── Basic Information ── */}
-          <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
-            <h3 className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-2">
-              <Target className="w-4 h-4" /> Basic Information
-            </h3>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Competency *</label>
-                <select
-                  value={form.competencyId}
-                  onChange={(e) => setForm(prev => ({ ...prev, competencyId: e.target.value }))}
-                  className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm"
-                  required
-                >
-                  <option value="">— Select Competency —</option>
-                  {competencies.map((c) => (
-                    <option key={c._id} value={c._id}>{c.name} ({c.category})</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Target Group *</label>
-                <select
-                  value={form.targetGroup}
-                  onChange={(e) => setForm(prev => ({ ...prev, targetGroup: e.target.value }))}
-                  className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
-                  required
-                  disabled={!form.competencyId}
-                >
-                  <option value="">{form.competencyId ? '— Select Target Group —' : '— Select a competency first —'}</option>
-                  {targetGroups.map(tg => (
-                    <option key={tg} value={tg}>
-                      {tg.charAt(0).toUpperCase() + tg.slice(1).replace('-', ' ')}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Assessment Type *</label>
-                <select
-                  value={form.type}
-                  onChange={(e) => setForm(prev => ({ ...prev, type: e.target.value }))}
-                  className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm"
-                >
-                  <option value="SelfAssessment">Self Assessment</option>
-                  <option value="SupervisorOnly">Supervisor Only</option>
-                  <option value="Combined">Combined (Self + Supervisor)</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Purpose *</label>
-                <select
-                  value={form.purpose}
-                  onChange={(e) => setForm(prev => ({ ...prev, purpose: e.target.value }))}
-                  className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm"
-                  required
-                >
-                  <option value="">— Select Purpose —</option>
-                  {PURPOSES.map(p => <option key={p} value={p}>{p}</option>)}
-                </select>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4 mt-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Description</label>
-                <input
-                  value={form.description}
-                  onChange={(e) => setForm(prev => ({ ...prev, description: e.target.value }))}
-                  placeholder="e.g., Q1 2025 Communication Skills Assessment"
-                  className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                  Reminder <span className="text-gray-400 font-normal text-xs">(days before deadline, optional)</span>
-                </label>
-                <div className="relative">
-                  <Bell className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <input
-                    type="number"
-                    min="1"
-                    max="30"
-                    placeholder="e.g. 3"
-                    value={form.reminderDaysBefore}
-                    onChange={(e) => setForm(prev => ({ ...prev, reminderDaysBefore: e.target.value }))}
-                    className="w-full h-10 pl-9 pr-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* ── Schedule & Duration ── */}
-          <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
-            <h3 className="text-sm font-bold text-blue-800 mb-3 flex items-center gap-2">
-              <Calendar className="w-4 h-4" /> Schedule & Duration
-            </h3>
-            <div className="bg-blue-100 border-l-4 border-blue-500 p-2 rounded mb-3">
-              <p className="text-[10px] text-blue-800 flex items-center gap-1">
-                <Clock className="w-3 h-3 flex-shrink-0" />
-                <span><strong>Note:</strong> The assessment auto-activates at the scheduled start time.</span>
-              </p>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Start Date *</label>
-                <input type="date" value={form.startDate}
-                  onChange={(e) => setForm(prev => ({ ...prev, startDate: e.target.value }))}
-                  min={new Date().toISOString().split('T')[0]}
-                  className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm" required />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Start Time *</label>
-                <input type="time" value={form.startTime}
-                  onChange={(e) => setForm(prev => ({ ...prev, startTime: e.target.value }))}
-                  className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm" required />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">End Date *</label>
-                <input type="date" value={form.endDate}
-                  onChange={(e) => setForm(prev => ({ ...prev, endDate: e.target.value }))}
-                  min={form.startDate || new Date().toISOString().split('T')[0]}
-                  className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm" required />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">End Time *</label>
-                <input type="time" value={form.endTime}
-                  onChange={(e) => setForm(prev => ({ ...prev, endTime: e.target.value }))}
-                  className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm" required />
-              </div>
-            </div>
-            <div className="mt-4">
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Time Limit per Attempt (minutes, Optional)</label>
-              <input type="number" value={form.timeLimit}
-                onChange={(e) => setForm(prev => ({ ...prev, timeLimit: e.target.value }))}
-                placeholder="e.g., 60 (leave empty for no limit)" min={1}
-                className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm max-w-xs" />
-            </div>
-          </div>
-
-          {/* ── Target Audience ── */}
-          <div className="bg-purple-50 p-4 rounded-xl border border-purple-100">
-            <h3 className="text-sm font-bold text-purple-800 mb-3 flex items-center gap-2">
-              <Users className="w-4 h-4" /> Target Audience
-            </h3>
-            <TargetAudiencePicker />
-          </div>
-
-          {/* ── Combined Weights ── */}
-          {form.type === 'Combined' && (
-            <div className="bg-amber-50 p-4 rounded-xl border border-amber-100">
-              <h3 className="text-sm font-bold text-amber-800 mb-3">Combined Assessment Weights</h3>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">Self-Assessment Weight (%) *</label>
-                  <input type="number" value={form.weight.selfAssessment}
-                    onChange={(e) => {
-                      const selfWeight = Number(e.target.value);
-                      setForm(prev => ({ ...prev, weight: { selfAssessment: selfWeight, supervisor: 100 - selfWeight } }));
-                    }}
-                    min={0} max={100}
-                    className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm" />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">Supervisor Weight (%)</label>
-                  <input type="number" value={form.weight.supervisor} readOnly
-                    className="w-full h-10 px-3 rounded-lg border border-gray-300 bg-gray-100 text-sm" />
-                </div>
-              </div>
-              {form.weight.selfAssessment + form.weight.supervisor !== 100 && (
-                <div className="flex items-center gap-2 text-red-600 text-xs mt-2">
-                  <AlertCircle className="w-4 h-4" />
-                  Weights must sum to 100%. Current: {form.weight.selfAssessment + form.weight.supervisor}%
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ── Question Selection ── */}
-          {form.competencyId && form.targetGroup && questions.length > 0 && form.type !== 'SupervisorOnly' && (
-            <div className="bg-green-50 p-4 rounded-xl border border-green-100">
-              <div className="flex justify-between items-center mb-3">
-                <h3 className="text-sm font-bold text-green-800 flex items-center gap-2">
-                  <Check className="w-4 h-4" /> Question Selection
-                </h3>
-                <div className="flex gap-2">
-                  <button onClick={() => setQuestionSelectionMode('auto')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${questionSelectionMode === 'auto' ? 'bg-green-600 text-white' : 'bg-white text-green-700 border border-green-300'}`}>
-                    <Shuffle className="w-3 h-3 inline mr-1" /> Auto Select
-                  </button>
-                  <button onClick={() => setQuestionSelectionMode('manual')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${questionSelectionMode === 'manual' ? 'bg-green-600 text-white' : 'bg-white text-green-700 border border-green-300'}`}>
-                    <Edit2 className="w-3 h-3 inline mr-1" /> Manual Select
-                  </button>
-                </div>
-              </div>
-
-              {questionSelectionMode === 'auto' && (
-                <div className="space-y-3">
-                  <div className="bg-white p-3 rounded-lg border border-green-200">
-                    <div className="text-xs text-gray-600 mb-2">Configure how many questions of each type to randomly select.</div>
-                    <div className="grid grid-cols-2 gap-3">
-                      {['MCQ', 'Rating', 'TrueFalse', 'MultiSelect', 'ScenarioMCQ', 'ShortAnswer', 'Matching', 'Ordering', 'DragDropClassification'].map(type => {
-                        const available = getQuestionTypeCount(type);
-                        return (
-                          <div key={type} className="flex items-center gap-2">
-                            <label className="text-xs font-medium text-gray-700 flex-1">
-                              {type} <span className="text-gray-400">({available} available)</span>
-                            </label>
-                            <input type="number" min={0} max={available}
-                              value={autoSelectionConfig.questionTypes[type] || 0}
-                              onChange={(e) => {
-                                const val = Math.min(Number(e.target.value), available);
-                                setAutoSelectionConfig(prev => ({ ...prev, questionTypes: { ...prev.questionTypes, [type]: val } }));
-                              }}
-                              className="w-16 h-8 px-2 rounded border border-gray-300 text-sm" />
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <div className="flex justify-between items-center mt-3 pt-3 border-t border-gray-200">
-                      <span className="text-xs font-semibold text-gray-700">Total Questions: {getTotalAutoQuestions()}</span>
-                      <button onClick={autoSelectQuestions} disabled={getTotalAutoQuestions() === 0}
-                        className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-semibold hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1">
-                        <Shuffle className="w-3 h-3" /> Shuffle & Select
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {questionSelectionMode === 'manual' && (
-                <div className="border border-green-200 rounded-lg bg-white max-h-64 overflow-y-auto p-2 space-y-1">
-                  {questions.map((q) => (
-                    <label key={q._id} className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer text-sm">
-                      <input type="checkbox" checked={form.questionIds.includes(q._id)} onChange={() => toggleQuestion(q._id)}
-                        className="w-4 h-4 text-brand-red focus:ring-brand-red rounded" />
-                      <span className="flex-1 line-clamp-1">{q.text}</span>
-                      <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded">{q.type}</span>
-                    </label>
-                  ))}
-                </div>
-              )}
-
-              <div className="text-xs text-gray-600 mt-2 flex items-center gap-1">
-                <Check className="w-3 h-3 text-green-600" />
-                {form.questionIds.length} question(s) selected
-              </div>
-            </div>
-          )}
-
-          {form.competencyId && form.targetGroup && questions.length === 0 && (
-            <div className="bg-yellow-50 p-3 rounded-xl border border-yellow-200 text-xs text-yellow-800 flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 flex-shrink-0" />
-              No questions found for this competency and target group combination.
-            </div>
-          )}
-
-          {(!form.competencyId || !form.targetGroup) && form.type !== 'SupervisorOnly' && (
-            <div className="bg-gray-50 p-3 rounded-xl border border-dashed border-gray-300 text-xs text-gray-500 text-center">
-              Select a competency and target group above to load and select questions.
-            </div>
-          )}
-
-          {form.type === 'SupervisorOnly' && questions.length > 0 && form.competencyId && form.targetGroup && (
-            <div className="bg-orange-50 p-4 rounded-xl border border-orange-200">
-              <div className="flex items-start gap-2">
-                <AlertCircle className="w-5 h-5 text-orange-600 flex-shrink-0 mt-0.5" />
-                <div>
-                  <h4 className="text-sm font-semibold text-orange-800 mb-1">OD Question Selection (Optional)</h4>
-                  <p className="text-xs text-orange-700 mb-3">For Supervisor-Only assessments, questions are for reference only.</p>
-                  <div className="border border-orange-200 rounded-lg bg-white max-h-48 overflow-y-auto p-2 space-y-1">
-                    {questions.map((q) => (
-                      <label key={q._id} className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer text-sm">
-                        <input type="checkbox" checked={form.questionIds.includes(q._id)} onChange={() => toggleQuestion(q._id)}
-                          className="w-4 h-4 text-orange-500 focus:ring-orange-500 rounded" />
-                        <span className="flex-1 line-clamp-1">{q.text}</span>
-                        <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded">{q.type}</span>
-                      </label>
-                    ))}
-                  </div>
-                  <div className="text-xs text-orange-600 mt-2">{form.questionIds.length} reference question(s) selected</div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="flex justify-end gap-3 mt-6 pt-6 border-t border-gray-200">
-          <button onClick={() => setModal(null)}
-            className="px-5 py-2.5 border border-gray-300 rounded-lg font-semibold text-gray-700 hover:bg-gray-50 transition-colors">
-            Cancel
-          </button>
-          <button onClick={handleSave}
-            disabled={
-              !form.competencyId || !form.targetGroup || !form.purpose ||
-              !form.startDate || !form.endDate ||
-              (form.type === 'Combined' && form.weight.selfAssessment + form.weight.supervisor !== 100) ||
-              (form.type !== 'SupervisorOnly' && form.questionIds.length === 0)
-            }
-            className="px-5 py-2.5 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
-            <Plus className="w-4 h-4" /> Create Assessment
-          </button>
-        </div>
-      </Modal>
+          </>
+        )}
+      </div>
     </div>
   );
 }

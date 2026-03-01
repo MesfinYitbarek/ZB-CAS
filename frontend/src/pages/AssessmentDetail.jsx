@@ -213,81 +213,89 @@ export default function AssessmentDetail() {
   const questionCount = assessment.questionIds?.length || 0;
 
   return (
-    /* Full-viewport fixed layout — only questions pane scrolls */
-    <div className="flex flex-col h-screen bg-gray-50 overflow-hidden">
-
-      {/* ── Fixed Header ── */}
-      <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between flex-shrink-0 shadow-sm z-10">
-        <div className="flex items-center gap-4 min-w-0">
-          <button
-            onClick={() => nav('/assessments')}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
-          >
-            <ArrowLeft className="w-5 h-5 text-gray-600" />
+    <div className="h-[calc(100vh-4rem)] flex">
+      {/* Left Side - Scrollable Content */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Sticky Header */}
+        <div className="flex items-center gap-4 px-7 pt-7 pb-4 flex-shrink-0 bg-gray-50">
+          <button onClick={() => nav('/assessments')} className="p-2 hover:bg-gray-200 rounded-lg transition-colors">
+            <ArrowLeft className="w-5 h-5" />
           </button>
-          <div className="min-w-0">
-            <h1 className="text-lg font-bold text-brand-black truncate">
-              {assessment.description || assessment.competencyId?.name || 'Assessment Details'}
-            </h1>
-            <p className="text-xs text-gray-500 truncate">
-              {assessment.competencyId?.name} · {assessment.competencyId?.category}
+          <div className="flex-1">
+            <h1 className="text-2xl font-display font-bold text-brand-black">{assessment.description || 'Assessment Details'}</h1>
+            <p className="text-gray-500 text-sm">
+              {assessment.competencyId?.name} · {assessment.type}
             </p>
+          </div>
+          {isAdmin && assessment.status === 'DRAFT' && (
+            <div className="flex gap-2">
+              <button onClick={() => setEditModal(true)} className="flex items-center gap-2 px-3 py-1.5 border border-gray-300 rounded-lg font-semibold text-gray-700 hover:bg-gray-100 transition-colors text-sm">
+                <Edit2 className="w-4 h-4" /> Edit
+              </button>
+              <button onClick={handleDelete} className="flex items-center gap-2 px-3 py-1.5 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition-colors text-sm">
+                <Trash2 className="w-4 h-4" /> Delete
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Sticky Stats Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 px-7 pb-4 flex-shrink-0 bg-gray-50">
+          <div className="bg-white rounded-lg p-3 shadow-sm border border-gray-200">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-brand-red/10 flex items-center justify-center">
+                <Users className="w-4 h-4 text-brand-red" />
+              </div>
+              <div>
+                <div className="text-[10px] text-gray-500 uppercase font-semibold">Status</div>
+                <span className={`badge badge-${assessment.status.toLowerCase()} text-[10px] py-0.5 px-2`}>{assessment.status}</span>
+              </div>
+            </div>
+          </div>
+          <div className="bg-white rounded-lg p-3 shadow-sm border border-gray-200">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
+                <FileText className="w-4 h-4 text-blue-600" />
+              </div>
+              <div>
+                <div className="text-[10px] text-gray-500 uppercase font-semibold">Questions</div>
+                <div className="text-lg font-bold text-brand-black">{assessment.questionIds?.length || 0}</div>
+              </div>
+            </div>
+          </div>
+          <div className="bg-white rounded-lg p-3 shadow-sm border border-gray-200">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-green-100 flex items-center justify-center">
+                <Users className="w-4 h-4 text-green-600" />
+              </div>
+              <div>
+                <div className="text-[10px] text-gray-500 uppercase font-semibold">Type</div>
+                <div className="text-sm font-bold text-brand-black">{assessment.type}</div>
+              </div>
+            </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-3 flex-shrink-0 ml-4">
-          <span className={`px-3 py-1 rounded-full text-xs font-bold border ${STATUS_COLORS[assessment.status] || STATUS_COLORS.DRAFT}`}>
-            {assessment.status}
-          </span>
-          {isAdmin && assessment.status === 'DRAFT' && (
-            <>
-              <button
-                onClick={() => { setSearchResults([]); setEditModal(true); }}
-                className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-300 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
-              >
-                <Edit2 className="w-3.5 h-3.5" /> Edit
-              </button>
-              <button
-                onClick={handleDelete}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 transition-colors"
-              >
-                <Trash2 className="w-3.5 h-3.5" /> Delete
-              </button>
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* ── Two-pane body ── */}
-      <div className="flex flex-1 overflow-hidden">
-
-        {/* ── Left: Fixed details panel (scrollable within itself) ── */}
-        <div className="w-80 flex-shrink-0 bg-white border-r border-gray-200 overflow-y-auto">
-          <div className="p-5 space-y-5">
-
-            {/* Competency block */}
-            <div className="bg-brand-red/5 rounded-xl p-4 border border-brand-red/10">
-              <div className="text-[10px] font-bold text-brand-red uppercase tracking-wide mb-2">Competency</div>
-              <div className="font-bold text-gray-900 text-sm">{assessment.competencyId?.name || '—'}</div>
-              <div className="text-xs text-gray-500 mt-0.5">{assessment.competencyId?.category}</div>
-            </div>
-
-            {/* Key badges */}
-            <div className="space-y-2">
-              {assessment.targetGroup && (
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-500 w-24 flex-shrink-0">Target Group</span>
-                  <span className="text-xs bg-gray-100 text-gray-700 px-2.5 py-1 rounded-full font-medium capitalize">
-                    {assessment.targetGroup.replace('-', ' ')}
-                  </span>
+        {/* Scrollable Content Area */}
+        <div className="flex-1 overflow-y-auto custom-scrollbar px-7 pb-7 space-y-4">
+          {/* Assessment Info */}
+          <div className="bg-white rounded-lg p-4 shadow-sm border border-gray-200">
+            <h3 className="text-base font-semibold text-brand-black mb-3">Assessment Information</h3>
+            <div className="space-y-2 text-sm">
+              <div className="flex items-start gap-2">
+                <Calendar className="w-4 h-4 text-gray-400 mt-0.5" />
+                <div>
+                  <div className="text-xs text-gray-500 font-semibold uppercase">Duration</div>
+                  <div className="text-brand-black-soft">
+                    {new Date(assessment.startDate).toLocaleDateString()} - {new Date(assessment.endDate).toLocaleDateString()}
+                  </div>
                 </div>
-              )}
-              {assessment.purpose && (
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-500 w-24 flex-shrink-0">Purpose</span>
-                  <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${PURPOSE_COLORS[assessment.purpose] || 'bg-gray-50 text-gray-600'}`}>
-                    {assessment.purpose}
-                  </span>
+              </div>
+              <div className="flex items-start gap-2">
+                <Clock className="w-4 h-4 text-gray-400 mt-0.5" />
+                <div>
+                  <div className="text-xs text-gray-500 font-semibold uppercase">Time Limit</div>
+                  <div className="text-brand-black-soft">{assessment.timeLimit ? `${assessment.timeLimit} minutes` : 'No limit'}</div>
                 </div>
               )}
               <div className="flex items-center gap-2">
@@ -296,64 +304,22 @@ export default function AssessmentDetail() {
                   {assessment.type}
                 </span>
               </div>
-            </div>
-
-            <hr className="border-gray-100" />
-
-            {/* Info rows */}
-            <div className="space-y-4">
-              <InfoRow icon={Calendar} label="Start Date">
-                {new Date(assessment.startDate).toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}
-              </InfoRow>
-              <InfoRow icon={Calendar} label="End Date">
-                {new Date(assessment.endDate).toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}
-              </InfoRow>
-              <InfoRow icon={Clock} label="Time Limit">
-                {assessment.timeLimit ? `${assessment.timeLimit} minutes` : 'No limit'}
-              </InfoRow>
-              {assessment.reminderDaysBefore && (
-                <InfoRow icon={Bell} label="Reminder">
-                  {assessment.reminderDaysBefore} day(s) before deadline
-                  {assessment.reminderSent && (
-                    <span className="ml-2 text-xs bg-green-50 text-green-700 px-1.5 py-0.5 rounded-full">Sent</span>
-                  )}
-                </InfoRow>
-              )}
-              <InfoRow icon={FileText} label="Questions">
-                <span className="font-bold text-brand-black">{questionCount}</span> question{questionCount !== 1 ? 's' : ''}
-              </InfoRow>
-            </div>
-
-            <hr className="border-gray-100" />
-
-            {/* Target Audience */}
-            <div>
-              <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-1.5">
-                <Users className="w-3 h-3" /> Target Audience
-              </div>
-              <TargetAudienceDisplay assessment={assessment} />
-            </div>
-
-            {/* Combined weights */}
-            {assessment.type === 'Combined' && (
-              <>
-                <hr className="border-gray-100" />
+              <div className="flex items-start gap-2">
+                <Users className="w-4 h-4 text-gray-400 mt-0.5" />
                 <div>
-                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">Scoring Weights</div>
-                  <div className="space-y-1.5">
-                    <div className="flex justify-between text-xs">
-                      <span className="text-gray-600">Self-Assessment</span>
-                      <span className="font-bold text-brand-black">{assessment.weight?.selfAssessment || 0}%</span>
-                    </div>
-                    <div className="w-full bg-gray-100 rounded-full h-1.5">
-                      <div className="bg-brand-red h-1.5 rounded-full" style={{ width: `${assessment.weight?.selfAssessment || 0}%` }} />
-                    </div>
-                    <div className="flex justify-between text-xs">
-                      <span className="text-gray-600">Supervisor</span>
-                      <span className="font-bold text-brand-black">{assessment.weight?.supervisor || 0}%</span>
-                    </div>
-                    <div className="w-full bg-gray-100 rounded-full h-1.5">
-                      <div className="bg-blue-500 h-1.5 rounded-full" style={{ width: `${assessment.weight?.supervisor || 0}%` }} />
+                  <div className="text-xs text-gray-500 font-semibold uppercase">Target</div>
+                  <div className="text-brand-black-soft">
+                    {assessment.target?.department || 'All Departments'} · {assessment.target?.position || 'All Positions'}
+                  </div>
+                </div>
+              </div>
+              {assessment.type === 'Combined' && (
+                <div className="flex items-start gap-2">
+                  <FileText className="w-4 h-4 text-gray-400 mt-0.5" />
+                  <div>
+                    <div className="text-xs text-gray-500 font-semibold uppercase">Weights</div>
+                    <div className="text-brand-black-soft">
+                      Self: {assessment.weight?.selfAssessment || 0}% · Supervisor: {assessment.weight?.supervisor || 0}%
                     </div>
                   </div>
                 </div>
@@ -386,38 +352,24 @@ export default function AssessmentDetail() {
               </h2>
             </div>
 
-            {questionCount === 0 ? (
-              <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-                <FileText className="w-12 h-12 mb-3 opacity-30" />
-                <p className="text-sm">No questions added to this assessment.</p>
-              </div>
+          {/* Questions List */}
+          <div className="bg-white rounded-lg p-4 shadow-sm border border-gray-200">
+            <h3 className="text-base font-semibold text-brand-black mb-3">Questions ({assessment.questionIds?.length || 0})</h3>
+            {assessment.questionIds?.length === 0 ? (
+              <p className="text-gray-400 text-center py-8 text-sm">No questions added yet.</p>
             ) : (
               <div className="space-y-3">
                 {assessment.questionIds?.map((q, idx) => (
-                  <div
-                    key={q._id}
-                    className="bg-white border border-gray-200 rounded-xl p-4 hover:shadow-sm hover:border-gray-300 transition-all"
-                  >
-                    <div className="flex items-start gap-3">
-                      <span className="flex-shrink-0 w-7 h-7 bg-brand-red/10 text-brand-red text-xs font-bold rounded-full flex items-center justify-center mt-0.5">
+                  <div key={q._id} className="p-3 border border-gray-100 rounded-lg hover:bg-gray-50 transition-colors">
+                    <div className="flex items-start gap-2">
+                      <div className="w-5 h-5 rounded-full bg-brand-red/10 text-brand-red flex items-center justify-center text-xs font-bold flex-shrink-0">
                         {idx + 1}
                       </span>
                       <div className="flex-1 min-w-0">
-                        {q.scenario && (
-                          <p className="text-xs text-gray-500 italic bg-gray-50 rounded-lg px-3 py-2 mb-2 border border-gray-100 line-clamp-2">
-                            Scenario: {q.scenario}
-                          </p>
-                        )}
-                        <p className="text-sm text-gray-800 leading-relaxed">{q.text}</p>
-                        <div className="flex items-center gap-2 mt-2 flex-wrap">
-                          <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">{q.type}</span>
-                          <span className="text-xs text-gray-400">{q.score} pt{q.score !== 1 ? 's' : ''}</span>
-                          {q.targetGroup && (
-                            <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">{q.targetGroup}</span>
-                          )}
-                          {q.options?.length > 0 && (
-                            <span className="text-xs text-gray-400">{q.options.length} options</span>
-                          )}
+                        <p className="text-sm font-medium text-brand-black-soft line-clamp-2">{q.text}</p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded font-semibold">{q.type}</span>
+                          {q.options?.length > 0 && <span className="text-xs text-gray-400">{q.options.length} options</span>}
                         </div>
                       </div>
                     </div>
@@ -425,6 +377,27 @@ export default function AssessmentDetail() {
                 ))}
               </div>
             )}
+          </div>
+        </div>
+      </div>
+
+      {/* Right Side - Inverted L Shape (Sticky Details Panel) */}
+      <div className="w-80 flex-shrink-0 bg-gray-50 border-l border-gray-200">
+        <div className="h-full overflow-y-auto custom-scrollbar p-6">
+          <h3 className="text-lg font-semibold text-brand-black mb-4">Assessment Details</h3>
+          <div className="space-y-4 text-sm">
+            <div className="bg-white rounded-lg p-4 shadow-sm border border-gray-200">
+              <div className="text-xs text-gray-500 font-semibold uppercase mb-1">Competency</div>
+              <div className="text-brand-black-soft font-medium">{assessment.competencyId?.name || 'Not specified'}</div>
+            </div>
+            <div className="bg-white rounded-lg p-4 shadow-sm border border-gray-200">
+              <div className="text-xs text-gray-500 font-semibold uppercase mb-1">Description</div>
+              <div className="text-brand-black-soft leading-relaxed">{assessment.description || 'No description provided'}</div>
+            </div>
+            <div className="bg-white rounded-lg p-4 shadow-sm border border-gray-200">
+              <div className="text-xs text-gray-500 font-semibold uppercase mb-1">Created</div>
+              <div className="text-brand-black-soft">{new Date(assessment.createdAt).toLocaleDateString()}</div>
+            </div>
           </div>
         </div>
       </div>
