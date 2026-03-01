@@ -250,24 +250,25 @@ export default function AdminDashboard() {
               No competency data available
             </div>
           ) : (
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={compData} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
+            <div className="animate-growUp">
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={compData} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
                 <defs>
+                  <linearGradient id="barGradient0" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#C8102E" stopOpacity={0.9}/>
+                    <stop offset="100%" stopColor="#C8102E" stopOpacity={0.4}/>
+                  </linearGradient>
                   <linearGradient id="barGradient1" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#C8102E" stopOpacity={0.8}/>
-                    <stop offset="100%" stopColor="#C8102E" stopOpacity={0.3}/>
+                    <stop offset="0%" stopColor="#2563EB" stopOpacity={0.9}/>
+                    <stop offset="100%" stopColor="#2563EB" stopOpacity={0.4}/>
                   </linearGradient>
                   <linearGradient id="barGradient2" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#2563EB" stopOpacity={0.8}/>
-                    <stop offset="100%" stopColor="#2563EB" stopOpacity={0.3}/>
+                    <stop offset="0%" stopColor="#16A34A" stopOpacity={0.9}/>
+                    <stop offset="100%" stopColor="#16A34A" stopOpacity={0.4}/>
                   </linearGradient>
                   <linearGradient id="barGradient3" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#16A34A" stopOpacity={0.8}/>
-                    <stop offset="100%" stopColor="#16A34A" stopOpacity={0.3}/>
-                  </linearGradient>
-                  <linearGradient id="barGradient4" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#EA580C" stopOpacity={0.8}/>
-                    <stop offset="100%" stopColor="#EA580C" stopOpacity={0.3}/>
+                    <stop offset="0%" stopColor="#EA580C" stopOpacity={0.9}/>
+                    <stop offset="100%" stopColor="#EA580C" stopOpacity={0.4}/>
                   </linearGradient>
                 </defs>
                 <XAxis 
@@ -286,13 +287,22 @@ export default function AdminDashboard() {
                   }}
                   cursor={{ fill: 'rgba(0,0,0,0.05)' }}
                 />
-                <Bar dataKey="value" radius={[8, 8, 0, 0]} animationDuration={1500}>
+                <Bar 
+                  key={compData.length}
+                  dataKey="value" 
+                  radius={[8, 8, 0, 0]} 
+                  animationDuration={1500}
+                  animationBegin={0}
+                  isAnimationActive={true}
+                  animationEasing="ease-out"
+                >
                   {compData.map((entry, i) => (
-                    <Cell key={i} fill={`url(#barGradient${i % 4 + 1})`} />
+                    <Cell key={`cell-${i}`} fill={`url(#barGradient${i % 4})`} />
                   ))}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
+          </div>
           )}
         </div>
 
