@@ -75,7 +75,7 @@ export default function MyTeam() {
       {/* Header */}
       <div className="flex justify-between items-start mb-6">
         <div>
-          <h1 className="text-3xl font-display font-bold text-brand-black">
+          <h1 className="text-2xl font-display font-bold text-brand-black">
             My Team
           </h1>
           <p className="text-gray-500 mt-1">

@@ -1238,11 +1238,11 @@ export default function Questions() {
   };
 
   return (
-    <div className="p-4 bg-gray-50 h-[calc(100vh-4rem)] flex flex-col">
+    <div className="p-7  h-[calc(100vh-4rem)] flex flex-col">
       {/* Header */}
       <div className="flex justify-between items-center mb-4 flex-shrink-0">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Question Bank</h1>
+          <h1 className="text-2xl font-display font-bold text-brand-black">Question Bank</h1>
           <p className="text-sm text-gray-600">Manage questions for competencies</p>
         </div>
         <div className="flex gap-2">

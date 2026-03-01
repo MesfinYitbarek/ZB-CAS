@@ -157,7 +157,7 @@ export default function ActivityLog() {
       {/* Sticky Header */}
       <div className="flex justify-between items-start mb-6 flex-shrink-0">
         <div>
-          <h1 className="text-3xl font-display font-bold text-brand-black">Activity Log</h1>
+          <h1 className="text-2xl font-display font-bold text-brand-black">Activity Log</h1>
           <p className="text-gray-500 mt-1">System-wide activity tracking and audit trail</p>
         </div>
         <button onClick={handleExport} className="flex items-center gap-2 px-4 py-2 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors">

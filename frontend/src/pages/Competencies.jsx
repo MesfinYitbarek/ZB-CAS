@@ -190,7 +190,7 @@ export default function Competencies() {
       {/* HEADER */}
       <div className="flex justify-between items-start mb-6 flex-shrink-0">
         <div>
-          <h1 className="text-3xl font-bold text-brand-black">Competencies</h1>
+          <h1 className="text-2xl font-bold text-brand-black">Competencies</h1>
           <p className="text-gray-500 mt-1">Define and manage competency framework.</p>
         </div>
         <button

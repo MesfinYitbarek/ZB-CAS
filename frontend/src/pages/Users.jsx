@@ -173,7 +173,7 @@ export default function Users() {
       {/* Sticky Header */}
       <div className="flex justify-between items-start mb-6 flex-shrink-0">
         <div>
-          <h1 className="text-3xl font-display font-bold text-brand-black">User Management</h1>
+          <h1 className="text-2xl font-display font-bold text-brand-black">User Management</h1>
           <p className="text-gray-500 mt-1">Manage employees, supervisors, and HR administrators.</p>
         </div>
         <button

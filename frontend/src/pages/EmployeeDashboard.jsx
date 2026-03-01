@@ -131,13 +131,13 @@ export default function EmployeeDashboard() {
           <div>
             {/* Welcome */}
             <div className="flex items-center gap-2.5 mb-1">
-              <div className="w-1 h-6 bg-brand-red rounded-full" />
-              <h1 className="text-xl font-bold text-gray-900">
+              
+              <h1 className="text-2xl font-display font-bold text-brand-black">
                 Welcome back, {user?.name?.split(' ')[0]} 👋
               </h1>
               {refreshing && <div className="w-4 h-4 border-2 border-brand-red border-t-transparent rounded-full animate-spin" />}
             </div>
-            <p className="text-sm text-gray-400 ml-3.5">
+            <p className="text-sm text-gray-400">
               {user?.position || 'Employee'} · {user?.department || ''}
               {user?.employeeId && <span className="text-gray-300"> · {user.employeeId}</span>}
             </p>
@@ -296,7 +296,7 @@ export default function EmployeeDashboard() {
                 pendingAssessments.map((a, i) => (
                   <div
                     key={i}
-                    onClick={() => nav(`/assessments/${a._id}`)}
+                    onClick={() => nav('/assessments')}
                     className="p-3 rounded-xl border border-gray-100 hover:border-brand-red/30 hover:bg-red-50/30 cursor-pointer transition-all group"
                   >
                     <div className="flex items-center gap-2">

@@ -60,7 +60,7 @@ function Paginator({ pagination, goToPage }) {
   const pages = Array.from({ length: Math.min(5, tp) }, (_, i) => start + i);
   return (
     <div className="flex justify-between items-center pt-3 border-t border-slate-100 mt-3">
-      <p className="text-xs text-slate-400">
+      <p className="text-gray-500">
         {(cp - 1) * pagination.limit + 1}–{Math.min(cp * pagination.limit, pagination.total)} of {pagination.total}
       </p>
       <div className="flex items-center gap-1">
@@ -70,7 +70,7 @@ function Paginator({ pagination, goToPage }) {
         </button>
         {pages.map(p => (
           <button key={p} onClick={() => goToPage(p)}
-            className={`w-7 h-7 rounded-md text-xs font-semibold transition-colors ${cp === p ? 'bg-brand-red text-white' : 'border border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+            className={`w-7 h-7 rounded-md text-xlfont-semibold transition-colors ${cp === p ? 'bg-brand-red text-white' : 'border border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
             {p}
           </button>
         ))}
@@ -235,8 +235,8 @@ export default function Feedback() {
         {/* Header */}
         <div className="flex justify-between items-center mb-5">
           <div>
-            <h1 className="text-xl font-bold text-slate-800">My Feedback</h1>
-            <p className="text-xs text-slate-400 mt-0.5">Submit feedback for completed assessments</p>
+            <h1 className="text-2xl font-display font-bold text-brand-black">My Feedback</h1>
+            <p className="text-gray-500 mt-0.5">Submit feedback for completed assessments</p>
           </div>
           <button
             onClick={() => { setForm({ assessmentId: '', content: '', rating: 0 }); setModal(true); }}
@@ -248,7 +248,7 @@ export default function Feedback() {
 
         {/* Notice banners */}
         {eligibleAssessments.length === 0 && (
-          <div className="flex items-center gap-2.5 bg-slate-50 border border-slate-200 rounded-lg px-3.5 py-2.5 mb-4 text-xs text-slate-500">
+          <div className="flex items-center gap-2.5 bg-slate-50 border border-slate-200 rounded-lg px-3.5 py-2.5 mb-4 text-xltext-slate-500">
             <AlertCircle className="w-4 h-4 flex-shrink-0 text-slate-400" />
             Complete assessments first to be able to submit feedback.
           </div>
@@ -271,7 +271,7 @@ export default function Feedback() {
                       </p>
                       {f.rating > 0 && <StarRating value={f.rating} size="sm" />}
                     </div>
-                    <p className="text-xs text-slate-400 mb-2.5 flex items-center gap-1">
+                    <p className="text-gray-500 mb-2.5 flex items-center gap-1">
                       <Calendar className="w-3 h-3" />
                       {new Date(f.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
                     </p>
@@ -290,7 +290,7 @@ export default function Feedback() {
         <Modal open={modal} onClose={() => setModal(false)} title="Submit Feedback">
           <div className="space-y-4">
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5">Assessment *</label>
+              <label className="block text-xlfont-semibold text-slate-600 mb-1.5">Assessment *</label>
               <select value={form.assessmentId}
                 onChange={e => setForm(p => ({ ...p, assessmentId: e.target.value }))}
                 className="w-full h-9 px-3 rounded-lg border border-slate-300 text-sm text-slate-700 focus:ring-2 focus:ring-brand-red bg-white">
@@ -303,11 +303,11 @@ export default function Feedback() {
               </select>
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5">Rating <span className="font-normal text-slate-400">(optional)</span></label>
+              <label className="block text-xlfont-semibold text-slate-600 mb-1.5">Rating <span className="font-normal text-slate-400">(optional)</span></label>
               <StarRating value={form.rating} onChange={v => setForm(p => ({ ...p, rating: v }))} />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5">Feedback *</label>
+              <label className="block text-xlfont-semibold text-slate-600 mb-1.5">Feedback *</label>
               <textarea rows={4} value={form.content}
                 onChange={e => setForm(p => ({ ...p, content: e.target.value }))}
                 placeholder="Share your thoughts on the assessment experience..."
@@ -342,7 +342,7 @@ export default function Feedback() {
             </h1>
             <div className="flex items-center gap-1.5 mt-1 flex-wrap">
               {selectedSummary.competencyName && (
-                <span className="text-xs text-slate-500">{selectedSummary.competencyName}</span>
+                <span className="text-xltext-slate-500">{selectedSummary.competencyName}</span>
               )}
               {selectedSummary.targetGroup && (
                 <Chip color="slate">{selectedSummary.targetGroup.replace('-', ' ')}</Chip>
@@ -364,7 +364,7 @@ export default function Feedback() {
         {/* Rating distribution */}
         {selectedSummary.ratedCount > 0 && (
           <div className="bg-white border border-slate-200 rounded-xl p-4 mb-5">
-            <p className="text-xs font-bold text-slate-600 uppercase tracking-wide mb-3 flex items-center gap-1.5">
+            <p className="text-xlfont-bold text-slate-600 uppercase tracking-wide mb-3 flex items-center gap-1.5">
               <BarChart3 className="w-3.5 h-3.5 text-brand-red" /> Rating Breakdown
             </p>
             <RatingDistribution summary={selectedSummary} />
@@ -374,7 +374,7 @@ export default function Feedback() {
         {/* Entries */}
         <div className="flex items-center justify-between mb-3">
           <p className="text-sm font-semibold text-slate-700">Feedback Entries</p>
-          <span className="text-xs text-slate-400">{detailPagination.total} total</span>
+          <span className="text-gray-500">{detailPagination.total} total</span>
         </div>
 
         {loading ? <Spinner /> : (
@@ -430,11 +430,11 @@ export default function Feedback() {
       {/* Header */}
       <div className="flex justify-between items-center mb-5">
         <div>
-          <h1 className="text-xl font-bold text-slate-800">Feedback Overview</h1>
-          <p className="text-xs text-slate-400 mt-0.5">Ratings and responses per assessment</p>
+          <h1 className="text-2xl font-display font-bold text-brand-black">Feedback Overview</h1>
+          <p className="text-gray-500 mt-0.5">Ratings and responses per assessment</p>
         </div>
         <button onClick={loadSummaries}
-          className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 rounded-lg text-xs font-semibold text-slate-500 hover:bg-slate-50 transition-colors">
+          className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 rounded-lg text-xlfont-semibold text-slate-500 hover:bg-slate-50 transition-colors">
           <RefreshCw className="w-3.5 h-3.5" /> Refresh
         </button>
       </div>
@@ -452,17 +452,17 @@ export default function Feedback() {
           <Filter className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
           <select value={summaryFilters.competencyId}
             onChange={e => setSummaryFilters(p => ({ ...p, competencyId: e.target.value }))}
-            className="h-8 px-2.5 rounded-lg border border-slate-200 text-xs text-slate-600 focus:ring-2 focus:ring-brand-red bg-white min-w-[160px]">
+            className="h-8 px-2.5 rounded-lg border border-slate-200 text-xltext-slate-600 focus:ring-2 focus:ring-brand-red bg-white min-w-[160px]">
             <option value="">All Competencies</option>
             {competencies.map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
           </select>
           <input type="date" value={summaryFilters.dateFrom}
             onChange={e => setSummaryFilters(p => ({ ...p, dateFrom: e.target.value }))}
-            className="h-8 px-2.5 rounded-lg border border-slate-200 text-xs text-slate-600 focus:ring-2 focus:ring-brand-red bg-white" />
+            className="h-8 px-2.5 rounded-lg border border-slate-200 text-xltext-slate-600 focus:ring-2 focus:ring-brand-red bg-white" />
           <span className="text-slate-300 text-xs">—</span>
           <input type="date" value={summaryFilters.dateTo}
             onChange={e => setSummaryFilters(p => ({ ...p, dateTo: e.target.value }))}
-            className="h-8 px-2.5 rounded-lg border border-slate-200 text-xs text-slate-600 focus:ring-2 focus:ring-brand-red bg-white" />
+            className="h-8 px-2.5 rounded-lg border border-slate-200 text-xltext-slate-600 focus:ring-2 focus:ring-brand-red bg-white" />
           <div className="flex items-center gap-1.5 ml-auto">
             {hasFilters && (
               <button onClick={() => setSummaryFilters({ competencyId: '', dateFrom: '', dateTo: '' })}
@@ -471,7 +471,7 @@ export default function Feedback() {
               </button>
             )}
             <button onClick={loadSummaries}
-              className="h-8 px-4 bg-brand-red text-white rounded-lg text-xs font-semibold hover:bg-brand-red-dark transition-colors">
+              className="h-8 px-4 bg-brand-red text-white rounded-lg text-xlfont-semibold hover:bg-brand-red-dark transition-colors">
               Apply
             </button>
           </div>
@@ -483,7 +483,7 @@ export default function Feedback() {
         <div className="text-center py-20">
           <MessageSquare className="w-10 h-10 mx-auto mb-2 text-slate-200" />
           <p className="text-sm text-slate-400 font-medium">No feedback data yet</p>
-          <p className="text-xs text-slate-400 mt-1">Feedback will appear once employees submit reviews.</p>
+          <p className="text-gray-500 mt-1">Feedback will appear once employees submit reviews.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -516,7 +516,7 @@ export default function Feedback() {
               {/* Rating highlight + count */}
               <div className="flex items-center justify-between mb-3">
                 {s.avgRating ? (
-                  <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold ${s.avgRating >= 4 ? 'bg-green-50 text-green-700' : s.avgRating >= 3 ? 'bg-orange-50 text-orange-700' : 'bg-red-50 text-red-600'}`}>
+                  <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xlfont-bold ${s.avgRating >= 4 ? 'bg-green-50 text-green-700' : s.avgRating >= 3 ? 'bg-orange-50 text-orange-700' : 'bg-red-50 text-red-600'}`}>
                     <Star className="w-3 h-3" fill="currentColor" color="currentColor" />
                     {s.avgRating.toFixed(1)}
                   </div>

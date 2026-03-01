@@ -86,7 +86,7 @@ export default function PendingEvaluations() {
       {/* Header */}
       <div className="flex justify-between items-start mb-6">
         <div>
-          <h1 className="text-3xl font-display font-bold text-brand-black">Pending Evaluations</h1>
+          <h1 className="text-2xl font-display font-bold text-brand-black">Pending Evaluations</h1>
           <p className="text-gray-500 mt-1">Team members awaiting your supervisor evaluation</p>
         </div>
         <div className="flex items-center gap-2 px-4 py-2 bg-orange-100 text-orange-700 rounded-lg border border-orange-200">

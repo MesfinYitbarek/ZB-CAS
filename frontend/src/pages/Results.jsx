@@ -461,7 +461,7 @@ export default function Results() {
         {/* Page header */}
         <div className="flex justify-between items-start mb-4 flex-wrap gap-4">
           <div>
-            <h1 className="text-3xl font-display font-bold text-brand-black">
+            <h1 className="text-2xl font-display font-bold text-brand-black">
               {isAdmin ? 'Assessment Results' : 'My Results'}
             </h1>
             <p className="text-gray-500 mt-1">
@@ -483,65 +483,12 @@ export default function Results() {
           </div>
         </div>
 
-          <button
-            onClick={handleExport}
-            disabled={exporting || filteredResults.length === 0 || !selectedAssessment}
-            className="flex items-center gap-2 px-4 py-2 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Download className="w-4 h-4" />
-            {exporting ? 'Exporting...' : `Export ${exportFormat.toUpperCase()}`}
-          </button>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-xl shadow-card border border-gray-200 p-5 mb-6">
-        <div className="flex flex-col md:flex-row md:items-end gap-4">
-          <div className="max-w-md">
-            <label className="block text-xs font-medium text-gray-700 mb-1.5">
-              Select Assessment
-            </label>
-            <div className="relative">
-              <Select
-                options={assessments.map(a => ({
-                  value: a._id,
-                  label: `${a.title || a.description} (${a.type})`
-                }))}
-                value={
-                  assessments
-                    .map(a => ({
-                      value: a._id,
-                      label: `${a.title || a.description} (${a.type})`
-                    }))
-                    .find(opt => opt.value === selectedAssessment) || null
-                }
-                onChange={(selected) => {
-                  setSelectedAssessment(selected?.value || '');
-                  setPagination(prev => ({ ...prev, page: 1 }));
-                  clearFilters();
-                }}
-                placeholder="Search assessment..."
-                isClearable
-                className="text-sm"
-                styles={{
-                  control: (base) => ({
-                    ...base,
-                    minHeight: '40px',
-                    height: '40px',
-                    borderRadius: '8px',
-                    borderColor: '#d1d5db',
-                    boxShadow: 'none'
-                  }),
-                  valueContainer: (base) => ({
-                    ...base,
-                    padding: '0 12px'
-                  }),
-                  indicatorsContainer: (base) => ({
-                    ...base,
-                    height: '40px'
-                  })
-                }}
-              />
-              <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+        {/* Filter Panel */}
+        {showFilters && (
+          <div className="bg-white rounded-xl border border-gray-200 p-6 mb-4">
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="font-bold text-gray-900 flex items-center gap-2"><Filter className="w-4 h-4 text-brand-red" /> Filter Results</h3>
+              <button onClick={() => setShowFilters(false)} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {/* Search */}

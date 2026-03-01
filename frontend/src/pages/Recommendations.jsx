@@ -217,7 +217,7 @@ export default function Recommendations() {
     <div className="p-7">
       <div className="flex justify-between items-start mb-6">
         <div>
-          <h1 className="text-3xl font-display font-bold text-brand-black">Recommendations</h1>
+          <h1 className="text-2xl font-display font-bold text-brand-black">Recommendations</h1>
           <p className="text-gray-500 mt-1">
             Define development recommendations and descriptions per competency, target group, and level.
           </p>

@@ -104,11 +104,11 @@ export default function AdminDashboard() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2.5 mb-1">
-              <div className="w-1 h-6 bg-brand-red rounded-full" />
-              <h1 className="text-xl font-bold text-gray-900">Admin Dashboard</h1>
+              {/* <div className="w-1 h-6 bg-brand-red rounded-full" /> */}
+              <h1 className="text-2xl font-display font-bold text-brand-black">Admin Dashboard</h1>
               {refreshing && <div className="w-4 h-4 border-2 border-brand-red border-t-transparent rounded-full animate-spin" />}
             </div>
-            <p className="text-sm text-gray-400 ml-3.5">System-wide overview · <span className="text-gray-600 font-medium">{periodLabel}</span></p>
+            <p className="text-sm text-gray-400">System-wide overview · <span className="text-gray-600 font-medium">{periodLabel}</span></p>
           </div>
 
           <div className="flex items-center gap-2">

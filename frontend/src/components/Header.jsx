@@ -89,10 +89,10 @@ export default function Header({ onMobileToggle }) {
 
   const breadcrumbs = getBreadcrumbs();
 
-  // Filtered search results
-  const filteredSearch = searchQuery.trim()
-    ? SEARCH_ITEMS.filter(item => item.label.toLowerCase().includes(searchQuery.toLowerCase()))
-    : SEARCH_ITEMS;
+  // // Filtered search results
+  // const filteredSearch = searchQuery.trim()
+  //   ? SEARCH_ITEMS.filter(item => item.label.toLowerCase().includes(searchQuery.toLowerCase()))
+  //   : SEARCH_ITEMS;
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -175,8 +175,8 @@ export default function Header({ onMobileToggle }) {
             return (
               <div key={crumb.path} className="flex items-center">
                 {index > 0 && <ChevronRight className="w-4 h-4 text-gray-400 mx-1 flex-shrink-0" />}
-                <button onClick={() => nav(crumb.path)} className={`flex items-center gap-1.5 px-2 py-1 rounded-md transition-colors ${isLast ? 'font-semibold text-brand-black bg-gray-100' : 'text-gray-600 hover:text-brand-red hover:bg-gray-50'}`}>
-                  <Icon className="w-4 h-4 flex-shrink-0" />
+                <button onClick={() => nav(crumb.path)} className={`flex items-center gap-1.5 px-2 py-1 rounded-md transition-colors ${isLast ? 'font-semibold text-brand-black bg-white' : 'text-gray-400 hover:text-brand-red hover:bg-gray-50'}`}>
+                  {/* <Icon className="w-4 h-4 flex-shrink-0" /> */}
                   <span className="truncate max-w-[120px]">{crumb.label}</span>
                 </button>
               </div>
@@ -213,11 +213,11 @@ export default function Header({ onMobileToggle }) {
           )}
         </div>
 
-        <button onClick={() => setShowSpotlight(true)} className="hidden sm:flex items-center gap-2 px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors text-sm">
+        {/* <button onClick={() => setShowSpotlight(true)} className="hidden sm:flex items-center gap-2 px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors text-sm">
           <Search className="w-4 h-4 text-gray-500" />
           <span className="text-gray-500">Search...</span>
           <span className="text-xs font-mono bg-white px-1.5 py-0.5 rounded text-gray-400 border border-gray-200">⌘K</span>
-        </button>
+        </button> */}
 
         <div className="relative" ref={profileRef}>
           <button onClick={() => setShowProfileMenu(!showProfileMenu)} className="flex items-center gap-2 p-1 hover:bg-gray-100 rounded-lg transition-base group" aria-label="Profile menu">
@@ -267,7 +267,7 @@ export default function Header({ onMobileToggle }) {
         </div>
       </header>
 
-      {showSpotlight && (
+      {/* {showSpotlight && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-start justify-center pt-[15vh]" onClick={() => setShowSpotlight(false)}>
           <div className="w-full max-w-2xl mx-4 bg-white rounded-2xl shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center gap-3 px-4 py-4 border-b border-gray-200">
@@ -302,7 +302,7 @@ export default function Header({ onMobileToggle }) {
             </div>
           </div>
         </div>
-      )}
+      )} */}
     </>
   );
 }

@@ -1236,7 +1236,7 @@ export default function Reports() {
         {/* Page title */}
         <div className="flex justify-between items-start mb-5 flex-wrap gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Reports & Analytics</h1>
+            <h1 className="text-2xl font-display font-bold text-brand-black">Reports & Analytics</h1>
             <p className="text-gray-500 mt-0.5 text-sm">Comprehensive HR competency intelligence — every dimension, every condition.</p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
