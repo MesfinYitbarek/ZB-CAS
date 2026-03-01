@@ -186,9 +186,9 @@ export default function Competencies() {
   };
 
   return (
-    <div className="p-7 bg-gradient-to-br from-gray-50 to-white min-h-screen">
+    <div className="p-7 bg-gradient-to-br from-gray-50 to-white h-[calc(100vh-4rem)] flex flex-col">
       {/* HEADER */}
-      <div className="flex justify-between items-start mb-6">
+      <div className="flex justify-between items-start mb-6 flex-shrink-0">
         <div>
           <h1 className="text-3xl font-bold text-brand-black">Competencies</h1>
           <p className="text-gray-500 mt-1">Define and manage competency framework.</p>
@@ -202,7 +202,7 @@ export default function Competencies() {
       </div>
 
       {/* FILTERS */}
-      <div className="flex justify-between items-center gap-4 mb-6">
+      <div className="flex justify-between items-center gap-4 mb-6 flex-shrink-0">
         <div className="flex gap-2 flex-wrap">
           {CATEGORIES.map((c) => (
             <button
@@ -231,57 +231,59 @@ export default function Competencies() {
         </select>
       </div>
 
-      {/* CONTENT */}
-      {loading ? (
-        <div className="flex justify-center p-16">
-          <div className="w-10 h-10 border-4 border-brand-red border-t-transparent rounded-full animate-spin" />
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-6">
-          {items.map((c) => (
-            <div
-              key={c._id}
-              className="group relative bg-white/90 backdrop-blur-sm rounded-xl border border-gray-200/70 p-4 transition-all hover:shadow-xl hover:-translate-y-1"
-            >
-              <h3 className="font-semibold text-brand-black mb-2 line-clamp-2 pr-4">
-                {c.name}
-              </h3>
+      {/* CONTENT - Scrollable */}
+      <div className="flex-1 overflow-auto min-h-0">
+        {loading ? (
+          <div className="flex justify-center p-16">
+            <div className="w-10 h-10 border-4 border-brand-red border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-6">
+            {items.map((c) => (
+              <div
+                key={c._id}
+                className="group relative bg-white/90 backdrop-blur-sm rounded-xl border border-gray-200/70 p-4 transition-all hover:shadow-xl hover:-translate-y-1"
+              >
+                <h3 className="font-semibold text-brand-black mb-2 line-clamp-2 pr-4">
+                  {c.name}
+                </h3>
 
-              {/* Tags - Category first, then target groups below */}
-              <div className="flex flex-wrap gap-2 mb-3">
-                <span className={`px-2 py-0.5 rounded-md text-[11px] font-semibold ${CAT_COLORS[c.category]}`}>
-                  {c.category}
-                </span>
-              </div>
-              <div className="flex flex-wrap gap-2 mb-4">
-                {c.targetGroups?.map((tg) => (
-                  <span
-                    key={tg.targetGroup}
-                    className={`px-2 py-0.5 rounded-md text-[11px] ${TG_COLORS[tg.targetGroup]}`}
-                  >
-                    {tg.targetGroup}
+                {/* Tags - Category first, then target groups below */}
+                <div className="flex flex-wrap gap-2 mb-3">
+                  <span className={`px-2 py-0.5 rounded-md text-[11px] font-semibold ${CAT_COLORS[c.category]}`}>
+                    {c.category}
                   </span>
-                ))}
-              </div>
+                </div>
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {c.targetGroups?.map((tg) => (
+                    <span
+                      key={tg.targetGroup}
+                      className={`px-2 py-0.5 rounded-md text-[11px] ${TG_COLORS[tg.targetGroup]}`}
+                    >
+                      {tg.targetGroup}
+                    </span>
+                  ))}
+                </div>
 
-              {/* Bottom row: Only actions (no questions count anymore) */}
-              <div className="flex items-center justify-end text-xs text-gray-400 border-t pt-3">
-                <div className="flex gap-1">
-                  <button onClick={() => setViewItem(c)} className="p-1.5 rounded-md hover:bg-blue-50 transition">
-                    <Eye className="w-4 h-4 text-blue-600" />
-                  </button>
-                  <button onClick={() => openEdit(c)} className="p-1.5 rounded-md hover:bg-gray-100 transition">
-                    <Edit2 className="w-4 h-4 text-gray-600" />
-                  </button>
-                  <button onClick={() => handleDelete(c._id)} className="p-1.5 rounded-md hover:bg-red-50 transition">
-                    <Trash2 className="w-4 h-4 text-red-600" />
-                  </button>
+                {/* Bottom row: Only actions (no questions count anymore) */}
+                <div className="flex items-center justify-end text-xs text-gray-400 border-t pt-3">
+                  <div className="flex gap-1">
+                    <button onClick={() => setViewItem(c)} className="p-1.5 rounded-md hover:bg-blue-50 transition">
+                      <Eye className="w-4 h-4 text-blue-600" />
+                    </button>
+                    <button onClick={() => openEdit(c)} className="p-1.5 rounded-md hover:bg-gray-100 transition">
+                      <Edit2 className="w-4 h-4 text-gray-600" />
+                    </button>
+                    <button onClick={() => handleDelete(c._id)} className="p-1.5 rounded-md hover:bg-red-50 transition">
+                      <Trash2 className="w-4 h-4 text-red-600" />
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* CREATE / EDIT MODAL */}
       <Modal

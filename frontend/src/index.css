@@ -4,6 +4,35 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Keyframes animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes growUp {
+  from {
+    opacity: 0;
+    transform: scaleY(0);
+    transform-origin: bottom;
+  }
+  to {
+    opacity: 1;
+    transform: scaleY(1);
+    transform-origin: bottom;
+  }
+}
+
+.animate-growUp {
+  animation: growUp 0.8s ease-out;
+}
+
 @layer base {
   * {
     @apply border-gray-200;
