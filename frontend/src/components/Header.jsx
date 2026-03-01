@@ -29,12 +29,12 @@ const BREADCRUMB_MAP = {
 };
 
 // Quick actions
-const QUICK_ACTIONS = [
-  { label: 'Create User', icon: Plus, path: '/users', shortcut: 'U' },
-  { label: 'Create Assessment', icon: Target, path: '/assessments', shortcut: 'A' },
-  { label: 'View Results', icon: FileText, path: '/results', shortcut: 'R' },
-  { label: 'View Reports', icon: TrendingUp, path: '/reports', shortcut: 'P' },
-];
+// const QUICK_ACTIONS = [
+//   { label: 'Create User', icon: Plus, path: '/users', shortcut: 'U' },
+//   { label: 'Create Assessment', icon: Target, path: '/assessments', shortcut: 'A' },
+//   { label: 'View Results', icon: FileText, path: '/results', shortcut: 'R' },
+//   { label: 'View Reports', icon: TrendingUp, path: '/reports', shortcut: 'P' },
+// ];
 
 // Searchable items - matching actual sidebar navigation
 const SEARCH_ITEMS = [
@@ -95,27 +95,27 @@ export default function Header({ onMobileToggle }) {
   //   : SEARCH_ITEMS;
 
   // Keyboard shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        e.preventDefault();
-        setShowSpotlight(true);
-      }
-      if (e.key === 'Escape') {
-        setShowSpotlight(false);
-        setShowQuickActions(false);
-      }
-      if (e.altKey && !e.ctrlKey && !e.metaKey) {
-        const action = QUICK_ACTIONS.find(a => a.shortcut.toLowerCase() === e.key.toLowerCase());
-        if (action) {
-          e.preventDefault();
-          nav(action.path);
-        }
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [nav]);
+  // useEffect(() => {
+  //   const handleKeyDown = (e) => {
+  //     if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+  //       e.preventDefault();
+  //       setShowSpotlight(true);
+  //     }
+  //     if (e.key === 'Escape') {
+  //       setShowSpotlight(false);
+  //       setShowQuickActions(false);
+  //     }
+  //     if (e.altKey && !e.ctrlKey && !e.metaKey) {
+  //       const action = QUICK_ACTIONS.find(a => a.shortcut.toLowerCase() === e.key.toLowerCase());
+  //       if (action) {
+  //         e.preventDefault();
+  //         nav(action.path);
+  //       }
+  //     }
+  //   };
+  //   window.addEventListener('keydown', handleKeyDown);
+  //   return () => window.removeEventListener('keydown', handleKeyDown);
+  // }, [nav]);
 
   useEffect(() => {
     if (showSpotlight && searchInputRef.current) {
@@ -186,7 +186,7 @@ export default function Header({ onMobileToggle }) {
 
         <div className="flex-1" />
 
-        <div className="relative" ref={quickActionsRef}>
+        {/* <div className="relative" ref={quickActionsRef}>
           <button onClick={() => setShowQuickActions(!showQuickActions)} className="hidden sm:flex items-center gap-2 px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors text-sm font-medium">
             <Zap className="w-4 h-4 text-brand-red" />
             Quick Actions
@@ -211,7 +211,7 @@ export default function Header({ onMobileToggle }) {
               </div>
             </div>
           )}
-        </div>
+        </div> */}
 
         {/* <button onClick={() => setShowSpotlight(true)} className="hidden sm:flex items-center gap-2 px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors text-sm">
           <Search className="w-4 h-4 text-gray-500" />
