@@ -422,18 +422,6 @@ export default function Results() {
     }
   };
 
-  // ── finalise result ───────────────────────────────────────────────────────
-  const finalise = async (id) => {
-    setFinalisingId(id);
-    try {
-      await api.patch(`/results/${id}/finalise`);
-      show('Result finalised.', 'success');
-      setResults(prev => prev.map(r => r._id === id ? { ...r, status: 'FINAL' } : r));
-    } catch (err) {
-      show(err.response?.data?.message || 'Failed.', 'error');
-    }
-    setFinalisingId(null);
-  };
 
   // ─────────────────────────────────────────────────────────────────────────
   // RENDER — fixed outer shell, scrollable rows only
@@ -564,17 +552,6 @@ export default function Results() {
                   </select>
                 </div>
               )}
-              {isAdmin && (
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Status</label>
-                  <select value={pendingFilters.status} onChange={e => setPendingFilters(p => ({ ...p, status: e.target.value }))}
-                    className="w-full h-9 px-3 rounded-lg border border-gray-300 text-sm focus:ring-2 focus:ring-brand-red">
-                    <option value="">All Statuses</option>
-                    <option value="PENDING">Pending</option>
-                    <option value="FINAL">Final</option>
-                  </select>
-                </div>
-              )}
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">From Date</label>
                 <input type="date" value={pendingFilters.dateFrom}
@@ -667,7 +644,6 @@ export default function Results() {
                     <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-600 uppercase tracking-wider">Score</th>
                     <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-600 uppercase tracking-wider">Level</th>
                     <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-600 uppercase tracking-wider">Date</th>
-                    {isAdmin && <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>}
                     <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
                   </tr>
                 </thead>
@@ -702,26 +678,14 @@ export default function Results() {
                           {result.formattedDate}
                         </div>
                       </td>
-                      {isAdmin && (
-                        <td className="px-5 py-4">
-                          <span className={`text-xs px-2 py-1 rounded-full font-medium ${result.status === 'FINAL' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                            {result.status}
-                          </span>
-                        </td>
-                      )}
+                    
                       <td className="px-5 py-4">
                         <div className="flex items-center gap-2">
                           <button onClick={() => openDetail(result)}
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors">
                             <Eye className="w-3.5 h-3.5" /> Details
                           </button>
-                          {isAdmin && result.status === 'PENDING' && (
-                            <button onClick={() => finalise(result._id)} disabled={finalisingId === result._id}
-                              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold bg-brand-red text-white rounded-lg hover:bg-brand-red-dark transition-colors disabled:opacity-50">
-                              <CheckCircle2 className="w-3.5 h-3.5" />
-                              {finalisingId === result._id ? '...' : 'Finalise'}
-                            </button>
-                          )}
+                          
                         </div>
                       </td>
                     </tr>
