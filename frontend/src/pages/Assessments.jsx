@@ -502,8 +502,9 @@ export default function Assessments() {
   );
 
   return (
-    <div className="p-7">
-      <div className="flex justify-between items-start mb-6">
+    <div className="h-[calc(100vh-4rem)] flex flex-col p-7">
+      {/* Sticky Header */}
+      <div className="flex justify-between items-start mb-6 flex-shrink-0">
         <div>
           <h1 className="text-2xl font-display font-bold text-brand-black">Assessments</h1>
           <p className="text-gray-500 mt-1">
@@ -535,8 +536,9 @@ export default function Assessments() {
         </div>
       </div>
 
+      {/* Sticky Supervisor Stats (if applicable) */}
       {isSupervisor && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 flex-shrink-0">
           <div className="bg-white rounded-xl p-5 shadow-card border border-gray-100">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center"><Target className="w-5 h-5 text-blue-600" /></div>
@@ -558,8 +560,9 @@ export default function Assessments() {
         </div>
       )}
 
+      {/* Sticky Filters and Controls */}
       {isAdmin && (
-        <div className="flex justify-between items-center mb-6">
+        <div className="flex justify-between items-center mb-6 flex-shrink-0">
           <div className="flex gap-2 flex-wrap">
             <button onClick={() => { setFilterStatus(''); setPagination(prev => ({ ...prev, page: 1 })); }}
               className={`px-4 py-2 rounded-lg border-2 font-semibold text-sm transition-all ${filterStatus === '' ? 'border-brand-red bg-brand-red/10 text-brand-red' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'}`}>
@@ -586,195 +589,199 @@ export default function Assessments() {
       )}
 
       {!isAdmin && (
-        <div className="mb-6">
+        <div className="mb-6 flex-shrink-0">
           <p className="text-sm text-gray-500">
             Showing {isEmployee ? 'assessments assigned to you' : 'assessments requiring your evaluation'}
           </p>
         </div>
       )}
 
-      {loading ? (
-        <div className="flex items-center justify-center p-16">
-          <div className="w-10 h-10 border-4 border-brand-red border-t-transparent rounded-full animate-spin" />
-        </div>
-      ) : (
-        <>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-            {items.length === 0 && (
-              <div className="col-span-full text-center py-16 text-gray-400">
-                {isSupervisor ? 'No assessments requiring your evaluation at the moment.'
-                  : isEmployee ? 'No scheduled or active assessments for you at the moment.'
-                    : 'No assessments found.'}
+      {/* Scrollable Content Area */}
+      <div className="flex-1 overflow-y-auto custom-scrollbar">
+        {loading ? (
+          <div className="flex items-center justify-center p-16">
+            <div className="w-10 h-10 border-4 border-brand-red border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+              {items.length === 0 && (
+                <div className="col-span-full text-center py-16 text-gray-400">
+                  {isSupervisor ? 'No assessments requiring your evaluation at the moment.'
+                    : isEmployee ? 'No scheduled or active assessments for you at the moment.'
+                      : 'No assessments found.'}
+                </div>
+              )}
+              {items.map((a) => {
+                const next = getNextStatus(a.status);
+                const isActive = a.status === 'ACTIVE';
+                const isScheduled = a.status === 'SCHEDULED';
+                const requiresSupervisor = requiresSupervisorEvaluation(a);
+
+                return (
+                  <div key={a._id} className="bg-white rounded-xl shadow-card hover:shadow-card-hover transition-all border border-gray-100 overflow-hidden">
+                    <div className={`h-2 ${getStatusColor(a.status)}`} />
+                    <div className="p-5">
+                      <div className="flex justify-between items-start mb-3">
+                        <span className={`px-2 py-1 rounded-full text-xs font-bold ${getAssessmentTypeColor(a.type)}`}>{a.type}</span>
+                        <span className={`px-2 py-1 rounded-full text-xs font-bold ${
+                          a.status === 'DRAFT' ? 'bg-gray-100 text-gray-800' :
+                          a.status === 'SCHEDULED' ? 'bg-blue-100 text-blue-800' :
+                          a.status === 'ACTIVE' ? 'bg-green-100 text-green-800' :
+                          a.status === 'COMPLETED' ? 'bg-red-100 text-red-800' :
+                          'bg-gray-100 text-gray-800'}`}>
+                          {getStatusText(a.status)}
+                        </span>
+                      </div>
+
+                      <h3 className="text-base font-bold text-brand-black mb-1 line-clamp-2">
+                        {a.description || 'Untitled Assessment'}
+                      </h3>
+
+                      {a.purpose && (
+                        <span className="inline-block mb-2 text-xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full font-medium">
+                          {a.purpose}
+                        </span>
+                      )}
+
+                      <p className="text-sm text-gray-500 mb-2 flex items-center gap-1">
+                        <Target className="w-3 h-3" />
+                        {a.competencyId?.name || 'No competency'}
+                        {a.targetGroup && (
+                          <span className="ml-1 text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">{a.targetGroup}</span>
+                        )}
+                      </p>
+
+                      <div className="text-xs text-gray-500 mb-3 flex items-center gap-1">
+                        <Users className="w-3 h-3" />
+                        {formatTargetAudience(a)}
+                      </div>
+
+                      {isScheduled && (
+                        <div className="bg-blue-50 border-l-4 border-blue-500 rounded p-2 mb-3">
+                          <div className="text-xs text-blue-800 font-semibold flex items-center gap-1">
+                            <Clock className="w-3 h-3" />
+                            Starts {getTimeUntil(a.startDate)}
+                          </div>
+                          <div className="text-[10px] text-blue-600 mt-0.5">
+                            {new Date(a.startDate).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="flex gap-4 text-xs text-gray-400 mb-4">
+                        <span className="flex items-center gap-1">
+                          <Calendar className="w-3 h-3" />
+                          {new Date(a.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <Clock className="w-3 h-3" />
+                          {a.timeLimit ? `${a.timeLimit} min` : 'No limit'}
+                        </span>
+                      </div>
+
+                      {a.type === 'Combined' && (
+                        <div className="text-xs text-gray-600 bg-gray-50 p-2 rounded-lg mb-3">
+                          <div className="flex justify-between">
+                            <span>Self: {a.weight?.selfAssessment || 20}%</span>
+                            <span>Supervisor: {a.weight?.supervisor || 80}%</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="border-t border-gray-100 px-5 py-3 flex justify-between items-center bg-gray-50">
+                      {isAdmin && next && a.status !== 'SCHEDULED' && (
+                        <button onClick={() => changeStatus(a._id, next)}
+                          className="px-3 py-1.5 text-xs font-semibold text-brand-red border border-brand-red rounded-lg hover:bg-brand-red-muted transition-colors">
+                          Move to {getStatusText(next)}
+                        </button>
+                      )}
+                      {isAdmin && isScheduled && (
+                        <span className="text-xs text-blue-600 flex items-center gap-1 font-medium">
+                          <Clock className="w-3 h-3" />
+                          Auto-activates {new Date(a.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      )}
+                      {!isAdmin && isActive && !requiresSupervisor && (
+                        <button onClick={() => nav(`/assessments/${a._id}/take`)}
+                          className="px-3 py-1.5 text-xs font-semibold bg-brand-red text-white rounded-lg hover:bg-brand-red-dark transition-colors">
+                          Start Assessment
+                        </button>
+                      )}
+                      {!isAdmin && isScheduled && (
+                        <button onClick={() => nav(`/assessments/${a._id}/take`)}
+                          className="px-3 py-1.5 text-xs font-semibold bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors flex items-center gap-1">
+                          <Eye className="w-3 h-3" /> View Details
+                        </button>
+                      )}
+                      {isSupervisor && isActive && requiresSupervisor && (
+                        <button onClick={() => nav(`/assessments/${a._id}/evaluate`)}
+                          className="px-3 py-1.5 text-xs font-semibold bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
+                          Evaluate Team
+                        </button>
+                      )}
+                      {isEmployee && isActive && a.type === 'Combined' && (
+                        <button onClick={() => nav(`/assessments/${a._id}/take`)}
+                          className="px-3 py-1.5 text-xs font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                          Start Self-Assessment
+                        </button>
+                      )}
+                      {isAdmin && a.status === 'COMPLETED' && a.type === 'Combined' && (
+                        <button onClick={() => handleScoreResults(a._id)}
+                          className="px-3 py-1.5 text-xs font-semibold text-white bg-purple-600 rounded-lg hover:bg-purple-700 transition-colors flex items-center gap-1">
+                          <Target className="w-3 h-3" /> Score Combined Results
+                        </button>
+                      )}
+                      {isAdmin && (
+                        <button onClick={() => nav(`/assessments/${a._id}`)}
+                          className="text-xs font-semibold text-gray-500 hover:text-brand-red transition-colors flex items-center gap-1">
+                          Details <ChevronRight className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Pagination - Now scrolls with content */}
+            {pagination.total > pagination.limit && (
+              <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mt-8 pt-6 border-t border-gray-200">
+                <div className="text-sm text-gray-600">
+                  Showing {(pagination.page - 1) * pagination.limit + 1} to{' '}
+                  {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} assessments
+                </div>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => goToPage(pagination.page - 1)} disabled={pagination.page === 1}
+                    className="flex items-center gap-1 px-3 py-2 rounded-lg border border-gray-300 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50">
+                    <ChevronLeft className="w-4 h-4" /> Previous
+                  </button>
+                  <div className="flex items-center gap-1">
+                    {Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
+                      let pageNum;
+                      if (pagination.totalPages <= 5) pageNum = i + 1;
+                      else if (pagination.page <= 3) pageNum = i + 1;
+                      else if (pagination.page >= pagination.totalPages - 2) pageNum = pagination.totalPages - 4 + i;
+                      else pageNum = pagination.page - 2 + i;
+                      return (
+                        <button key={pageNum} onClick={() => goToPage(pageNum)}
+                          className={`w-9 h-9 rounded-lg text-sm font-medium ${pagination.page === pageNum ? 'bg-brand-red text-white' : 'border border-gray-300 text-gray-700 hover:bg-gray-50'}`}>
+                          {pageNum}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <button onClick={() => goToPage(pagination.page + 1)} disabled={pagination.page === pagination.totalPages}
+                    className="flex items-center gap-1 px-3 py-2 rounded-lg border border-gray-300 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50">
+                    Next <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             )}
-            {items.map((a) => {
-              const next = getNextStatus(a.status);
-              const isActive = a.status === 'ACTIVE';
-              const isScheduled = a.status === 'SCHEDULED';
-              const requiresSupervisor = requiresSupervisorEvaluation(a);
-
-              return (
-                <div key={a._id} className="bg-white rounded-xl shadow-card hover:shadow-card-hover transition-all border border-gray-100 overflow-hidden">
-                  <div className={`h-2 ${getStatusColor(a.status)}`} />
-                  <div className="p-5">
-                    <div className="flex justify-between items-start mb-3">
-                      <span className={`px-2 py-1 rounded-full text-xs font-bold ${getAssessmentTypeColor(a.type)}`}>{a.type}</span>
-                      <span className={`px-2 py-1 rounded-full text-xs font-bold ${
-                        a.status === 'DRAFT' ? 'bg-gray-100 text-gray-800' :
-                        a.status === 'SCHEDULED' ? 'bg-blue-100 text-blue-800' :
-                        a.status === 'ACTIVE' ? 'bg-green-100 text-green-800' :
-                        a.status === 'COMPLETED' ? 'bg-red-100 text-red-800' :
-                        'bg-gray-100 text-gray-800'}`}>
-                        {getStatusText(a.status)}
-                      </span>
-                    </div>
-
-                    <h3 className="text-base font-bold text-brand-black mb-1 line-clamp-2">
-                      {a.description || 'Untitled Assessment'}
-                    </h3>
-
-                    {a.purpose && (
-                      <span className="inline-block mb-2 text-xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full font-medium">
-                        {a.purpose}
-                      </span>
-                    )}
-
-                    <p className="text-sm text-gray-500 mb-2 flex items-center gap-1">
-                      <Target className="w-3 h-3" />
-                      {a.competencyId?.name || 'No competency'}
-                      {a.targetGroup && (
-                        <span className="ml-1 text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">{a.targetGroup}</span>
-                      )}
-                    </p>
-
-                    <div className="text-xs text-gray-500 mb-3 flex items-center gap-1">
-                      <Users className="w-3 h-3" />
-                      {formatTargetAudience(a)}
-                    </div>
-
-                    {isScheduled && (
-                      <div className="bg-blue-50 border-l-4 border-blue-500 rounded p-2 mb-3">
-                        <div className="text-xs text-blue-800 font-semibold flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
-                          Starts {getTimeUntil(a.startDate)}
-                        </div>
-                        <div className="text-[10px] text-blue-600 mt-0.5">
-                          {new Date(a.startDate).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="flex gap-4 text-xs text-gray-400 mb-4">
-                      <span className="flex items-center gap-1">
-                        <Calendar className="w-3 h-3" />
-                        {new Date(a.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
-                        {a.timeLimit ? `${a.timeLimit} min` : 'No limit'}
-                      </span>
-                    </div>
-
-                    {a.type === 'Combined' && (
-                      <div className="text-xs text-gray-600 bg-gray-50 p-2 rounded-lg mb-3">
-                        <div className="flex justify-between">
-                          <span>Self: {a.weight?.selfAssessment || 20}%</span>
-                          <span>Supervisor: {a.weight?.supervisor || 80}%</span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="border-t border-gray-100 px-5 py-3 flex justify-between items-center bg-gray-50">
-                    {isAdmin && next && a.status !== 'SCHEDULED' && (
-                      <button onClick={() => changeStatus(a._id, next)}
-                        className="px-3 py-1.5 text-xs font-semibold text-brand-red border border-brand-red rounded-lg hover:bg-brand-red-muted transition-colors">
-                        Move to {getStatusText(next)}
-                      </button>
-                    )}
-                    {isAdmin && isScheduled && (
-                      <span className="text-xs text-blue-600 flex items-center gap-1 font-medium">
-                        <Clock className="w-3 h-3" />
-                        Auto-activates {new Date(a.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                    )}
-                    {!isAdmin && isActive && !requiresSupervisor && (
-                      <button onClick={() => nav(`/assessments/${a._id}/take`)}
-                        className="px-3 py-1.5 text-xs font-semibold bg-brand-red text-white rounded-lg hover:bg-brand-red-dark transition-colors">
-                        Start Assessment
-                      </button>
-                    )}
-                    {!isAdmin && isScheduled && (
-                      <button onClick={() => nav(`/assessments/${a._id}/take`)}
-                        className="px-3 py-1.5 text-xs font-semibold bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors flex items-center gap-1">
-                        <Eye className="w-3 h-3" /> View Details
-                      </button>
-                    )}
-                    {isSupervisor && isActive && requiresSupervisor && (
-                      <button onClick={() => nav(`/assessments/${a._id}/evaluate`)}
-                        className="px-3 py-1.5 text-xs font-semibold bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
-                        Evaluate Team
-                      </button>
-                    )}
-                    {isEmployee && isActive && a.type === 'Combined' && (
-                      <button onClick={() => nav(`/assessments/${a._id}/take`)}
-                        className="px-3 py-1.5 text-xs font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-                        Start Self-Assessment
-                      </button>
-                    )}
-                    {isAdmin && a.status === 'COMPLETED' && a.type === 'Combined' && (
-                      <button onClick={() => handleScoreResults(a._id)}
-                        className="px-3 py-1.5 text-xs font-semibold text-white bg-purple-600 rounded-lg hover:bg-purple-700 transition-colors flex items-center gap-1">
-                        <Target className="w-3 h-3" /> Score Combined Results
-                      </button>
-                    )}
-                    {isAdmin && (
-                      <button onClick={() => nav(`/assessments/${a._id}`)}
-                        className="text-xs font-semibold text-gray-500 hover:text-brand-red transition-colors flex items-center gap-1">
-                        Details <ChevronRight className="w-3 h-3" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {pagination.total > pagination.limit && (
-            <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mt-8 pt-6 border-t border-gray-200">
-              <div className="text-sm text-gray-600">
-                Showing {(pagination.page - 1) * pagination.limit + 1} to{' '}
-                {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} assessments
-              </div>
-              <div className="flex items-center gap-2">
-                <button onClick={() => goToPage(pagination.page - 1)} disabled={pagination.page === 1}
-                  className="flex items-center gap-1 px-3 py-2 rounded-lg border border-gray-300 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50">
-                  <ChevronLeft className="w-4 h-4" /> Previous
-                </button>
-                <div className="flex items-center gap-1">
-                  {Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
-                    let pageNum;
-                    if (pagination.totalPages <= 5) pageNum = i + 1;
-                    else if (pagination.page <= 3) pageNum = i + 1;
-                    else if (pagination.page >= pagination.totalPages - 2) pageNum = pagination.totalPages - 4 + i;
-                    else pageNum = pagination.page - 2 + i;
-                    return (
-                      <button key={pageNum} onClick={() => goToPage(pageNum)}
-                        className={`w-9 h-9 rounded-lg text-sm font-medium ${pagination.page === pageNum ? 'bg-brand-red text-white' : 'border border-gray-300 text-gray-700 hover:bg-gray-50'}`}>
-                        {pageNum}
-                      </button>
-                    );
-                  })}
-                </div>
-                <button onClick={() => goToPage(pagination.page + 1)} disabled={pagination.page === pagination.totalPages}
-                  className="flex items-center gap-1 px-3 py-2 rounded-lg border border-gray-300 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50">
-                  Next <ChevronRight className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          )}
-        </>
-      )}
+          </>
+        )}
+      </div>
 
       {/* Score Confirm Dialog */}
       {scoreConfirm && (
