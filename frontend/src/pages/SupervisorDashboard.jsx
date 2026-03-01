@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Users, AlertCircle,  RefreshCw, Award, 
-  AlertTriangle, BarChart2
+  Users, AlertCircle, RefreshCw, Award, 
+  AlertTriangle, BarChart2, ChevronRight,
+  Clock, User, Calendar, Star
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
@@ -41,14 +42,14 @@ export default function SupervisorDashboard() {
     }
   }, [showToast]);
 
-  useEffect(() => { load(period); }, []);
+  useEffect(() => { load(period); }, [period, load]);
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
+      <div className="h-[calc(100vh-4rem)] flex items-center justify-center">
         <div className="text-center">
           <div className="w-10 h-10 border-4 border-brand-red border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-          <p className="text-sm text-gray-400">Loading…</p>
+          <p className="text-sm text-gray-400">Loading your dashboard…</p>
         </div>
       </div>
     );
@@ -60,83 +61,98 @@ export default function SupervisorDashboard() {
   const sortedMembers = [...teamMembers].sort((a, b) => (b.avgScore || 0) - (a.avgScore || 0));
 
   return (
-    <div className="min-h-screen bg-[#f8f9fb]">
+    <div className="h-[calc(100vh-4rem)] flex flex-col bg-[#f8f9fb] overflow-hidden">
+      {/* Ambient glow - fixed */}
       <div className="fixed inset-0 pointer-events-none">
         <div className="absolute -top-24 -right-24 w-72 h-72 bg-brand-red/4 rounded-full blur-3xl" />
         <div className="absolute bottom-20 -left-16 w-56 h-56 bg-emerald-500/4 rounded-full blur-3xl" />
       </div>
 
-      <div className="relative p-6 lg:p-8 space-y-5 max-w-screen-xl mx-auto">
+      {/* Scrollable Content Area */}
+      <div className="flex-1 overflow-y-auto custom-scrollbar">
+        <div className="p-6 lg:p-8 space-y-5 max-w-screen-xl mx-auto">
 
-        {/* HEADER */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2.5 mb-1">
-
-              <h1 className="text-2xl font-display font-bold text-brand-black">
-                Hi, {user?.name?.split(' ')[0]} 👋
-              </h1>
-              {refreshing && <div className="w-4 h-4 border-2 border-brand-red border-t-transparent rounded-full animate-spin" />}
-            </div>
-            <p className="text-sm text-gray-400">
-              Team overview · <span className="text-gray-600 font-medium">{periodLabel}</span>
-              {user?.department && <span className="text-gray-400"> · {user.department}</span>}
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <div className="flex bg-white rounded-xl border border-gray-200/80 p-1 gap-0.5 shadow-sm">
-              {PERIOD_OPTIONS.map(({ key, label }) => (
-                <button
-                  key={key}
-                  onClick={() => { setPeriod(key); load(key); }}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all duration-150
-                    ${period === key ? 'bg-brand-red text-white shadow-sm' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            <button onClick={() => load(period, true)} className="w-9 h-9 bg-white border border-gray-200 rounded-xl flex items-center justify-center text-gray-400 hover:text-gray-600 shadow-sm">
-              <RefreshCw className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-
-        {/* ALERT BANNER */}
-        {highPriority > 0 && (
-          <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-center gap-3">
-            <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" />
-            <p className="text-sm text-red-700 font-medium">
-              {highPriority} evaluation{highPriority > 1 ? 's' : ''} require urgent attention — deadline within 48 hours
-            </p>
-          </div>
-        )}
-
-        {/* KPI CARDS */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {[
-            { icon: Users,       label: 'Team Members',     value: stats.teamSize || 0,             sub: 'Active employees',   color: 'text-blue-600',    bg: 'bg-blue-50' },
-            { icon: AlertCircle, label: 'Pending Evals',    value: stats.pendingEvaluations || 0,   sub: `${highPriority} urgent`,              color: 'text-orange-600',  bg: 'bg-orange-50', urgent: highPriority > 0 },
-            { icon: Award,       label: 'Team Avg Score',   value: `${stats.teamAvgScore || 0}%`,   sub: `${periodLabel}`,     color: 'text-emerald-600', bg: 'bg-emerald-50' },
-            { icon: BarChart2,   label: 'Period Results',   value: stats.periodResultCount || 0,    sub: periodLabel,          color: 'text-violet-600',  bg: 'bg-violet-50' },
-          ].map(({ icon: Icon, label, value, sub, color, bg, urgent }) => (
-            <div key={label} className={`bg-white rounded-2xl p-4 border shadow-sm transition-all
-              ${urgent ? 'border-orange-200' : 'border-gray-100/80'}`}
-            >
-              {urgent && <div className="h-0.5 bg-gradient-to-r from-orange-400 to-red-400 -mx-4 -mt-4 mb-4 rounded-t-2xl" />}
-              <div className={`w-10 h-10 ${bg} rounded-xl flex items-center justify-center mb-3`}>
-                <Icon className={`w-5 h-5 ${color}`} />
+          {/* Sticky Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 sticky top-0 bg-[#f8f9fb] z-10 pb-2">
+            <div>
+              <div className="flex items-center gap-2.5 mb-1">
+                <h1 className="text-2xl font-display font-bold text-brand-black">
+                  Hi, {user?.name?.split(' ')[0]} 👋
+                </h1>
+                {refreshing && <div className="w-4 h-4 border-2 border-brand-red border-t-transparent rounded-full animate-spin" />}
               </div>
-              <div className="text-2xl font-bold text-gray-900 tracking-tight mb-0.5">{value}</div>
-              <div className="text-xs font-semibold text-gray-700">{label}</div>
-              <div className="text-xs text-gray-400 mt-0.5">{sub}</div>
+              <p className="text-sm text-gray-400">
+                Team overview · <span className="text-gray-600 font-medium">{periodLabel}</span>
+                {user?.department && <span className="text-gray-400"> · {user.department}</span>}
+              </p>
             </div>
-          ))}
-        </div>
 
-        {/* CHARTS ROW */}
-        <div className="grid lg:grid-cols-2 gap-5">
+            <div className="flex items-center gap-2">
+              <div className="flex bg-white rounded-xl border border-gray-200/80 p-1 gap-0.5 shadow-sm">
+                {PERIOD_OPTIONS.map(({ key, label }) => (
+                  <button
+                    key={key}
+                    onClick={() => { setPeriod(key); load(key); }}
+                    className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all duration-150
+                      ${period === key ? 'bg-brand-red text-white shadow-sm' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <button 
+                onClick={() => load(period, true)} 
+                className="w-9 h-9 bg-white border border-gray-200 rounded-xl flex items-center justify-center text-gray-400 hover:text-gray-600 shadow-sm"
+              >
+                <RefreshCw className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Alert Banner - Sticky but scrolls */}
+          {highPriority > 0 && (
+            <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-center gap-3">
+              <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" />
+              <p className="text-sm text-red-700 font-medium">
+                {highPriority} evaluation{highPriority > 1 ? 's' : ''} require urgent attention — deadline within 48 hours
+              </p>
+              <button 
+                onClick={() => nav('/supervisor/pending')}
+                className="ml-auto text-xs font-semibold text-red-600 hover:text-red-700 hover:underline flex items-center gap-1"
+              >
+                View now <ChevronRight className="w-3 h-3" />
+              </button>
+            </div>
+          )}
+
+          {/* KPI CARDS */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {[
+              { icon: Users,       label: 'Team Members',     value: stats.teamSize || 0,             sub: 'Active employees',   color: 'text-blue-600',    bg: 'bg-blue-50', link: '/team' },
+              { icon: AlertCircle, label: 'Pending Evals',    value: stats.pendingEvaluations || 0,   sub: `${highPriority} urgent`, color: 'text-orange-600',  bg: 'bg-orange-50', urgent: highPriority > 0, link: '/supervisor/pending' },
+              { icon: Award,       label: 'Team Avg Score',   value: `${stats.teamAvgScore || 0}%`,   sub: periodLabel,     color: 'text-emerald-600', bg: 'bg-emerald-50' },
+              { icon: BarChart2,   label: 'Period Results',   value: stats.periodResultCount || 0,    sub: periodLabel,          color: 'text-violet-600',  bg: 'bg-violet-50', link: '/results' },
+            ].map(({ icon: Icon, label, value, sub, color, bg, urgent, link }) => (
+              <div 
+                key={label} 
+                onClick={link ? () => nav(link) : undefined}
+                className={`bg-white rounded-2xl p-4 border shadow-sm transition-all
+                  ${link ? 'cursor-pointer hover:-translate-y-0.5 hover:shadow-md' : ''}
+                  ${urgent ? 'border-orange-200' : 'border-gray-100/80'}`}
+              >
+                {urgent && <div className="h-0.5 bg-gradient-to-r from-orange-400 to-red-400 -mx-4 -mt-4 mb-4 rounded-t-2xl" />}
+                <div className="flex items-start justify-between mb-3">
+                  <div className={`w-10 h-10 ${bg} rounded-xl flex items-center justify-center`}>
+                    <Icon className={`w-5 h-5 ${color}`} />
+                  </div>
+                  {link && <ChevronRight className="w-4 h-4 text-gray-300" />}
+                </div>
+                <div className="text-2xl font-bold text-gray-900 tracking-tight mb-0.5">{value}</div>
+                <div className="text-xs font-semibold text-gray-700">{label}</div>
+                <div className="text-xs text-gray-400 mt-0.5">{sub}</div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>

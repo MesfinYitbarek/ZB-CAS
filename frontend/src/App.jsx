@@ -298,7 +298,7 @@ export default function App() {
           }
         />
         <Route
-          path="/my-team/evaluations"
+          path="/evaluations"
           element={
             <ProtectedRoute supervisorOnly>
               <AppShell><PendingEvaluations /></AppShell>

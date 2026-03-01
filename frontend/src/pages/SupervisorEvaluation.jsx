@@ -14,7 +14,12 @@ import {
   TrendingUp,
   Award,
   MessageSquare,
-  Shield
+  Shield,
+  ChevronLeft,
+  Star,
+  Briefcase,
+  Mail,
+  FileText
 } from 'lucide-react';
 import api from '../utils/api';
 
@@ -22,7 +27,7 @@ export default function SupervisorEvaluation() {
   const { assessmentId } = useParams();
   const [searchParams] = useSearchParams();
   const employeeId = searchParams.get('employeeId');
-  const { user, isSupervisor, isAdmin } = useAuth(); // Added role flags
+  const { user, isSupervisor, isAdmin } = useAuth();
   const navigate = useNavigate();
   const { show } = useToast();
   
@@ -37,7 +42,6 @@ export default function SupervisorEvaluation() {
   const [permissionError, setPermissionError] = useState(false);
 
   useEffect(() => {
-    // Check if user has permission to access this page
     if (!isSupervisor && !isAdmin) {
       setPermissionError(true);
       return;
@@ -54,7 +58,6 @@ export default function SupervisorEvaluation() {
       const empRes = await api.get(`/users/${employeeId}`);
       setEmployee(empRes.data.data.user);
       
-      // Updated Endpoint to match refactored routes
       const respRes = await api.get(`/responses/supervisor/${assessmentId}/${employeeId}`);
       
       if (respRes.data.data.evaluation) {
@@ -102,7 +105,6 @@ export default function SupervisorEvaluation() {
   const saveDraft = async () => {
     try {
       setSaving(true);
-      // Updated Endpoint
       await api.post('/responses/supervisor/save', {
         assessmentId,
         employeeId,
@@ -154,25 +156,23 @@ export default function SupervisorEvaluation() {
   // Permission error state
   if (permissionError) {
     return (
-      <div className="min-h-screen bg-gray-50 p-4 md:p-6">
-        <div className="max-w-2xl mx-auto">
-          <div className="bg-white rounded-xl shadow-card p-8 text-center">
-            <div className="w-20 h-20 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-6">
-              <Shield className="w-10 h-10 text-red-600" />
-            </div>
-            <h1 className="text-2xl font-bold text-brand-black mb-4">
-              Access Denied
-            </h1>
-            <p className="text-gray-600 mb-6">
-              You do not have permission to access this evaluation page. This page is only accessible to supervisors and administrators.
-            </p>
-            <button
-              onClick={() => navigate('/supervisor/pending')}
-              className="px-6 py-3 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors"
-            >
-              Return to Pending Evaluations
-            </button>
+      <div className="h-[calc(100vh-4rem)] flex items-center justify-center p-4">
+        <div className="bg-white rounded-xl shadow-card p-8 text-center max-w-md">
+          <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4">
+            <Shield className="w-8 h-8 text-red-600" />
           </div>
+          <h1 className="text-xl font-bold text-brand-black mb-2">
+            Access Denied
+          </h1>
+          <p className="text-gray-600 text-sm mb-6">
+            You do not have permission to access this evaluation page.
+          </p>
+          <button
+            onClick={() => navigate('/supervisor/pending')}
+            className="w-full px-4 py-2 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors text-sm"
+          >
+            Return to Pending Evaluations
+          </button>
         </div>
       </div>
     );
@@ -180,27 +180,28 @@ export default function SupervisorEvaluation() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="w-12 h-12 border-4 border-brand-red border-t-transparent rounded-full animate-spin" />
+      <div className="h-[calc(100vh-4rem)] flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-10 h-10 border-4 border-brand-red border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+          <p className="text-sm text-gray-400">Loading evaluation…</p>
+        </div>
       </div>
     );
   }
 
   if (!assessment || !employee) {
     return (
-      <div className="min-h-screen bg-gray-50 p-4 md:p-6">
-        <div className="max-w-2xl mx-auto">
-          <div className="bg-white rounded-xl shadow-card p-8 text-center">
-            <AlertCircle className="w-16 h-16 mx-auto text-red-500 mb-4" />
-            <h2 className="text-xl font-semibold text-gray-700 mb-2">Evaluation Not Found</h2>
-            <p className="text-gray-500 mb-6">The requested evaluation could not be loaded.</p>
-            <button
-              onClick={() => navigate('/supervisor/pending')}
-              className="px-6 py-3 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors"
-            >
-              Return to Pending Evaluations
-            </button>
-          </div>
+      <div className="h-[calc(100vh-4rem)] flex items-center justify-center p-4">
+        <div className="bg-white rounded-xl shadow-card p-8 text-center max-w-md">
+          <AlertCircle className="w-12 h-12 mx-auto text-red-500 mb-3" />
+          <h2 className="text-lg font-semibold text-gray-700 mb-2">Evaluation Not Found</h2>
+          <p className="text-gray-500 text-sm mb-4">The requested evaluation could not be loaded.</p>
+          <button
+            onClick={() => navigate('/supervisor/pending')}
+            className="w-full px-4 py-2 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors text-sm"
+          >
+            Return to Pending Evaluations
+          </button>
         </div>
       </div>
     );
@@ -210,263 +211,214 @@ export default function SupervisorEvaluation() {
   const PerformanceIcon = performanceLevel.icon;
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 md:p-6">
-      <div className="max-w-4xl mx-auto">
-        {/* Header */}
-        <div className="bg-white rounded-xl shadow-card p-6 mb-6">
-          <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-6">
-            <div>
-              <h1 className="text-2xl md:text-3xl font-bold text-brand-black mb-2">
-                Supervisor Evaluation
-              </h1>
-              <p className="text-gray-600">
-                Evaluate {employee.name}'s performance for this competency
-                {isAdmin && <span className="ml-2 text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded-full">Admin View</span>}
-              </p>
-            </div>
-            
-            {hasExistingEvaluation && (
-              <div className="flex items-center gap-2 px-4 py-2 bg-blue-100 text-blue-700 rounded-lg border border-blue-200">
-                <CheckCircle className="w-5 h-5" />
-                <span className="text-sm font-semibold">Draft Saved</span>
-              </div>
-            )}
-          </div>
-
-          {/* Assessment & Employee Info */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-xl border border-blue-100">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
-                  <User className="w-5 h-5 text-blue-600" />
-                </div>
-                <div>
-                  <div className="text-sm font-medium text-blue-700">Employee</div>
-                  <div className="font-bold text-lg text-brand-black">{employee.name}</div>
-                  <div className="text-sm text-blue-600">
-                    {employee.position} • {employee.department}
-                  </div>
-                </div>
-              </div>
-              <div className="text-sm text-blue-800 bg-blue-100/50 p-3 rounded-lg">
-                Employee ID: {employee.employeeId || 'N/A'}
+    <div className="h-[calc(100vh-4rem)] flex flex-col bg-gray-50 overflow-hidden">
+      {/* Sticky Header */}
+      <div className="flex-shrink-0 bg-white border-b border-gray-200 shadow-sm z-10">
+        <div className="max-w-6xl mx-auto px-4 py-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => navigate('/supervisor/pending')}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <ChevronLeft className="w-5 h-5 text-gray-600" />
+              </button>
+              <div>
+                <h1 className="text-lg font-bold text-brand-black">Supervisor Evaluation</h1>
+                <p className="text-xs text-gray-500">
+                  {assessment.competencyId?.name || 'Competency Evaluation'}
+                </p>
               </div>
             </div>
             
-            <div className="bg-gradient-to-r from-purple-50 to-pink-50 p-4 rounded-xl border border-purple-100">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center">
-                  <Target className="w-5 h-5 text-purple-600" />
+            <div className="flex items-center gap-3">
+              {hasExistingEvaluation && (
+                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg border border-blue-200">
+                  <CheckCircle className="w-4 h-4" />
+                  <span className="text-xs font-semibold">Draft Saved</span>
                 </div>
-                <div>
-                  <div className="text-sm font-medium text-purple-700">Competency</div>
-                  <div className="font-bold text-lg text-brand-black">
-                    {assessment.competencyId?.name || 'General Skills'}
-                  </div>
-                  <div className="text-sm text-purple-600">{assessment.type} Assessment</div>
-                </div>
-              </div>
-              <div className="flex items-center justify-between text-sm text-purple-800">
-                <div className="flex items-center gap-2">
-                  <Calendar className="w-4 h-4" />
-                  <span>Due: {new Date(assessment.endDate).toLocaleDateString()}</span>
-                </div>
-                <div className={`px-2 py-1 rounded text-xs font-bold ${
-                  new Date(assessment.endDate) > new Date() 
-                    ? 'bg-green-100 text-green-700' 
-                    : 'bg-red-100 text-red-700'
-                }`}>
-                  {new Date(assessment.endDate) > new Date() ? 'Active' : 'Expired'}
-                </div>
+              )}
+              <div className={`px-3 py-1.5 rounded-lg text-xs font-bold ${
+                new Date(assessment.endDate) > new Date() 
+                  ? 'bg-green-100 text-green-700' 
+                  : 'bg-red-100 text-red-700'
+              }`}>
+                {new Date(assessment.endDate) > new Date() ? 'Active' : 'Expired'}
               </div>
             </div>
           </div>
         </div>
+      </div>
 
-        {/* Score Input Section */}
-        <div className="bg-white rounded-xl shadow-card p-6 mb-6">
-          <div className="text-center mb-8">
-            <h2 className="text-2xl font-bold text-brand-black mb-2">
-              Overall Competency Score
-            </h2>
-            <p className="text-gray-600">
-              Provide an overall score between 0-100 based on your evaluation of {employee.name}'s performance
-            </p>
+      {/* Scrollable Content */}
+      <div className="flex-1 overflow-y-auto custom-scrollbar">
+        <div className="max-w-4xl mx-auto p-4 space-y-4">
+          
+          {/* Employee & Assessment Info - Compact Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Employee Card */}
+            <div className="bg-white rounded-lg border border-gray-200 p-3">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-bold flex-shrink-0 shadow-sm">
+                  {employee.name?.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-sm font-bold text-brand-black truncate">{employee.name}</h3>
+                  <div className="flex items-center gap-1 text-xs text-gray-500 mt-0.5">
+                    <Briefcase className="w-3 h-3" />
+                    <span className="truncate">{employee.position || 'Employee'}</span>
+                  </div>
+                  <div className="flex items-center gap-1 text-xs text-gray-500">
+                    <Mail className="w-3 h-3" />
+                    <span className="truncate">{employee.email}</span>
+                  </div>
+                </div>
+              </div>
+              <div className="mt-2 pt-2 border-t border-gray-100 text-xs text-gray-500">
+                ID: {employee.employeeId || 'N/A'} · {employee.department || 'No Dept'}
+              </div>
+            </div>
+
+            {/* Assessment Card */}
+            <div className="bg-white rounded-lg border border-gray-200 p-3">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center text-white flex-shrink-0 shadow-sm">
+                  <Target className="w-5 h-5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-sm font-bold text-brand-black truncate">{assessment.competencyId?.name || 'General Skills'}</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">{assessment.type}</p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <div className="flex items-center gap-1 text-xs text-gray-500">
+                      <Calendar className="w-3 h-3" />
+                      <span>Due {new Date(assessment.endDate).toLocaleDateString()}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
-          {/* Score Display */}
-          <div className="flex flex-col items-center mb-8">
-            <div className={`text-7xl font-bold mb-4 ${getScoreColor(score).split(' ')[0]}`}>
-              {score}
-              <span className="text-4xl text-gray-500">/100</span>
+          {/* Score Section */}
+          <div className="bg-white rounded-lg border border-gray-200 p-4">
+            {/* Score Display */}
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Star className="w-4 h-4 text-gray-400" />
+                <h2 className="text-sm font-bold text-brand-black">Overall Score</h2>
+              </div>
+              <div className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 ${getScoreColor(score)}`}>
+                <PerformanceIcon className="w-3 h-3" />
+                {performanceLevel.label}
+              </div>
             </div>
-            
-            <div className={`px-6 py-3 rounded-full border-2 flex items-center gap-2 mb-4 ${getScoreColor(score)}`}>
-              <PerformanceIcon className="w-5 h-5" />
-              <span className="font-bold text-lg">{performanceLevel.label}</span>
-            </div>
-          </div>
 
-          {/* Score Slider */}
-          <div className="mb-8">
-            <div className="flex justify-between items-center mb-4">
-              <label className="text-lg font-semibold text-gray-700">
-                Adjust Score
-              </label>
-              <div className="flex items-center gap-4">
+            {/* Score Value */}
+            <div className="flex items-center justify-center gap-2 mb-4">
+              <span className={`text-5xl font-bold ${getScoreColor(score).split(' ')[0]}`}>
+                {score}
+              </span>
+              <span className="text-xl text-gray-400">/100</span>
+            </div>
+
+            {/* Score Slider */}
+            <div className="mb-4">
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={score}
+                onChange={(e) => handleScoreChange(e.target.value)}
+                className="w-full h-2 bg-gradient-to-r from-red-500 via-yellow-500 to-green-500 rounded-lg appearance-none cursor-pointer"
+              />
+              
+              <div className="flex justify-between mt-1 text-[10px] text-gray-400">
+                <span>0</span>
+                <span>25</span>
+                <span>50</span>
+                <span>75</span>
+                <span>100</span>
+              </div>
+            </div>
+
+            {/* Score Controls */}
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1">
                 <button
                   onClick={() => handleScoreChange(score - 5)}
-                  className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg font-semibold hover:bg-gray-200 transition-colors"
+                  className="px-3 py-1 bg-gray-100 text-gray-700 rounded text-xs font-semibold hover:bg-gray-200 disabled:opacity-50"
                   disabled={score <= 0}
                 >
                   -5
                 </button>
                 <button
                   onClick={() => handleScoreChange(score + 5)}
-                  className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg font-semibold hover:bg-gray-200 transition-colors"
+                  className="px-3 py-1 bg-gray-100 text-gray-700 rounded text-xs font-semibold hover:bg-gray-200 disabled:opacity-50"
                   disabled={score >= 100}
                 >
                   +5
                 </button>
               </div>
-            </div>
-            
-            <input
-              type="range"
-              min="0"
-              max="100"
-              value={score}
-              onChange={(e) => handleScoreChange(e.target.value)}
-              className="w-full h-3 bg-gradient-to-r from-red-500 via-yellow-500 to-green-500 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-6 [&::-webkit-slider-thumb]:w-6 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:border-4 [&::-webkit-slider-thumb]:border-gray-300 [&::-webkit-slider-thumb]:shadow-lg"
-            />
-            
-            <div className="flex justify-between mt-2 text-sm text-gray-500">
-              <span>0 - Unsatisfactory</span>
-              <span>50 - Needs Improvement</span>
-              <span>75 - Good</span>
-              <span>90 - Exceptional</span>
-              <span>100</span>
-            </div>
-          </div>
-
-          {/* Numeric Input */}
-          <div className="mb-8">
-            <label className="block text-lg font-semibold text-gray-700 mb-3">
-              Enter Score Manually
-            </label>
-            <div className="flex flex-col md:flex-row items-start md:items-center gap-4">
-              <input
-                type="number"
-                min="0"
-                max="100"
-                value={score}
-                onChange={(e) => handleScoreChange(e.target.value)}
-                className="w-full md:w-32 px-6 py-4 text-3xl font-bold text-center border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-brand-red focus:border-transparent"
-              />
-              <div className="text-sm text-gray-500">
-                <div className="font-semibold mb-1">Quick Set:</div>
-                <div className="flex flex-wrap gap-2">
-                  {[50, 60, 70, 80, 90, 100].map((quickScore) => (
-                    <button
-                      key={quickScore}
-                      onClick={() => handleScoreChange(quickScore)}
-                      className={`px-3 py-1 rounded-lg text-sm font-semibold ${
-                        score === quickScore
-                          ? 'bg-brand-red text-white'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      {quickScore}
-                    </button>
-                  ))}
-                </div>
+              
+              <div className="flex gap-1">
+                {[50, 70, 85, 100].map((quickScore) => (
+                  <button
+                    key={quickScore}
+                    onClick={() => handleScoreChange(quickScore)}
+                    className={`px-2 py-1 rounded text-xs font-medium ${
+                      score === quickScore
+                        ? 'bg-brand-red text-white'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    {quickScore}
+                  </button>
+                ))}
               </div>
             </div>
           </div>
 
           {/* Comments Section */}
-          <div className="mb-6">
-            <div className="flex items-center gap-2 mb-4">
-              <MessageSquare className="w-5 h-5 text-gray-600" />
-              <label className="text-lg font-semibold text-gray-700">
-                Evaluation Comments
-              </label>
+          <div className="bg-white rounded-lg border border-gray-200 p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <MessageSquare className="w-4 h-4 text-gray-400" />
+              <h2 className="text-sm font-bold text-brand-black">Evaluation Comments</h2>
             </div>
+            
             <textarea
               value={comments}
               onChange={(e) => setComments(e.target.value)}
-              placeholder={`Provide detailed feedback for ${employee.name}...
-• Strengths and achievements
-• Areas for improvement
-• Specific examples of performance
-• Recommendations for development`}
-              className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-brand-red focus:border-transparent text-lg"
-              rows="8"
+              placeholder="Provide feedback on performance, strengths, and areas for improvement..."
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm"
+              rows="4"
             />
-            <div className="text-sm text-gray-500 mt-2">
-              Your comments will be shared with the employee and used for development planning.
-            </div>
-          </div>
-
-          {/* Performance Guidelines */}
-          <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 mb-6">
-            <h3 className="font-semibold text-gray-700 mb-3">Scoring Guidelines</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-red-500"></div>
-                <span className="text-sm"><strong>0-49:</strong> Unsatisfactory / Needs significant improvement</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-orange-500"></div>
-                <span className="text-sm"><strong>50-59:</strong> Needs Improvement / Below expectations</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
-                <span className="text-sm"><strong>60-69:</strong> Satisfactory / Meets basic expectations</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-blue-500"></div>
-                <span className="text-sm"><strong>70-79:</strong> Good / Consistently meets expectations</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-green-500"></div>
-                <span className="text-sm"><strong>80-89:</strong> Excellent / Exceeds expectations</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-emerald-500"></div>
-                <span className="text-sm"><strong>90-100:</strong> Exceptional / Outstanding performance</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Action Buttons */}
-        <div className="flex flex-col sm:flex-row justify-between items-center gap-4 bg-white rounded-xl shadow-card p-6">
-          <button
-            onClick={() => navigate('/supervisor/pending')}
-            className="px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-lg font-semibold hover:bg-gray-50 transition-colors w-full sm:w-auto"
-          >
-            Cancel
-          </button>
-          
-          <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
-            <button
-              onClick={saveDraft}
-              disabled={saving}
-              className="px-6 py-3 bg-gray-100 text-gray-700 rounded-lg font-semibold hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 w-full sm:w-auto"
-            >
-              <Save className="w-4 h-4" />
-              {saving ? 'Saving...' : 'Save Draft'}
-            </button>
             
-            <button
-              onClick={submitEvaluation}
-              disabled={submitting}
-              className="px-8 py-3 bg-gradient-to-r from-brand-red to-red-600 text-white rounded-lg font-semibold hover:from-red-600 hover:to-red-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 w-full sm:w-auto shadow-lg"
-            >
-              <Send className="w-4 h-4" />
-              {submitting ? 'Submitting...' : 'Submit Evaluation'}
-            </button>
+            <p className="text-[10px] text-gray-400 mt-1">
+              Comments will be shared with the employee for development planning.
+            </p>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="bg-white rounded-lg border border-gray-200 p-3">
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={saveDraft}
+                disabled={saving}
+                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-xs font-semibold hover:bg-gray-200 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+              >
+                <Save className="w-3.5 h-3.5" />
+                {saving ? 'Saving...' : 'Save Draft'}
+              </button>
+              
+              <button
+                onClick={submitEvaluation}
+                disabled={submitting}
+                className="px-4 py-2 bg-brand-red text-white rounded-lg text-xs font-semibold hover:bg-brand-red-dark transition-colors disabled:opacity-50 flex items-center gap-1.5"
+              >
+                <Send className="w-3.5 h-3.5" />
+                {submitting ? 'Submitting...' : 'Submit Evaluation'}
+              </button>
+            </div>
           </div>
         </div>
       </div>

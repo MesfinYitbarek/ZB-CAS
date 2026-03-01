@@ -24,7 +24,7 @@ const NAV_ITEMS = [
 
   // ── Supervisor ───────────────────────────────────────
   { icon: UserCheck, label: 'My Team', path: '/my-team', roles: ['SUPERVISOR'] },
-  { icon: ClipboardCheck, label: 'Pending Evaluations', path: '/my-team/evaluations', roles: ['SUPERVISOR'] },
+  { icon: ClipboardCheck, label: 'Pending Evaluations', path: '/evaluations', roles: ['SUPERVISOR'] },
 
   // ── Employee ─────────────────────────────────────────
   { icon: ClipboardList, label: 'Assessments', path: '/assessments', roles: ['EMPLOYEE'] },
