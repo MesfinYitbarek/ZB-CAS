@@ -109,20 +109,6 @@ function Chip({ children, color = 'slate' }) {
   );
 }
 
-// ─── KPI Card ─────────────────────────────────────────────────────────────────
-function KpiCard({ label, value, icon: Icon, accent }) {
-  return (
-    <div className="bg-white rounded-lg border border-slate-200 px-4 py-3 flex items-center gap-3">
-      <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${accent}`}>
-        <Icon className="w-4 h-4" />
-      </div>
-      <div>
-        <p className="text-[10px] uppercase tracking-wide font-semibold text-slate-400">{label}</p>
-        <p className="text-lg font-bold text-slate-800 leading-tight">{value}</p>
-      </div>
-    </div>
-  );
-}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function Feedback() {
@@ -354,12 +340,6 @@ export default function Feedback() {
           </div>
         </div>
 
-        {/* KPI strip */}
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-5">
-          <KpiCard label="Total Feedback" value={selectedSummary.totalFeedbacks} icon={MessageSquare} accent="bg-blue-50 text-blue-500" />
-          <KpiCard label="Avg Rating" value={selectedSummary.avgRating ? `${selectedSummary.avgRating.toFixed(1)} / 5` : '—'} icon={Star} accent="bg-orange-50 text-orange-500" />
-          <KpiCard label="With Rating" value={selectedSummary.ratedCount} icon={BarChart3} accent="bg-teal-50 text-teal-500" />
-        </div>
 
         {/* Rating distribution */}
         {selectedSummary.ratedCount > 0 && (
@@ -437,13 +417,6 @@ export default function Feedback() {
           className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 rounded-lg text-xlfont-semibold text-slate-500 hover:bg-slate-50 transition-colors">
           <RefreshCw className="w-3.5 h-3.5" /> Refresh
         </button>
-      </div>
-
-      {/* KPI strip */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
-        <KpiCard label="Total Entries" value={totalFeedbacks} icon={MessageSquare} accent="bg-blue-50 text-blue-500" />
-        <KpiCard label="Assessments" value={summaries.length} icon={Users} accent="bg-violet-50 text-violet-500" />
-        <KpiCard label="Overall Avg Rating" value={avgOverall ? `${avgOverall.toFixed(1)} / 5` : '—'} icon={Star} accent="bg-orange-50 text-orange-500" />
       </div>
 
       {/* Filter bar — compact single row */}

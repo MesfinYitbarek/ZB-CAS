@@ -214,8 +214,9 @@ export default function Recommendations() {
   };
 
   return (
-    <div className="p-7">
-      <div className="flex justify-between items-start mb-6">
+    <div className="h-[calc(100vh-4rem)] flex flex-col p-7">
+      {/* Sticky Header */}
+      <div className="flex justify-between items-start mb-6 flex-shrink-0">
         <div>
           <h1 className="text-2xl font-display font-bold text-brand-black">Recommendations</h1>
           <p className="text-gray-500 mt-1">
@@ -230,8 +231,8 @@ export default function Recommendations() {
         </button>
       </div>
 
-      {/* Filters */}
-      <div className="flex justify-between items-center gap-3 mb-6 flex-wrap">
+      {/* Sticky Filters */}
+      <div className="flex justify-between items-center gap-3 mb-6 flex-shrink-0">
         <select
           value={filterComp}
           onChange={(e) => {
@@ -268,166 +269,171 @@ export default function Recommendations() {
         </div>
       </div>
 
-      {loading ? (
-        <div className="flex justify-center p-16">
-          <div className="w-10 h-10 border-4 border-brand-red border-t-transparent rounded-full animate-spin" />
-        </div>
-      ) : Object.keys(grouped).length === 0 ? (
-        <div className="text-center py-16">
-          <Lightbulb className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-          <h3 className="text-lg font-semibold text-gray-600">No recommendations yet</h3>
-        </div>
-      ) : (
-        <div className="space-y-4 mb-6">
-          {Object.entries(grouped).map(([compName, group]) => (
-            <div
-              key={compName}
-              className="bg-white rounded-xl shadow-card border border-gray-100 overflow-hidden"
-            >
-              <div
-                onClick={() => toggleGroup(compName)}
-                className="bg-gray-50 px-5 py-4 border-b border-gray-100 flex items-center justify-between cursor-pointer hover:bg-gray-100 transition-colors"
-              >
-                <div className="flex items-center gap-3">
-                  {expandedGroups[compName] ? (
-                    <ChevronDown className="w-5 h-5 text-gray-400" />
-                  ) : (
-                    <ChevronRight className="w-5 h-5 text-gray-400" />
+      {/* Scrollable Content Area */}
+      <div className="flex-1 overflow-y-auto custom-scrollbar">
+        {loading ? (
+          <div className="flex justify-center p-16">
+            <div className="w-10 h-10 border-4 border-brand-red border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : Object.keys(grouped).length === 0 ? (
+          <div className="text-center py-16">
+            <Lightbulb className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+            <h3 className="text-lg font-semibold text-gray-600">No recommendations yet</h3>
+          </div>
+        ) : (
+          <>
+            <div className="space-y-4 mb-6">
+              {Object.entries(grouped).map(([compName, group]) => (
+                <div
+                  key={compName}
+                  className="bg-white rounded-xl shadow-card border border-gray-100 overflow-hidden"
+                >
+                  <div
+                    onClick={() => toggleGroup(compName)}
+                    className="bg-gray-50 px-5 py-4 border-b border-gray-100 flex items-center justify-between cursor-pointer hover:bg-gray-100 transition-colors"
+                  >
+                    <div className="flex items-center gap-3">
+                      {expandedGroups[compName] ? (
+                        <ChevronDown className="w-5 h-5 text-gray-400" />
+                      ) : (
+                        <ChevronRight className="w-5 h-5 text-gray-400" />
+                      )}
+                      <Lightbulb className="w-5 h-5 text-brand-red" />
+                      <span className="font-bold text-base text-brand-black">{compName}</span>
+                    </div>
+                  </div>
+
+                  {expandedGroups[compName] && (
+                    <div className="p-5">
+                      {Object.entries(group.targetGroups).map(([tg, recs]) => (
+                        <div key={tg} className="mb-6 last:mb-0">
+                          <h4 className="text-lg font-semibold text-gray-800 mb-3 capitalize">
+                            {tg} Target Group
+                          </h4>
+                          <div className="overflow-x-auto rounded-lg border">
+                            <table className="w-full min-w-max">
+                              <thead className="bg-gray-50">
+                                <tr>
+                                  <th className="text-left px-5 py-3 text-sm font-semibold text-gray-600 uppercase w-32">
+                                    Level
+                                  </th>
+                                  <th className="text-left px-5 py-3 text-sm font-semibold text-gray-600 uppercase">
+                                    Recommendation
+                                  </th>
+                                  <th className="text-left px-5 py-3 text-sm font-semibold text-gray-600 uppercase">
+                                    Description
+                                  </th>
+                                  <th className="text-right px-5 py-3 text-sm font-semibold text-gray-600 uppercase w-32">
+                                    Actions
+                                  </th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y">
+                                {LEVELS.map((lvl) => {
+                                  const rec = recs.find((r) => r.level === lvl);
+                                  return (
+                                    <tr key={lvl} className="hover:bg-gray-50">
+                                      <td className="px-5 py-4">
+                                        <span
+                                          className={`inline-block px-3 py-1 text-xs font-medium rounded-full ${TYPE_BADGES[lvl]}`}
+                                        >
+                                          {lvl}
+                                        </span>
+                                      </td>
+                                      <td className="px-5 py-4 text-sm text-gray-700">
+                                        {rec?.recommendation ? (
+                                          <div className="line-clamp-2">{rec.recommendation}</div>
+                                        ) : (
+                                          <span className="italic text-gray-400">— Not set —</span>
+                                        )}
+                                      </td>
+                                      <td className="px-5 py-4 text-sm text-gray-600">
+                                        {rec?.description ? (
+                                          <div className="line-clamp-3">{rec.description}</div>
+                                        ) : (
+                                          <span className="italic text-gray-400">— No description —</span>
+                                        )}
+                                      </td>
+                                      <td className="px-5 py-4 text-right">
+                                        {rec ? (
+                                          <div className="flex gap-2 justify-end">
+                                            <button
+                                              onClick={() => openEdit(rec)}
+                                              className="p-2 hover:bg-gray-100 rounded transition"
+                                            >
+                                              <Edit2 size={16} className="text-gray-600" />
+                                            </button>
+                                            <button
+                                              onClick={() => handleDelete(rec._id)}
+                                              className="p-2 hover:bg-red-50 rounded transition"
+                                            >
+                                              <Trash2 size={16} className="text-red-600" />
+                                            </button>
+                                          </div>
+                                        ) : (
+                                          <button
+                                            onClick={() => {
+                                              setForm({
+                                                competencyId: group.id,
+                                                targetGroup: tg,
+                                                levels: {
+                                                  ...initForm().levels,
+                                                  [lvl]: { recommendation: '', description: '' },
+                                                },
+                                              });
+                                              setModal('create');
+                                            }}
+                                            className="px-3 py-1.5 text-sm font-medium text-brand-red hover:bg-red-50 rounded transition"
+                                          >
+                                            Add
+                                          </button>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   )}
-                  <Lightbulb className="w-5 h-5 text-brand-red" />
-                  <span className="font-bold text-base text-brand-black">{compName}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Pagination - Now scrolls with content */}
+            {pagination.total > pagination.limit && (
+              <div className="flex justify-between items-center mt-8 pt-4 border-t">
+                <div className="text-sm text-gray-600">
+                  Showing {(pagination.page - 1) * pagination.limit + 1}–
+                  {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    disabled={pagination.page === 1}
+                    onClick={() => goToPage(pagination.page - 1)}
+                    className="px-4 py-2 border rounded disabled:opacity-50"
+                  >
+                    <ChevronLeft size={16} />
+                  </button>
+                  <span className="px-4 py-2 font-medium">
+                    Page {pagination.page} of {pagination.totalPages}
+                  </span>
+                  <button
+                    disabled={pagination.page === pagination.totalPages}
+                    onClick={() => goToPage(pagination.page + 1)}
+                    className="px-4 py-2 border rounded disabled:opacity-50"
+                  >
+                    <ChevronRight size={16} />
+                  </button>
                 </div>
               </div>
-
-              {expandedGroups[compName] && (
-                <div className="p-5">
-                  {Object.entries(group.targetGroups).map(([tg, recs]) => (
-                    <div key={tg} className="mb-6 last:mb-0">
-                      <h4 className="text-lg font-semibold text-gray-800 mb-3 capitalize">
-                        {tg} Target Group
-                      </h4>
-                      <div className="overflow-x-auto rounded-lg border">
-                        <table className="w-full min-w-max">
-                          <thead className="bg-gray-50">
-                            <tr>
-                              <th className="text-left px-5 py-3 text-sm font-semibold text-gray-600 uppercase w-32">
-                                Level
-                              </th>
-                              <th className="text-left px-5 py-3 text-sm font-semibold text-gray-600 uppercase">
-                                Recommendation
-                              </th>
-                              <th className="text-left px-5 py-3 text-sm font-semibold text-gray-600 uppercase">
-                                Description
-                              </th>
-                              <th className="text-right px-5 py-3 text-sm font-semibold text-gray-600 uppercase w-32">
-                                Actions
-                              </th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y">
-                            {LEVELS.map((lvl) => {
-                              const rec = recs.find((r) => r.level === lvl);
-                              return (
-                                <tr key={lvl} className="hover:bg-gray-50">
-                                  <td className="px-5 py-4">
-                                    <span
-                                      className={`inline-block px-3 py-1 text-xs font-medium rounded-full ${TYPE_BADGES[lvl]}`}
-                                    >
-                                      {lvl}
-                                    </span>
-                                  </td>
-                                  <td className="px-5 py-4 text-sm text-gray-700">
-                                    {rec?.recommendation ? (
-                                      <div className="line-clamp-2">{rec.recommendation}</div>
-                                    ) : (
-                                      <span className="italic text-gray-400">— Not set —</span>
-                                    )}
-                                  </td>
-                                  <td className="px-5 py-4 text-sm text-gray-600">
-                                    {rec?.description ? (
-                                      <div className="line-clamp-3">{rec.description}</div>
-                                    ) : (
-                                      <span className="italic text-gray-400">— No description —</span>
-                                    )}
-                                  </td>
-                                  <td className="px-5 py-4 text-right">
-                                    {rec ? (
-                                      <div className="flex gap-2 justify-end">
-                                        <button
-                                          onClick={() => openEdit(rec)}
-                                          className="p-2 hover:bg-gray-100 rounded transition"
-                                        >
-                                          <Edit2 size={16} className="text-gray-600" />
-                                        </button>
-                                        <button
-                                          onClick={() => handleDelete(rec._id)}
-                                          className="p-2 hover:bg-red-50 rounded transition"
-                                        >
-                                          <Trash2 size={16} className="text-red-600" />
-                                        </button>
-                                      </div>
-                                    ) : (
-                                      <button
-                                        onClick={() => {
-                                          setForm({
-                                            competencyId: group.id,
-                                            targetGroup: tg,
-                                            levels: {
-                                              ...initForm().levels,
-                                              [lvl]: { recommendation: '', description: '' },
-                                            },
-                                          });
-                                          setModal('create');
-                                        }}
-                                        className="px-3 py-1.5 text-sm font-medium text-brand-red hover:bg-red-50 rounded transition"
-                                      >
-                                        Add
-                                      </button>
-                                    )}
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Pagination */}
-      {pagination.total > pagination.limit && (
-        <div className="flex justify-between items-center mt-8 pt-4 border-t">
-          <div className="text-sm text-gray-600">
-            Showing {(pagination.page - 1) * pagination.limit + 1}–
-            {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total}
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              disabled={pagination.page === 1}
-              onClick={() => goToPage(pagination.page - 1)}
-              className="px-4 py-2 border rounded disabled:opacity-50"
-            >
-              <ChevronLeft size={16} />
-            </button>
-            <span className="px-4 py-2 font-medium">
-              Page {pagination.page} of {pagination.totalPages}
-            </span>
-            <button
-              disabled={pagination.page === pagination.totalPages}
-              onClick={() => goToPage(pagination.page + 1)}
-              className="px-4 py-2 border rounded disabled:opacity-50"
-            >
-              <ChevronRight size={16} />
-            </button>
-          </div>
-        </div>
-      )}
+            )}
+          </>
+        )}
+      </div>
 
       {/* Modal */}
       <Modal

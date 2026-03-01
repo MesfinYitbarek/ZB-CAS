@@ -292,19 +292,6 @@ const ResultDetailModal = ({ result, isOpen, onClose, isAdmin, questionDetails, 
   );
 };
 
-// ─── stat card ────────────────────────────────────────────────────────────────
-const StatCard = ({ label, value, icon: Icon, color, sub }) => (
-  <div className="bg-white rounded-xl p-5 shadow-card border border-gray-100 flex items-center gap-4">
-    <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${color}`}>
-      <Icon className="w-6 h-6" />
-    </div>
-    <div>
-      <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">{label}</p>
-      <p className="text-2xl font-bold text-brand-black">{value}</p>
-      {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
-    </div>
-  </div>
-);
 
 // ─── pagination ────────────────────────────────────────────────────────────────
 const Paginator = ({ pagination, goToPage }) => {
@@ -634,16 +621,6 @@ export default function Results() {
               <button onClick={clearFilters} className="px-4 py-2 text-sm font-semibold text-gray-600 hover:text-red-600 transition-colors">Clear All</button>
               <button onClick={applyFilters} className="px-5 py-2 bg-brand-red text-white rounded-lg text-sm font-semibold hover:bg-brand-red-dark transition-colors">Apply Filters</button>
             </div>
-          </div>
-        )}
-
-        {/* Stats Cards (admin) */}
-        {isAdmin && stats && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-            <StatCard label="Total Results" value={stats.total} icon={ClipboardList} color="bg-blue-50 text-blue-600" />
-            <StatCard label="Avg Score" value={`${stats.avgScore}%`} icon={TrendingUp} color="bg-green-50 text-green-600" />
-            <StatCard label="Expert / Advanced" value={stats.levelDist.Expert + stats.levelDist.Advanced} icon={Award} color="bg-purple-50 text-purple-600" sub="high performers" />
-            <StatCard label="Need Support" value={stats.levelDist.Basic} icon={AlertCircle} color="bg-amber-50 text-amber-600" sub="basic level" />
           </div>
         )}
 
