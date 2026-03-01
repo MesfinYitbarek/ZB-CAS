@@ -105,106 +105,106 @@ export default function AssessmentDetail() {
   if (!assessment) return null;
 
   return (
-    <div className="p-7">
-      {/* Header */}
-      <div className="flex items-center gap-4 mb-6">
-        <button onClick={() => nav('/assessments')} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-          <ArrowLeft className="w-5 h-5" />
-        </button>
-        <div className="flex-1">
-          <h1 className="text-3xl font-display font-bold text-brand-black">{assessment.description || 'Assessment Details'}</h1>
-          <p className="text-gray-500 mt-1">
-            {assessment.competencyId?.name} · {assessment.type}
-          </p>
-        </div>
-        {isAdmin && assessment.status === 'DRAFT' && (
-          <div className="flex gap-2">
-            <button onClick={() => setEditModal(true)} className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg font-semibold text-gray-700 hover:bg-gray-50 transition-colors">
-              <Edit2 className="w-4 h-4" /> Edit
-            </button>
-            <button onClick={handleDelete} className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition-colors">
-              <Trash2 className="w-4 h-4" /> Delete
-            </button>
+    <div className="h-[calc(100vh-4rem)] flex">
+      {/* Left Side - Scrollable Content */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Sticky Header */}
+        <div className="flex items-center gap-4 px-7 pt-7 pb-4 flex-shrink-0 bg-gray-50">
+          <button onClick={() => nav('/assessments')} className="p-2 hover:bg-gray-200 rounded-lg transition-colors">
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <div className="flex-1">
+            <h1 className="text-2xl font-display font-bold text-brand-black">{assessment.description || 'Assessment Details'}</h1>
+            <p className="text-gray-500 text-sm">
+              {assessment.competencyId?.name} · {assessment.type}
+            </p>
           </div>
-        )}
-      </div>
+          {isAdmin && assessment.status === 'DRAFT' && (
+            <div className="flex gap-2">
+              <button onClick={() => setEditModal(true)} className="flex items-center gap-2 px-3 py-1.5 border border-gray-300 rounded-lg font-semibold text-gray-700 hover:bg-gray-100 transition-colors text-sm">
+                <Edit2 className="w-4 h-4" /> Edit
+              </button>
+              <button onClick={handleDelete} className="flex items-center gap-2 px-3 py-1.5 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition-colors text-sm">
+                <Trash2 className="w-4 h-4" /> Delete
+              </button>
+            </div>
+          )}
+        </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-        <div className="bg-white rounded-xl p-5 shadow-card border border-gray-100">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 rounded-lg bg-brand-red/10 flex items-center justify-center">
-              <Users className="w-5 h-5 text-brand-red" />
+        {/* Sticky Stats Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 px-7 pb-4 flex-shrink-0 bg-gray-50">
+          <div className="bg-white rounded-lg p-3 shadow-sm border border-gray-200">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-brand-red/10 flex items-center justify-center">
+                <Users className="w-4 h-4 text-brand-red" />
+              </div>
+              <div>
+                <div className="text-[10px] text-gray-500 uppercase font-semibold">Status</div>
+                <span className={`badge badge-${assessment.status.toLowerCase()} text-[10px] py-0.5 px-2`}>{assessment.status}</span>
+              </div>
             </div>
-            <div>
-              <div className="text-xs text-gray-500 uppercase font-semibold">Status</div>
-              <span className={`badge badge-${assessment.status.toLowerCase()} mt-1`}>{assessment.status}</span>
+          </div>
+          <div className="bg-white rounded-lg p-3 shadow-sm border border-gray-200">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
+                <FileText className="w-4 h-4 text-blue-600" />
+              </div>
+              <div>
+                <div className="text-[10px] text-gray-500 uppercase font-semibold">Questions</div>
+                <div className="text-lg font-bold text-brand-black">{assessment.questionIds?.length || 0}</div>
+              </div>
+            </div>
+          </div>
+          <div className="bg-white rounded-lg p-3 shadow-sm border border-gray-200">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-green-100 flex items-center justify-center">
+                <Users className="w-4 h-4 text-green-600" />
+              </div>
+              <div>
+                <div className="text-[10px] text-gray-500 uppercase font-semibold">Type</div>
+                <div className="text-sm font-bold text-brand-black">{assessment.type}</div>
+              </div>
             </div>
           </div>
         </div>
-        <div className="bg-white rounded-xl p-5 shadow-card border border-gray-100">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
-              <FileText className="w-5 h-5 text-blue-600" />
-            </div>
-            <div>
-              <div className="text-xs text-gray-500 uppercase font-semibold">Questions</div>
-              <div className="text-2xl font-bold text-brand-black">{assessment.questionIds?.length || 0}</div>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-xl p-5 shadow-card border border-gray-100">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
-              <Users className="w-5 h-5 text-green-600" />
-            </div>
-            <div>
-              <div className="text-xs text-gray-500 uppercase font-semibold">Type</div>
-              <div className="text-lg font-bold text-brand-black">{assessment.type}</div>
-            </div>
-          </div>
-        </div>
-      </div>
 
-      {/* Details Grid */}
-      <div className="grid lg:grid-cols-3 gap-6 mb-6">
-        {/* Left Column - Details */}
-        <div className="lg:col-span-2 space-y-6">
+        {/* Scrollable Content Area */}
+        <div className="flex-1 overflow-y-auto custom-scrollbar px-7 pb-7 space-y-4">
           {/* Assessment Info */}
-          <div className="bg-white rounded-xl p-6 shadow-card border border-gray-100">
-            <h3 className="text-lg font-display font-bold text-brand-black mb-4">Assessment Information</h3>
-            <div className="space-y-3">
-              <div className="flex items-start gap-3">
-                <Calendar className="w-5 h-5 text-gray-400 mt-0.5" />
+          <div className="bg-white rounded-lg p-4 shadow-sm border border-gray-200">
+            <h3 className="text-base font-semibold text-brand-black mb-3">Assessment Information</h3>
+            <div className="space-y-2 text-sm">
+              <div className="flex items-start gap-2">
+                <Calendar className="w-4 h-4 text-gray-400 mt-0.5" />
                 <div>
                   <div className="text-xs text-gray-500 font-semibold uppercase">Duration</div>
-                  <div className="text-sm text-brand-black-soft">
+                  <div className="text-brand-black-soft">
                     {new Date(assessment.startDate).toLocaleDateString()} - {new Date(assessment.endDate).toLocaleDateString()}
                   </div>
                 </div>
               </div>
-              <div className="flex items-start gap-3">
-                <Clock className="w-5 h-5 text-gray-400 mt-0.5" />
+              <div className="flex items-start gap-2">
+                <Clock className="w-4 h-4 text-gray-400 mt-0.5" />
                 <div>
                   <div className="text-xs text-gray-500 font-semibold uppercase">Time Limit</div>
-                  <div className="text-sm text-brand-black-soft">{assessment.timeLimit ? `${assessment.timeLimit} minutes` : 'No limit'}</div>
+                  <div className="text-brand-black-soft">{assessment.timeLimit ? `${assessment.timeLimit} minutes` : 'No limit'}</div>
                 </div>
               </div>
-              <div className="flex items-start gap-3">
-                <Users className="w-5 h-5 text-gray-400 mt-0.5" />
+              <div className="flex items-start gap-2">
+                <Users className="w-4 h-4 text-gray-400 mt-0.5" />
                 <div>
                   <div className="text-xs text-gray-500 font-semibold uppercase">Target</div>
-                  <div className="text-sm text-brand-black-soft">
+                  <div className="text-brand-black-soft">
                     {assessment.target?.department || 'All Departments'} · {assessment.target?.position || 'All Positions'}
                   </div>
                 </div>
               </div>
               {assessment.type === 'Combined' && (
-                <div className="flex items-start gap-3">
-                  <FileText className="w-5 h-5 text-gray-400 mt-0.5" />
+                <div className="flex items-start gap-2">
+                  <FileText className="w-4 h-4 text-gray-400 mt-0.5" />
                   <div>
                     <div className="text-xs text-gray-500 font-semibold uppercase">Weights</div>
-                    <div className="text-sm text-brand-black-soft">
+                    <div className="text-brand-black-soft">
                       Self: {assessment.weight?.selfAssessment || 0}% · Supervisor: {assessment.weight?.supervisor || 0}%
                     </div>
                   </div>
@@ -214,22 +214,22 @@ export default function AssessmentDetail() {
           </div>
 
           {/* Questions List */}
-          <div className="bg-white rounded-xl p-6 shadow-card border border-gray-100">
-            <h3 className="text-lg font-display font-bold text-brand-black mb-4">Questions ({assessment.questionIds?.length || 0})</h3>
+          <div className="bg-white rounded-lg p-4 shadow-sm border border-gray-200">
+            <h3 className="text-base font-semibold text-brand-black mb-3">Questions ({assessment.questionIds?.length || 0})</h3>
             {assessment.questionIds?.length === 0 ? (
-              <p className="text-gray-400 text-center py-8">No questions added yet.</p>
+              <p className="text-gray-400 text-center py-8 text-sm">No questions added yet.</p>
             ) : (
               <div className="space-y-2">
                 {assessment.questionIds?.map((q, idx) => (
-                  <div key={q._id} className="p-4 border border-gray-100 rounded-lg hover:bg-gray-50 transition-colors">
-                    <div className="flex items-start gap-3">
-                      <div className="w-6 h-6 rounded-full bg-brand-red/10 text-brand-red flex items-center justify-center text-xs font-bold flex-shrink-0">
+                  <div key={q._id} className="p-3 border border-gray-100 rounded-lg hover:bg-gray-50 transition-colors">
+                    <div className="flex items-start gap-2">
+                      <div className="w-5 h-5 rounded-full bg-brand-red/10 text-brand-red flex items-center justify-center text-xs font-bold flex-shrink-0">
                         {idx + 1}
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-brand-black-soft line-clamp-2">{q.text}</p>
                         <div className="flex items-center gap-2 mt-1">
-                          <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded font-semibold">{q.type}</span>
+                          <span className="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded font-semibold">{q.type}</span>
                           {q.options?.length > 0 && <span className="text-xs text-gray-400">{q.options.length} options</span>}
                         </div>
                       </div>
@@ -240,22 +240,24 @@ export default function AssessmentDetail() {
             )}
           </div>
         </div>
+      </div>
 
-        {/* Right Column - Empty (previously Responses) */}
-        <div className="bg-white rounded-xl p-6 shadow-card border border-gray-100">
-          <h3 className="text-lg font-display font-bold text-brand-black mb-4">Assessment Details</h3>
-          <div className="space-y-4">
-            <div>
+      {/* Right Side - Inverted L Shape (Sticky Details Panel) */}
+      <div className="w-80 flex-shrink-0 bg-gray-50 border-l border-gray-200">
+        <div className="h-full overflow-y-auto custom-scrollbar p-6">
+          <h3 className="text-lg font-semibold text-brand-black mb-4">Assessment Details</h3>
+          <div className="space-y-4 text-sm">
+            <div className="bg-white rounded-lg p-4 shadow-sm border border-gray-200">
               <div className="text-xs text-gray-500 font-semibold uppercase mb-1">Competency</div>
-              <div className="text-sm text-brand-black-soft font-medium">{assessment.competencyId?.name || 'Not specified'}</div>
+              <div className="text-brand-black-soft font-medium">{assessment.competencyId?.name || 'Not specified'}</div>
             </div>
-            <div>
+            <div className="bg-white rounded-lg p-4 shadow-sm border border-gray-200">
               <div className="text-xs text-gray-500 font-semibold uppercase mb-1">Description</div>
-              <div className="text-sm text-brand-black-soft">{assessment.description || 'No description provided'}</div>
+              <div className="text-brand-black-soft leading-relaxed">{assessment.description || 'No description provided'}</div>
             </div>
-            <div>
+            <div className="bg-white rounded-lg p-4 shadow-sm border border-gray-200">
               <div className="text-xs text-gray-500 font-semibold uppercase mb-1">Created</div>
-              <div className="text-sm text-brand-black-soft">{new Date(assessment.createdAt).toLocaleDateString()}</div>
+              <div className="text-brand-black-soft">{new Date(assessment.createdAt).toLocaleDateString()}</div>
             </div>
           </div>
         </div>
