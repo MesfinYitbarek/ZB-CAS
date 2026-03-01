@@ -6,467 +6,388 @@ import Feedback from '../models/Feedback.js';
 import AppError from '../utils/AppError.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import Response from '../models/Response.js';
-// ─── ADMIN DASHBOARD STATISTICS ──────────────────────────────────────────────
+
+// ─── TIME PERIOD HELPER ──────────────────────────────────────────────────────
+const getDateRange = (period = 'all') => {
+  const now = new Date();
+  const start = new Date();
+
+  switch (period) {
+    case 'monthly':
+      start.setMonth(start.getMonth() - 1);
+      break;
+    case 'quarterly':
+      start.setMonth(start.getMonth() - 3);
+      break;
+    case 'semi':
+      start.setMonth(start.getMonth() - 6);
+      break;
+    case 'yearly':
+      start.setFullYear(start.getFullYear() - 1);
+      break;
+    case 'all':
+    default:
+      return null;
+  }
+
+  return { $gte: start, $lte: now };
+};
+
+const getTrendPoints = (period = 'semi') => {
+  switch (period) {
+    case 'monthly':   return 4;
+    case 'quarterly': return 3;
+    case 'semi':      return 6;
+    case 'yearly':    return 12;
+    case 'all':       return 12;
+    default:          return 6;
+  }
+};
+
+// ─── ADMIN DASHBOARD ─────────────────────────────────────────────────────────
 export const getAdminDashboardStats = asyncHandler(async (req, res) => {
-  // 1️⃣ Basic Stats
+  const { period = 'semi' } = req.query;
+  const dateRange = getDateRange(period);
+  const dateMatch = dateRange ? { createdAt: dateRange } : {};
+  const trendPoints = getTrendPoints(period);
+
   const [
-    totalUsers,
-    activeUsers,
-    totalCompetencies,
-    assessments,
-    totalResults,
-    pendingResults,
-    recentAssessments,
-    recentResults,
-    recentUsers,
-    recentFeedback,
-    competencyCategories,
-    assessmentStatusDist,
-    monthlyTrends
+    totalUsers, activeUsers, totalCompetencies, assessments,
+    totalResults, pendingResults, recentActivity,
+    competencyCategories, assessmentStatusDist, trendData,
+    levelDist, deptPerformance, scoreStats
   ] = await Promise.all([
-    // User stats
     User.countDocuments(),
     User.countDocuments({ status: 'ACTIVE' }),
-    
-    // Competency stats
     Competency.countDocuments(),
-    
-    // Assessment stats
     Assessment.find().lean(),
-    
-    // Result stats
-    Result.countDocuments(),
-    Result.countDocuments({ status: 'PENDING' }),
-    
-    // Recent activity - assessments (last 5)
-    Assessment.find()
-      .sort({ createdAt: -1 })
-      .limit(5)
-      .populate('createdBy', 'name')
-      .lean(),
-    
-    // Recent activity - results (last 5)
-    Result.find()
-      .sort({ createdAt: -1 })
-      .limit(5)
-      .populate('userId', 'name')
-      .populate('competencyId', 'name')
-      .lean(),
-    
-    // Recent activity - users (last 5)
-    User.find()
-      .sort({ createdAt: -1 })
-      .limit(5)
-      .lean(),
-    
-    // Recent activity - feedback (last 5, unreviewed first)
-    Feedback.find()
-      .sort({ reviewed: 1, createdAt: -1 })
-      .limit(5)
-      .populate('userId', 'name')
-      .populate('assessmentId', 'description')
-      .lean(),
-    
-    // Competency distribution by category
+    Result.countDocuments(dateMatch),
+    Result.countDocuments({ ...dateMatch, status: 'PENDING' }),
+    buildRecentActivity(),
     Competency.aggregate([
       { $group: { _id: '$category', count: { $sum: 1 } } },
       { $sort: { count: -1 } }
     ]),
-    
-    // Assessment status distribution
     Assessment.aggregate([
       { $group: { _id: '$status', count: { $sum: 1 } } },
       { $sort: { count: -1 } }
     ]),
-    
-    // 6-month trend data
-    getMonthlyTrends()
+    buildAdminTrend(trendPoints),
+    Result.aggregate([
+      ...(dateRange ? [{ $match: { createdAt: dateRange } }] : []),
+      { $group: { _id: '$level', count: { $sum: 1 }, avgScore: { $avg: '$finalScore' } } },
+      { $sort: { avgScore: -1 } }
+    ]),
+    Result.aggregate([
+      ...(dateRange ? [{ $match: { createdAt: dateRange, status: 'FINAL' } }] : [{ $match: { status: 'FINAL' } }]),
+      {
+        $lookup: {
+          from: 'users', localField: 'userId', foreignField: '_id', as: 'user'
+        }
+      },
+      { $unwind: '$user' },
+      {
+        $group: {
+          _id: '$user.department',
+          avgScore: { $avg: '$finalScore' },
+          count: { $sum: 1 },
+          employeeCount: { $addToSet: '$userId' }
+        }
+      },
+      { $addFields: { employeeCount: { $size: '$employeeCount' } } },
+      { $sort: { avgScore: -1 } },
+      { $limit: 8 }
+    ]),
+    Result.aggregate([
+      ...(dateRange ? [{ $match: { createdAt: dateRange, status: 'FINAL' } }] : [{ $match: { status: 'FINAL' } }]),
+      {
+        $group: {
+          _id: null,
+          avgScore: { $avg: '$finalScore' },
+          maxScore: { $max: '$finalScore' },
+          minScore: { $min: '$finalScore' },
+          stdDev: { $stdDevPop: '$finalScore' }
+        }
+      }
+    ])
   ]);
 
-  // Calculate assessment stats
   const activeAssessments = assessments.filter(a => a.status === 'ACTIVE').length;
   const completedAssessments = assessments.filter(a => a.status === 'COMPLETED').length;
   const draftAssessments = assessments.filter(a => a.status === 'DRAFT').length;
   const scheduledAssessments = assessments.filter(a => a.status === 'SCHEDULED').length;
-
-  // Format competency distribution for chart
-  const compData = competencyCategories.map(item => ({
-    name: item._id || 'Uncategorized',
-    value: item.count
-  }));
-
-  // Format assessment status for pie chart
-  const statusData = assessmentStatusDist.map(item => ({
-    name: item._id,
-    value: item.count
-  }));
-
-  // Combine recent activity
-  const recentActivity = [
-    ...recentAssessments.map(a => ({
-      type: 'assessment',
-      desc: `New ${a.type} assessment created: ${a.description?.substring(0, 30)}${a.description?.length > 30 ? '...' : ''}`,
-      time: formatTimeAgo(a.createdAt),
-      user: a.createdBy?.name || 'HR Admin',
-      rawDate: a.createdAt
-    })),
-    ...recentResults.map(r => ({
-      type: 'result',
-      desc: `Results finalized for ${r.userId?.name || 'employee'} - ${r.competencyId?.name || 'Competency'}: ${r.level}`,
-      time: formatTimeAgo(r.createdAt),
-      user: 'System',
-      rawDate: r.createdAt
-    })),
-    ...recentUsers.map(u => ({
-      type: 'user',
-      desc: `New ${u.role} onboarded: ${u.name}`,
-      time: formatTimeAgo(u.createdAt),
-      user: 'HR Admin',
-      rawDate: u.createdAt
-    })),
-    ...recentFeedback.map(f => ({
-      type: 'feedback',
-      desc: `New feedback received ${!f.reviewed ? '(pending review)' : ''}`,
-      time: formatTimeAgo(f.createdAt),
-      user: f.userId?.name || 'Employee',
-      rawDate: f.createdAt
-    }))
-  ]
-  .sort((a, b) => new Date(b.rawDate) - new Date(a.rawDate))
-  .slice(0, 8);
+  const scores = scoreStats[0] || {};
+  const allTimeResults = await Result.countDocuments();
 
   res.status(200).json({
     status: 'success',
     data: {
+      period,
       stats: {
-        totalUsers,
-        activeUsers,
-        totalCompetencies,
-        activeAssessments,
-        completedAssessments,
-        draftAssessments,
-        scheduledAssessments,
-        pendingResults,
-        totalResults,
+        totalUsers, activeUsers, totalCompetencies,
+        activeAssessments, completedAssessments, draftAssessments, scheduledAssessments,
+        pendingResults, totalResults, allTimeResults,
+        avgScore: scores.avgScore ? Math.round(scores.avgScore) : 0,
+        maxScore: scores.maxScore || 0,
+        minScore: scores.minScore || 0,
+        stdDev: scores.stdDev ? Math.round(scores.stdDev * 10) / 10 : 0,
       },
       charts: {
-        competencyDistribution: compData,
-        assessmentStatus: statusData,
-        monthlyTrends
+        competencyDistribution: competencyCategories.map(i => ({ name: i._id || 'Other', value: i.count })),
+        assessmentStatus: assessmentStatusDist.map(i => ({ name: i._id, value: i.count })),
+        trend: trendData,
+        levelDistribution: levelDist.map(i => ({ name: i._id, count: i.count, avg: Math.round(i.avgScore || 0) })),
+        departmentPerformance: deptPerformance.map(d => ({
+          name: d._id || 'Unknown',
+          avgScore: Math.round(d.avgScore),
+          count: d.count,
+          employees: d.employeeCount
+        }))
       },
       recentActivity,
       quickStats: {
-        completionRate: totalResults > 0 
-          ? Math.round(((totalResults - pendingResults) / totalResults) * 100) 
-          : 0,
-        avgAssessmentsPerUser: totalUsers > 0 
-          ? (totalResults / totalUsers).toFixed(1) 
-          : 0,
-        feedbackPending: recentFeedback.filter(f => !f.reviewed).length
+        completionRate: totalResults > 0
+          ? Math.round(((totalResults - pendingResults) / totalResults) * 100) : 0,
+        avgAssessmentsPerUser: totalUsers > 0
+          ? parseFloat((allTimeResults / totalUsers).toFixed(1)) : 0,
       }
     }
   });
 });
 
-// ─── SUPERVISOR DASHBOARD STATS ──────────────────────────────────────────────
+// ─── SUPERVISOR DASHBOARD ────────────────────────────────────────────────────
 export const getSupervisorDashboardStats = asyncHandler(async (req, res) => {
   const supervisorId = req.user.id;
+  const { period = 'quarterly' } = req.query;
+  const dateRange = getDateRange(period);
+  const dateMatch = dateRange ? { createdAt: dateRange } : {};
 
-  // Get team members
-  const teamMembers = await User.find({ 
-    supervisorId, 
-    status: 'ACTIVE' 
-  }).select('_id name email department position').lean();
-
+  const teamMembers = await User.find({ supervisorId, status: 'ACTIVE' })
+    .select('_id name email department position gender').lean();
   const teamMemberIds = teamMembers.map(m => m._id);
 
-  // Get pending evaluations
-  const pendingAssessments = await Assessment.find({
-    status: 'ACTIVE',
-    $or: [{ type: 'SupervisorOnly' }, { type: 'Combined' }]
-  }).lean();
+  const [pendingEvals, allTeamResults, periodResults, teamTrend, competencyBreakdown, memberScores] = await Promise.all([
+    buildPendingEvaluations(teamMembers),
+    Result.find({ userId: { $in: teamMemberIds }, status: 'FINAL' }).lean(),
+    Result.find({ userId: { $in: teamMemberIds }, status: 'FINAL', ...dateMatch }).lean(),
+    buildTeamTrend(teamMemberIds, getTrendPoints(period)),
+    Result.aggregate([
+      { $match: { userId: { $in: teamMemberIds }, status: 'FINAL', ...(dateRange ? { createdAt: dateRange } : {}) } },
+      { $lookup: { from: 'competencies', localField: 'competencyId', foreignField: '_id', as: 'competency' } },
+      { $unwind: '$competency' },
+      { $group: { _id: '$competency.name', avgScore: { $avg: '$finalScore' }, count: { $sum: 1 } } },
+      { $sort: { avgScore: -1 } },
+      { $limit: 6 }
+    ]),
+    Result.aggregate([
+      { $match: { userId: { $in: teamMemberIds }, status: 'FINAL', ...(dateRange ? { createdAt: dateRange } : {}) } },
+      { $group: { _id: '$userId', avgScore: { $avg: '$finalScore' }, count: { $sum: 1 }, latestLevel: { $last: '$level' } } }
+    ])
+  ]);
 
-  const pendingEvaluations = [];
-  
-  for (const assessment of pendingAssessments) {
-    for (const member of teamMembers) {
-      const supervisorResponse = await Response.findOne({
-        assessmentId: assessment._id,
-        employeeId: member._id,
-        respondentType: 'supervisor',
-        submittedAt: null
-      }).lean();
+  const memberScoreMap = {};
+  memberScores.forEach(s => { memberScoreMap[s._id.toString()] = s; });
 
-      if (supervisorResponse || !supervisorResponse) { // Needs evaluation if no response or draft
-        const employeeResponse = await Response.findOne({
-          assessmentId: assessment._id,
-          employeeId: member._id,
-          respondentType: 'self',
-          submittedAt: { $ne: null }
-        }).lean();
-
-        const selfComplete = assessment.type === 'Combined' ? !!employeeResponse : true;
-        
-        if (selfComplete) {
-          pendingEvaluations.push({
-            assessmentId: assessment._id,
-            assessmentName: assessment.description,
-            employeeId: member._id,
-            employeeName: member.name,
-            dueDate: assessment.endDate
-          });
-        }
-      }
-    }
-  }
-
-  // Get team results
-  const teamResults = await Result.find({
-    userId: { $in: teamMemberIds },
-    status: 'FINAL'
-  })
-  .populate('competencyId', 'name category')
-  .sort({ createdAt: -1 })
-  .limit(10)
-  .lean();
-
-  // Calculate team average score
-  const allTeamResults = await Result.find({
-    userId: { $in: teamMemberIds },
-    status: 'FINAL'
-  }).lean();
-
-  const teamAvgScore = allTeamResults.length > 0
-    ? Math.round(allTeamResults.reduce((sum, r) => sum + r.finalScore, 0) / allTeamResults.length)
-    : 0;
+  const enrichedMembers = teamMembers.map(m => {
+    const score = memberScoreMap[m._id.toString()];
+    return { ...m, avgScore: score ? Math.round(score.avgScore) : null, assessmentCount: score?.count || 0, latestLevel: score?.latestLevel || null };
+  });
 
   res.status(200).json({
     status: 'success',
     data: {
+      period,
       stats: {
         teamSize: teamMembers.length,
-        pendingEvaluations: pendingEvaluations.length,
+        pendingEvaluations: pendingEvals.length,
         completedEvaluations: allTeamResults.length,
-        teamAvgScore
+        teamAvgScore: allTeamResults.length > 0 ? Math.round(allTeamResults.reduce((s, r) => s + r.finalScore, 0) / allTeamResults.length) : 0,
+        periodAvgScore: periodResults.length > 0 ? Math.round(periodResults.reduce((s, r) => s + r.finalScore, 0) / periodResults.length) : 0,
+        periodResultCount: periodResults.length,
       },
-      teamMembers,
-      pendingEvaluations: pendingEvaluations.slice(0, 5),
-      recentResults: teamResults,
-      quickActions: [
-        { label: 'Evaluate Team', icon: 'clipboard', link: '/assessments' },
-        { label: 'View Reports', icon: 'chart', link: '/reports' },
-        { label: 'Team Feedback', icon: 'message', link: '/feedback' }
-      ]
+      teamMembers: enrichedMembers,
+      pendingEvaluations: pendingEvals.slice(0, 10),
+      charts: {
+        trend: teamTrend,
+        competencyBreakdown: competencyBreakdown.map(c => ({ name: c._id, avg: Math.round(c.avgScore), count: c.count }))
+      }
     }
   });
 });
 
-// ─── EMPLOYEE DASHBOARD STATS ───────────────────────────────────────────────
+// ─── EMPLOYEE DASHBOARD ──────────────────────────────────────────────────────
 export const getEmployeeDashboardStats = asyncHandler(async (req, res) => {
   const employeeId = req.user.id;
+  const { period = 'yearly' } = req.query;
+  const dateRange = getDateRange(period);
+  const dateMatch = dateRange ? { createdAt: dateRange } : {};
 
-  const [
-    pendingAssessments,
-    completedAssessments,
-    recentResults,
-    supervisor,
-    feedback
-  ] = await Promise.all([
-    // Active assessments not yet submitted
-    Assessment.find({
-      status: 'ACTIVE',
-      $or: [
-        { 'target.department': req.user.department },
-        { 'target.position': req.user.position },
-        { 'target.department': null, 'target.position': null }
-      ]
-    })
-    .populate('competencyId', 'name')
-    .lean()
-    .then(async (assessments) => {
-      const pending = [];
-      for (const a of assessments) {
-        const submitted = await Response.findOne({
-          assessmentId: a._id,
-          employeeId,
-          respondentType: 'self',
-          submittedAt: { $ne: null }
-        }).lean();
-        if (!submitted) {
-          pending.push({
-            ...a,
-            progress: await calculateProgress(a._id, employeeId)
-          });
-        }
-      }
-      return pending;
-    }),
-    
-    // Completed assessments with results
+  const [allResults, periodResults, activeAssessmentsList, supervisor, competencyProgress, scoreTrend] = await Promise.all([
     Result.find({ userId: employeeId, status: 'FINAL' })
       .populate('competencyId', 'name category')
       .populate('assessmentId', 'description type')
-      .sort({ createdAt: -1 })
-      .limit(5)
-      .lean(),
-    
-    // Recent results
-    Result.find({ userId: employeeId, status: 'FINAL' })
-      .populate('competencyId', 'name')
-      .sort({ createdAt: -1 })
-      .limit(3)
-      .lean(),
-    
-    // Supervisor info
-    User.findById(req.user.supervisorId)
-      .select('name email position')
-      .lean(),
-    
-    // Recent feedback given
-    Feedback.find({ userId: employeeId })
-      .populate('assessmentId', 'description')
-      .sort({ createdAt: -1 })
-      .limit(3)
-      .lean()
+      .sort({ createdAt: -1 }).lean(),
+    Result.find({ userId: employeeId, status: 'FINAL', ...dateMatch })
+      .populate('competencyId', 'name category').sort({ createdAt: -1 }).lean(),
+    Assessment.find({ status: 'ACTIVE' }).populate('competencyId', 'name').lean(),
+    User.findById(req.user.supervisorId).select('name email position department').lean(),
+    Result.aggregate([
+      { $match: { userId: employeeId, status: 'FINAL' } },
+      { $lookup: { from: 'competencies', localField: 'competencyId', foreignField: '_id', as: 'competency' } },
+      { $unwind: '$competency' },
+      {
+        $group: {
+          _id: { competencyId: '$competencyId', name: '$competency.name', category: '$competency.category' },
+          latestScore: { $last: '$finalScore' },
+          bestScore: { $max: '$finalScore' },
+          latestLevel: { $last: '$level' },
+          attempts: { $sum: 1 },
+          latestDate: { $last: '$createdAt' }
+        }
+      },
+      { $sort: { latestDate: -1 } }
+    ]),
+    buildEmployeeTrend(employeeId, getTrendPoints(period))
   ]);
 
-  // Calculate overall average score
-  const allResults = await Result.find({ userId: employeeId, status: 'FINAL' }).lean();
-  const avgScore = allResults.length > 0
-    ? Math.round(allResults.reduce((sum, r) => sum + r.finalScore, 0) / allResults.length)
-    : 0;
+  const pendingAssessments = [];
+  for (const a of activeAssessmentsList) {
+    const submitted = await Response.findOne({ assessmentId: a._id, employeeId, respondentType: 'self', submittedAt: { $ne: null } }).lean();
+    if (!submitted) pendingAssessments.push(a);
+  }
+
+  const avgScore = allResults.length > 0 ? Math.round(allResults.reduce((s, r) => s + r.finalScore, 0) / allResults.length) : 0;
+  const periodAvgScore = periodResults.length > 0 ? Math.round(periodResults.reduce((s, r) => s + r.finalScore, 0) / periodResults.length) : 0;
+  const levelCounts = allResults.reduce((acc, r) => { acc[r.level] = (acc[r.level] || 0) + 1; return acc; }, {});
 
   res.status(200).json({
     status: 'success',
     data: {
+      period,
       stats: {
         pendingAssessments: pendingAssessments.length,
-        completedAssessments: completedAssessments.length,
-        totalAssessments: pendingAssessments.length + completedAssessments.length,
-        avgScore,
-        competenciesAssessed: [...new Set(allResults.map(r => r.competencyId?._id?.toString()))].length
+        completedAssessments: allResults.length,
+        totalAssessments: pendingAssessments.length + allResults.length,
+        avgScore, periodAvgScore, periodResultCount: periodResults.length,
+        competenciesAssessed: [...new Set(allResults.map(r => r.competencyId?._id?.toString()))].length,
+        levelCounts
       },
       pendingAssessments: pendingAssessments.slice(0, 3),
-      recentResults,
+      recentResults: allResults.slice(0, 5),
+      competencyProgress: competencyProgress.map(c => ({
+        id: c._id.competencyId, name: c._id.name, category: c._id.category,
+        latestScore: c.latestScore, bestScore: c.bestScore, latestLevel: c.latestLevel,
+        attempts: c.attempts, latestDate: c.latestDate
+      })),
+      charts: { trend: scoreTrend },
       supervisor,
-      recentFeedback: feedback,
       nextDeadline: getNextDeadline(pendingAssessments)
     }
   });
 });
 
-// ─── HELPER FUNCTIONS ────────────────────────────────────────────────────────
-
-const getMonthlyTrends = async () => {
-  const sixMonthsAgo = new Date();
-  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-
-  const [monthlyAssessments, monthlyResults] = await Promise.all([
-    Assessment.aggregate([
-      { $match: { createdAt: { $gte: sixMonthsAgo } } },
-      {
-        $group: {
-          _id: { $month: '$createdAt' },
-          count: { $sum: 1 }
-        }
-      },
-      { $sort: { _id: 1 } }
-    ]),
-    Result.aggregate([
-      { $match: { createdAt: { $gte: sixMonthsAgo } } },
-      {
-        $group: {
-          _id: { $month: '$createdAt' },
-          count: { $sum: 1 }
-        }
-      },
-      { $sort: { _id: 1 } }
-    ])
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
+const buildRecentActivity = async () => {
+  const [assessments, results, users] = await Promise.all([
+    Assessment.find().sort({ createdAt: -1 }).limit(4).populate('createdBy', 'name').lean(),
+    Result.find().sort({ createdAt: -1 }).limit(4).populate('userId', 'name').populate('competencyId', 'name').lean(),
+    User.find().sort({ createdAt: -1 }).limit(3).lean()
   ]);
+  return [
+    ...assessments.map(a => ({ type: 'assessment', desc: `New ${a.type}: ${(a.description || 'Untitled').substring(0, 40)}`, time: formatTimeAgo(a.createdAt), user: a.createdBy?.name || 'HR Admin', rawDate: a.createdAt, icon: 'clipboard' })),
+    ...results.map(r => ({ type: 'result', desc: `${r.userId?.name || 'Employee'} — ${r.competencyId?.name || 'Assessment'} · ${r.level}`, time: formatTimeAgo(r.createdAt), user: r.userId?.name || 'System', rawDate: r.createdAt, icon: 'chart' })),
+    ...users.map(u => ({ type: 'user', desc: `New employee: ${u.name}`, time: formatTimeAgo(u.createdAt), user: 'HR Admin', rawDate: u.createdAt, icon: 'user' }))
+  ].sort((a, b) => new Date(b.rawDate) - new Date(a.rawDate)).slice(0, 8);
+};
 
-  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const currentMonth = new Date().getMonth();
-  
-  const trends = [];
-  for (let i = 5; i >= 0; i--) {
-    const monthIndex = (currentMonth - i + 12) % 12;
-    const monthName = monthNames[monthIndex];
-    const monthNumber = monthIndex + 1;
-    
-    const assessments = monthlyAssessments.find(m => m._id === monthNumber)?.count || 0;
-    const results = monthlyResults.find(m => m._id === monthNumber)?.count || 0;
-    
-    // Get cumulative results for trend
-    const cumulativeResults = await Result.countDocuments({
-      createdAt: {
-        $gte: new Date(new Date().getFullYear(), monthIndex, 1),
-        $lt: new Date(new Date().getFullYear(), monthIndex + 1, 1)
-      }
-    });
-    
-    trends.push({
-      month: monthName,
-      assessments,
-      results: cumulativeResults || results
-    });
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+const buildAdminTrend = async (points) => {
+  const now = new Date();
+  const trend = [];
+  for (let i = points - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const next = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+    const [assessments, results, avg] = await Promise.all([
+      Assessment.countDocuments({ createdAt: { $gte: d, $lt: next } }),
+      Result.countDocuments({ createdAt: { $gte: d, $lt: next }, status: 'FINAL' }),
+      Result.aggregate([{ $match: { createdAt: { $gte: d, $lt: next }, status: 'FINAL' } }, { $group: { _id: null, avg: { $avg: '$finalScore' } } }])
+    ]);
+    trend.push({ month: MONTH_NAMES[d.getMonth()], assessments, results, avgScore: avg[0] ? Math.round(avg[0].avg) : 0 });
   }
-  
-  return trends;
+  return trend;
+};
+
+const buildTeamTrend = async (memberIds, points) => {
+  const now = new Date();
+  const trend = [];
+  for (let i = points - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const next = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+    const r = await Result.aggregate([
+      { $match: { userId: { $in: memberIds }, status: 'FINAL', createdAt: { $gte: d, $lt: next } } },
+      { $group: { _id: null, avgScore: { $avg: '$finalScore' }, count: { $sum: 1 } } }
+    ]);
+    trend.push({ month: MONTH_NAMES[d.getMonth()], avgScore: r[0] ? Math.round(r[0].avgScore) : 0, count: r[0]?.count || 0 });
+  }
+  return trend;
+};
+
+const buildEmployeeTrend = async (employeeId, points) => {
+  const now = new Date();
+  const trend = [];
+  for (let i = points - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const next = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+    const r = await Result.aggregate([
+      { $match: { userId: employeeId, status: 'FINAL', createdAt: { $gte: d, $lt: next } } },
+      { $group: { _id: null, avgScore: { $avg: '$finalScore' }, count: { $sum: 1 } } }
+    ]);
+    trend.push({ month: MONTH_NAMES[d.getMonth()], score: r[0] ? Math.round(r[0].avgScore) : null, count: r[0]?.count || 0 });
+  }
+  return trend;
+};
+
+const buildPendingEvaluations = async (teamMembers) => {
+  const pendingAssessments = await Assessment.find({ status: 'ACTIVE', $or: [{ type: 'SupervisorOnly' }, { type: 'Combined' }] }).lean();
+  const evals = [];
+  for (const assessment of pendingAssessments) {
+    for (const member of teamMembers) {
+      const supervisorDone = await Response.findOne({ assessmentId: assessment._id, employeeId: member._id, respondentType: 'supervisor', submittedAt: { $ne: null } }).lean();
+      if (supervisorDone) continue;
+      if (assessment.type === 'Combined') {
+        const selfDone = await Response.findOne({ assessmentId: assessment._id, employeeId: member._id, respondentType: 'self', submittedAt: { $ne: null } }).lean();
+        if (!selfDone) continue;
+      }
+      const daysLeft = assessment.endDate ? Math.ceil((new Date(assessment.endDate) - new Date()) / (1000 * 60 * 60 * 24)) : null;
+      evals.push({
+        assessmentId: assessment._id, assessmentDescription: assessment.description, assessmentType: assessment.type,
+        employeeId: member._id, employeeName: member.name, employeeDepartment: member.department, employeePosition: member.position,
+        dueDate: assessment.endDate, daysLeft,
+        priority: daysLeft !== null ? (daysLeft <= 2 ? 'HIGH' : daysLeft <= 7 ? 'MEDIUM' : 'LOW') : 'LOW'
+      });
+    }
+  }
+  return evals.sort((a, b) => ({ HIGH: 0, MEDIUM: 1, LOW: 2 }[a.priority] - { HIGH: 0, MEDIUM: 1, LOW: 2 }[b.priority]));
 };
 
 const formatTimeAgo = (date) => {
-  const seconds = Math.floor((new Date() - new Date(date)) / 1000);
-  
-  if (seconds < 60) return `${seconds} sec ago`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes} min ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days} day${days > 1 ? 's' : ''} ago`;
+  const s = Math.floor((new Date() - new Date(date)) / 1000);
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60); if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60); if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24); if (d < 7) return `${d}d ago`;
   return new Date(date).toLocaleDateString();
-};
-
-const calculateProgress = async (assessmentId, employeeId) => {
-  const assessment = await Assessment.findById(assessmentId).lean();
-  if (!assessment) return 0;
-  
-  const totalQuestions = assessment.questionIds?.length || 0;
-  if (totalQuestions === 0) return 0;
-  
-  const answeredCount = await Response.countDocuments({
-    assessmentId,
-    employeeId,
-    respondentType: 'self',
-    selectedAnswer: { $ne: null }
-  });
-  
-  return Math.round((answeredCount / totalQuestions) * 100);
 };
 
 const getNextDeadline = (assessments) => {
   if (!assessments.length) return null;
-  
-  const upcoming = assessments
-    .filter(a => a.endDate)
-    .sort((a, b) => new Date(a.endDate) - new Date(b.endDate))[0];
-  
-  return upcoming ? {
-    id: upcoming._id,
-    name: upcoming.description,
-    date: upcoming.endDate,
-    daysLeft: Math.ceil((new Date(upcoming.endDate) - new Date()) / (1000 * 60 * 60 * 24))
-  } : null;
+  const upcoming = assessments.filter(a => a.endDate).sort((a, b) => new Date(a.endDate) - new Date(b.endDate))[0];
+  return upcoming ? { id: upcoming._id, name: upcoming.description, date: upcoming.endDate, daysLeft: Math.ceil((new Date(upcoming.endDate) - new Date()) / (1000 * 60 * 60 * 24)) } : null;
 };
 
-// Add this function to your existing dashboardController.js
 export const getDashboardByRole = asyncHandler(async (req, res, next) => {
-  // Route to the appropriate dashboard based on user role
-  if (req.user.role === 'HR_ADMIN') {
-    return getAdminDashboardStats(req, res, next);
-  } else if (req.user.role === 'SUPERVISOR') {
-    return getSupervisorDashboardStats(req, res, next);
-  } else {
-    return getEmployeeDashboardStats(req, res, next);
-  }
+  if (req.user.role === 'HR_ADMIN') return getAdminDashboardStats(req, res, next);
+  if (req.user.role === 'SUPERVISOR') return getSupervisorDashboardStats(req, res, next);
+  return getEmployeeDashboardStats(req, res, next);
 });
