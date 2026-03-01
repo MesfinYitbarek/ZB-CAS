@@ -382,3 +382,186 @@ export const getSupervisorEvaluationScores = asyncHandler(async (req, res) => {
     data: { supervisorScore: resp?.score || null, comments: resp?.comments || '' }
   });
 });
+
+// ─── RICH FILTERED RESULTS (for the new Results page) ────────────────────────
+// Supports filtering by: assessment, competency, department, position,
+// targetGroup, purpose, level, status, assessmentType, dateFrom, dateTo, search
+export const getFilteredResults = asyncHandler(async (req, res) => {
+  const {
+    assessmentId, competencyId, department, position,
+    targetGroup, purpose, level, status, assessmentType,
+    dateFrom, dateTo, search, gender,
+    page = 1, limit = 20, sortBy = 'createdAt', sortDir = 'desc',
+  } = req.query;
+
+  let filter = {};
+
+  // Assessment filter
+  if (assessmentId) filter.assessmentId = assessmentId;
+  if (competencyId) filter.competencyId = competencyId;
+  if (level) filter.level = level;
+  if (status) filter.status = status;
+
+  // Date range
+  if (dateFrom || dateTo) {
+    filter.createdAt = {};
+    if (dateFrom) filter.createdAt.$gte = new Date(dateFrom);
+    if (dateTo) {
+      const end = new Date(dateTo);
+      end.setHours(23, 59, 59, 999);
+      filter.createdAt.$lte = end;
+    }
+  }
+
+  // Role-based scoping
+  if (req.user.role === 'EMPLOYEE') {
+    filter.userId = req.user.id;
+  } else if (req.user.role === 'SUPERVISOR') {
+    const subordinates = await User.find({ supervisorId: req.user.id }).select('_id').lean();
+    filter.userId = { $in: subordinates.map(s => s._id) };
+  }
+
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+  const sortObj = { [sortBy === 'score' ? 'finalScore' : sortBy]: sortDir === 'asc' ? 1 : -1 };
+
+  let query = Result.find(filter)
+    .populate('userId', 'name email department position employeeId gender')
+    .populate('competencyId', 'name category targetGroups')
+    .populate({
+      path: 'assessmentId',
+      select: 'description type title weight targetGroup purpose targetAudience status',
+    })
+    .select('-scoreDetails.questionDetails')
+    .sort(sortObj)
+    .skip(skip)
+    .limit(parseInt(limit));
+
+  const [results, total] = await Promise.all([
+    query.lean(),
+    Result.countDocuments(filter),
+  ]);
+
+  // Post-populate filters (for fields on joined docs)
+  let filtered = results;
+
+  if (department) {
+    filtered = filtered.filter(r => r.userId?.department === department);
+  }
+  if (position) {
+    filtered = filtered.filter(r =>
+      r.userId?.position?.toLowerCase().includes(position.toLowerCase())
+    );
+  }
+  if (gender) {
+    filtered = filtered.filter(r => r.userId?.gender === gender);
+  }
+  if (targetGroup) {
+    filtered = filtered.filter(r => r.assessmentId?.targetGroup === targetGroup);
+  }
+  if (purpose) {
+    filtered = filtered.filter(r => r.assessmentId?.purpose === purpose);
+  }
+  if (assessmentType) {
+    filtered = filtered.filter(r => r.assessmentId?.type === assessmentType);
+  }
+  if (search) {
+    const s = search.toLowerCase();
+    filtered = filtered.filter(r =>
+      r.userId?.name?.toLowerCase().includes(s) ||
+      r.userId?.email?.toLowerCase().includes(s) ||
+      r.userId?.employeeId?.toLowerCase().includes(s) ||
+      r.competencyId?.name?.toLowerCase().includes(s) ||
+      r.assessmentId?.description?.toLowerCase().includes(s)
+    );
+  }
+
+  // Map to rich response shape
+  const mapped = filtered.map(r => ({
+    _id: r._id,
+    userId: r.userId,
+    userName: r.userId?.name || 'N/A',
+    userEmail: r.userId?.email || 'N/A',
+    userDepartment: r.userId?.department || 'N/A',
+    userPosition: r.userId?.position || 'N/A',
+    userGender: r.userId?.gender || 'N/A',
+    employeeId: r.userId?.employeeId || 'N/A',
+    competencyId: r.competencyId,
+    competencyName: r.competencyId?.name || 'N/A',
+    competencyCategory: r.competencyId?.category || 'N/A',
+    assessmentId: r.assessmentId,
+    assessmentDescription: r.assessmentId?.description || 'N/A',
+    assessmentType: r.assessmentId?.type || 'N/A',
+    targetGroup: r.assessmentId?.targetGroup || 'N/A',
+    purpose: r.assessmentId?.purpose || 'N/A',
+    selfScore: r.scoreDetails?.selfScore ?? null,
+    supervisorScore: r.scoreDetails?.supervisorScore ?? null,
+    finalScore: r.finalScore,
+    level: r.level,
+    recommendation: r.recommendation,
+    status: r.status || 'FINAL',
+    weightUsed: r.scoreDetails?.weightUsed || null,
+    calculation: r.scoreDetails?.calculation || null,
+    isCombined: r.assessmentId?.type === 'Combined',
+    hasBoth: r.scoreDetails?.selfScore !== null && r.scoreDetails?.supervisorScore !== null,
+    date: r.createdAt,
+    formattedDate: new Date(r.createdAt).toLocaleDateString(),
+  }));
+
+  // Aggregate stats over full filtered set (for summary cards)
+  const stats = {
+    total: mapped.length,
+    avgScore: mapped.length ? parseFloat((mapped.reduce((s, r) => s + r.finalScore, 0) / mapped.length).toFixed(1)) : 0,
+    levelDist: { Basic: 0, Intermediate: 0, Advanced: 0, Expert: 0 },
+    byDept: {},
+  };
+  mapped.forEach(r => {
+    if (stats.levelDist[r.level] !== undefined) stats.levelDist[r.level]++;
+    if (r.userDepartment) {
+      if (!stats.byDept[r.userDepartment]) stats.byDept[r.userDepartment] = 0;
+      stats.byDept[r.userDepartment]++;
+    }
+  });
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      results: mapped,
+      stats,
+      pagination: {
+        total,
+        filteredTotal: filtered.length,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        totalPages: Math.ceil(total / parseInt(limit)),
+      },
+    },
+  });
+});
+
+// ─── GET FILTER OPTIONS (distinct values for dropdown population) ─────────────
+export const getResultFilterOptions = asyncHandler(async (req, res) => {
+  const [departments, positions, competencies, assessments] = await Promise.all([
+    User.distinct('department', { status: 'ACTIVE', department: { $ne: null } }),
+    User.distinct('position', { status: 'ACTIVE', position: { $ne: null } }),
+    Result.distinct('competencyId').then(ids =>
+      mongoose.model('Competency').find({ _id: { $in: ids } }).select('name category').lean()
+    ),
+    Result.distinct('assessmentId').then(ids =>
+      Assessment.find({ _id: { $in: ids } }).select('description type status targetGroup purpose').lean()
+    ),
+  ]);
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      departments: departments.filter(Boolean).sort(),
+      positions: positions.filter(Boolean).sort(),
+      competencies,
+      assessments,
+      levels: ['Basic', 'Intermediate', 'Advanced', 'Expert'],
+      assessmentTypes: ['SelfAssessment', 'SupervisorOnly', 'Combined'],
+      targetGroups: ['managerial', 'non-managerial', 'common'],
+      purposes: ['Career Development', 'Succession Planning', 'Performance Improvement', 'Training Needs Analysis', 'Promotion Readiness', 'Other'],
+    },
+  });
+});

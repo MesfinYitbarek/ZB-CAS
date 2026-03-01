@@ -1,7 +1,7 @@
 /* models/Assessment.js
- * Assessment(AssessmentID, CompetencyID, Description,
- *            Target{Department, Position}, QuestionID[],
- *            StartDate, EndDate, TimeLimit,
+ * Assessment(AssessmentID, CompetencyID, TargetGroup, Purpose,
+ *            Description, TargetAudience, ReminderDaysBefore,
+ *            QuestionID[], StartDate, EndDate, TimeLimit,
  *            Type, Weight{SelfAssessment, Supervisor}, Status)
  *
  * Types:
@@ -15,6 +15,16 @@ import mongoose from 'mongoose';
 
 const ASSESSMENT_TYPES = ['SelfAssessment', 'SupervisorOnly', 'Combined'];
 const STATUSES = ['DRAFT', 'SCHEDULED', 'ACTIVE', 'COMPLETED', 'ARCHIVED'];
+const TARGET_GROUPS = ['managerial', 'non-managerial', 'common'];
+const PURPOSES = [
+  'Career Development',
+  'Succession Planning',
+  'Performance Improvement',
+  'Training Needs Analysis',
+  'Promotion Readiness',
+  'Other',
+];
+const AUDIENCE_TYPES = ['ALL_DEPARTMENTS', 'DEPARTMENT_ALL', 'SPECIFIC_EMPLOYEES'];
 
 const assessmentSchema = new mongoose.Schema(
   {
@@ -23,16 +33,61 @@ const assessmentSchema = new mongoose.Schema(
       ref: 'Competency',
       required: [true, 'Competency ID is required.'],
     },
+
+    // ── New fields ────────────────────────────────────────────────────────────
+    targetGroup: {
+      type: String,
+      enum: TARGET_GROUPS,
+      required: [true, 'Target group is required.'],
+    },
+
+    purpose: {
+      type: String,
+      enum: PURPOSES,
+      required: [true, 'Purpose is required.'],
+    },
+
+    reminderDaysBefore: {
+      type: Number,
+      default: null,
+      min: 1,
+    },
+
+    reminderSent: {
+      type: Boolean,
+      default: false,
+    },
+
+    // Structured target audience (replaces the simple target.department / position)
+    targetAudience: {
+      type: {
+        type: String,
+        enum: AUDIENCE_TYPES,
+        default: 'ALL_DEPARTMENTS',
+      },
+      departments: [{ type: String, trim: true }],
+      employeeIds: [
+        {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'User',
+        },
+      ],
+    },
+    // ── End new fields ────────────────────────────────────────────────────────
+
     description: {
       type: String,
       trim: true,
       maxlength: 500,
       default: '',
     },
+
+    // Legacy target kept for backward compatibility
     target: {
       department: { type: String, trim: true, default: null },
       position: { type: String, trim: true, default: null },
     },
+
     questionIds: [
       {
         type: mongoose.Schema.Types.ObjectId,
@@ -98,6 +153,10 @@ assessmentSchema.index({ competencyId: 1 });
 assessmentSchema.index({ status: 1 });
 assessmentSchema.index({ startDate: 1, endDate: 1 });
 assessmentSchema.index({ 'target.department': 1 });
+assessmentSchema.index({ 'targetAudience.type': 1 });
+assessmentSchema.index({ 'targetAudience.departments': 1 });
+assessmentSchema.index({ 'targetAudience.employeeIds': 1 });
+assessmentSchema.index({ targetGroup: 1 });
 
 // ─── Post-save hook: generate reports for archived assessments ─────────────
 assessmentSchema.post('save', async function(doc) {

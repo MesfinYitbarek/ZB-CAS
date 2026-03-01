@@ -1,21 +1,36 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Calendar, Clock, ChevronLeft, ChevronRight, Target, Users, Eye, AlertCircle, Check, X, Shuffle, Edit2 } from 'lucide-react';
+import {
+  Plus, Calendar, Clock, ChevronLeft, ChevronRight, Target, Users, Eye,
+  AlertCircle, Check, X, Shuffle, Edit2, Bell, Briefcase, Search
+} from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import Modal from '../components/Modal';
 import api from '../utils/api';
 
 const STATUS_ORDER = ['DRAFT', 'SCHEDULED', 'ACTIVE', 'COMPLETED', 'ARCHIVED'];
+const PURPOSES = [
+  'Career Development',
+  'Succession Planning',
+  'Performance Improvement',
+  'Training Needs Analysis',
+  'Promotion Readiness',
+  'Other',
+];
 
 export default function Assessments() {
-  const { isAdmin, user } = useAuth();
+  const { isAdmin, isSupervisor, isEmployee, user } = useAuth();
   const nav = useNavigate();
   const { show } = useToast();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [competencies, setCompetencies] = useState([]);
   const [questions, setQuestions] = useState([]);
+  const [departments, setDepartments] = useState([]);
+  const [targetGroups, setTargetGroups] = useState([]);
+  const [searchResults, setSearchResults] = useState([]);
+  const [employeeSearch, setEmployeeSearch] = useState({ name: '', department: '', position: '' });
   const [filterStatus, setFilterStatus] = useState('');
   const [modal, setModal] = useState(null);
 
@@ -23,31 +38,20 @@ export default function Assessments() {
   const [autoSelectionConfig, setAutoSelectionConfig] = useState({
     totalQuestions: 10,
     questionTypes: {
-      MCQ: 3,
-      Rating: 2,
-      TrueFalse: 2,
-      MultiSelect: 1,
-      ScenarioMCQ: 1,
-      ShortAnswer: 1
+      MCQ: 3, Rating: 2, TrueFalse: 2, MultiSelect: 1, ScenarioMCQ: 1, ShortAnswer: 1
     }
   });
 
-  const [pagination, setPagination] = useState({
-    page: 1,
-    limit: 6,
-    total: 0,
-    totalPages: 0
-  });
-
-  const [supervisorStats, setSupervisorStats] = useState({
-    pendingEvaluations: 0,
-    completedEvaluations: 0
-  });
+  const [pagination, setPagination] = useState({ page: 1, limit: 6, total: 0, totalPages: 0 });
+  const [supervisorStats, setSupervisorStats] = useState({ pendingEvaluations: 0, completedEvaluations: 0 });
 
   const initForm = () => ({
     competencyId: '',
+    targetGroup: '',
+    purpose: '',
+    reminderDaysBefore: '',
     description: '',
-    target: { department: '', position: '' },
+    targetAudience: { type: 'ALL_DEPARTMENTS', departments: [], employeeIds: [] },
     questionIds: [],
     startDate: '',
     startTime: '09:00',
@@ -58,68 +62,84 @@ export default function Assessments() {
     weight: { selfAssessment: 20, supervisor: 80 },
   });
   const [form, setForm] = useState(initForm());
+  const [scoreConfirm, setScoreConfirm] = useState(null);
 
+  // ── Load competencies and departments on mount ────────────────────────────
   useEffect(() => {
-    api.get('/competencies').then(({ data }) => setCompetencies(data.data.competencies)).catch(() => { });
+    api.get('/competencies').then(({ data }) => setCompetencies(data.data.competencies)).catch(() => {});
+    api.get('/assessments/employees/departments').then(({ data }) => setDepartments(data.data.departments)).catch(() => {});
+    if (isSupervisor) loadSupervisorStats();
+  }, [isSupervisor]);
 
-    if (user?.role === 'SUPERVISOR') {
-      loadSupervisorStats();
-    }
-  }, [user?.role]);
-
+  // ── Derive target groups from selected competency ─────────────────────────
   useEffect(() => {
     if (form.competencyId) {
+      const selectedCompetency = competencies.find(c => c._id === form.competencyId);
+      const tgs = selectedCompetency?.targetGroups?.map(t => t.targetGroup) || [];
+      setTargetGroups(tgs);
+      setForm(prev => ({ ...prev, targetGroup: '', questionIds: [] }));
+      setQuestionSelectionMode('auto');
+    } else {
+      setTargetGroups([]);
+      setQuestions([]);
+    }
+  }, [form.competencyId, competencies]);
+
+  // ── Fetch questions when BOTH competencyId AND targetGroup are selected ───
+  useEffect(() => {
+    if (form.competencyId && form.targetGroup) {
       api
-        .get('/questions', { params: { competencyId: form.competencyId } })
+        .get('/questions', { params: { competencyId: form.competencyId, targetGroup: form.targetGroup } })
         .then(({ data }) => {
           setQuestions(data.data.questions);
           setForm(prev => ({ ...prev, questionIds: [] }));
           setQuestionSelectionMode('auto');
         })
-        .catch(() => { });
+        .catch(() => {});
     } else {
       setQuestions([]);
     }
-  }, [form.competencyId]);
+  }, [form.competencyId, form.targetGroup]);
 
   const loadSupervisorStats = async () => {
     try {
       const res = await api.get('/supervisor/pending');
       const pendingCount = res.data.data.pendingEvaluations?.length || 0;
-
       const completedRes = await api.get('/supervisor/completed-count');
       const completedCount = completedRes.data.data.count || 0;
-
-      setSupervisorStats({
-        pendingEvaluations: pendingCount,
-        completedEvaluations: completedCount
-      });
+      setSupervisorStats({ pendingEvaluations: pendingCount, completedEvaluations: completedCount });
     } catch (err) {
       console.error('Error loading supervisor stats:', err);
     }
   };
 
-  const fetch = useCallback(async () => {
+  const fetchAssessments = useCallback(async () => {
     setLoading(true);
     try {
       let endpoint = '/assessments';
-      let params = {
-        page: pagination.page,
-        limit: pagination.limit
-      };
-
-      if (filterStatus) params.status = filterStatus;
-
-      if (user?.role === 'SUPERVISOR') {
-        endpoint = '/assessments/active';
-        params.supervisorView = true;
-      } else if (user?.role === 'EMPLOYEE') {
-        endpoint = '/assessments/active';
+      let params = { page: pagination.page, limit: pagination.limit };
+      
+      // Only apply status filter for admin or if explicitly requested
+      if (filterStatus && isAdmin) {
+        params.status = filterStatus;
       }
-
+      
+      // For non-admin users, use the active endpoint which already has the filtering logic
+      if (isSupervisor || isEmployee) {
+        endpoint = '/assessments/active';
+        // Add supervisorView flag for supervisors
+        if (isSupervisor) {
+          params.supervisorView = true;
+        }
+        // Don't send status filter for active endpoint as it already filters for SCHEDULED/ACTIVE
+        delete params.status;
+      }
+      
       const { data } = await api.get(endpoint, { params });
+      
+      // For employees and supervisors, the backend already filters to only show assessments that include them
       setItems(data.data.assessments || []);
-
+      
       if (data.data.pagination) {
         setPagination(prev => ({
           ...prev,
@@ -132,50 +152,48 @@ export default function Assessments() {
       show('Failed to load assessments.', 'error');
     }
     setLoading(false);
-  }, [isAdmin, filterStatus, pagination.page, pagination.limit, user?.role]);
+  }, [isAdmin, isSupervisor, isEmployee, filterStatus, pagination.page, pagination.limit, show]);
 
-  useEffect(() => {
-    fetch();
-  }, [fetch]);
+  useEffect(() => { fetchAssessments(); }, [fetchAssessments]);
+
+  // ── Employee search for SPECIFIC_EMPLOYEES ────────────────────────────────
+  const handleEmployeeSearch = async () => {
+    try {
+      const { data } = await api.get('/assessments/employees/search', { params: employeeSearch });
+      setSearchResults(data.data.employees);
+      if (data.data.employees.length === 0) show('No employees found matching your criteria.', 'warning');
+    } catch {
+      show('Employee search failed.', 'error');
+    }
+  };
 
   const openCreate = () => {
     setForm(initForm());
+    setTargetGroups([]);
+    setQuestions([]);
+    setSearchResults([]);
+    setEmployeeSearch({ name: '', department: '', position: '' });
     setQuestionSelectionMode('auto');
     setModal('create');
   };
 
   const autoSelectQuestions = () => {
-    if (!questions.length) {
-      show('No questions available for this competency.', 'warning');
-      return;
-    }
-
+    if (!questions.length) { show('No questions available.', 'warning'); return; }
     const selected = [];
     const availableByType = {};
-
     questions.forEach(q => {
       if (!availableByType[q.type]) availableByType[q.type] = [];
       availableByType[q.type].push(q);
     });
-
-    Object.keys(availableByType).forEach(type => {
-      availableByType[type] = shuffleArray(availableByType[type]);
-    });
-
+    Object.keys(availableByType).forEach(type => { availableByType[type] = shuffleArray(availableByType[type]); });
     Object.entries(autoSelectionConfig.questionTypes).forEach(([type, count]) => {
       if (count > 0 && availableByType[type]) {
-        const picked = availableByType[type].slice(0, count);
-        selected.push(...picked.map(q => q._id));
+        selected.push(...availableByType[type].slice(0, count).map(q => q._id));
       }
     });
-
-    if (selected.length === 0) {
-      show('No questions match your selection criteria. Please adjust the configuration.', 'warning');
-      return;
-    }
-
+    if (selected.length === 0) { show('No questions match your selection criteria.', 'warning'); return; }
     setForm(prev => ({ ...prev, questionIds: selected }));
-    show(`${selected.length} questions automatically selected and shuffled.`, 'success');
+    show(`${selected.length} questions selected and shuffled.`, 'success');
   };
 
   const shuffleArray = (array) => {
@@ -191,69 +209,61 @@ export default function Assessments() {
     const start = new Date(`${form.startDate}T${form.startTime}`);
     const end = new Date(`${form.endDate}T${form.endTime}`);
     const now = new Date();
+    if (!form.startDate || !form.endDate) { show('Start date and end date are required.', 'error'); return false; }
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) { show('Invalid date or time format.', 'error'); return false; }
+    if (start <= now) { show('Start date and time must be in the future.', 'error'); return false; }
+    if (end <= start) { show('End date and time must be after start date and time.', 'error'); return false; }
+    if ((end - start) / (1000 * 60 * 60) < 1) { show('Assessment duration must be at least 1 hour.', 'error'); return false; }
+    return true;
+  };
 
-    if (!form.startDate || !form.endDate) {
-      show('Start date and end date are required.', 'error');
-      return false;
+  const validateForm = () => {
+    if (!form.competencyId) { show('Please select a competency.', 'error'); return false; }
+    if (!form.targetGroup) { show('Please select a target group.', 'error'); return false; }
+    if (!form.purpose) { show('Please select a purpose.', 'error'); return false; }
+    if (form.targetAudience.type === 'DEPARTMENT_ALL' && form.targetAudience.departments.length === 0) {
+      show('Please select at least one department.', 'error'); return false;
     }
-
-    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-      show('Invalid date or time format.', 'error');
-      return false;
+    if (form.targetAudience.type === 'SPECIFIC_EMPLOYEES' && form.targetAudience.employeeIds.length === 0) {
+      show('Please select at least one employee.', 'error'); return false;
     }
-
-    if (start <= now) {
-      show('Start date and time must be in the future.', 'error');
-      return false;
+    if (form.type === 'Combined' && form.weight.selfAssessment + form.weight.supervisor !== 100) {
+      show('For Combined assessments, weights must sum to 100%.', 'error'); return false;
     }
-
-    if (end <= start) {
-      show('End date and time must be after start date and time.', 'error');
-      return false;
+    if (form.type !== 'SupervisorOnly' && form.questionIds.length === 0) {
+      show('Please select at least one question.', 'error'); return false;
     }
-
-    const duration = (end - start) / (1000 * 60 * 60);
-    if (duration < 1) {
-      show('Assessment duration must be at least 1 hour.', 'error');
-      return false;
-    }
-
     return true;
   };
 
   const handleSave = async () => {
     try {
       if (!validateDateTime()) return;
-
-      if (form.type === 'Combined') {
-        const totalWeight = form.weight.selfAssessment + form.weight.supervisor;
-        if (totalWeight !== 100) {
-          show('For Combined assessments, weights must sum to 100%', 'error');
-          return;
-        }
-      }
-
-      if (form.type !== 'SupervisorOnly' && form.questionIds.length === 0) {
-        show('Please select at least one question for this assessment.', 'error');
-        return;
-      }
+      if (!validateForm()) return;
 
       const startDateTime = new Date(`${form.startDate}T${form.startTime}`).toISOString();
       const endDateTime = new Date(`${form.endDate}T${form.endTime}`).toISOString();
 
       const payload = {
-        ...form,
+        competencyId: form.competencyId,
+        targetGroup: form.targetGroup,
+        purpose: form.purpose,
+        reminderDaysBefore: form.reminderDaysBefore ? Number(form.reminderDaysBefore) : null,
+        description: form.description,
+        targetAudience: form.targetAudience,
         questionIds: form.questionIds,
         startDate: startDateTime,
         endDate: endDateTime,
         timeLimit: form.timeLimit ? Number(form.timeLimit) : null,
+        type: form.type,
+        weight: form.weight,
       };
 
       await api.post('/assessments', payload);
       show('Assessment created successfully.', 'success');
       setModal(null);
       setPagination(prev => ({ ...prev, page: 1 }));
-      fetch();
+      fetchAssessments();
     } catch (err) {
       show(err.response?.data?.message || 'Failed to create assessment.', 'error');
     }
@@ -263,7 +273,7 @@ export default function Assessments() {
     try {
       await api.patch(`/assessments/${id}/status`, { status: newStatus });
       show(`Status changed to ${newStatus}.`, 'success');
-      fetch();
+      fetchAssessments();
     } catch (err) {
       show(err.response?.data?.message || 'Failed to change status.', 'error');
     }
@@ -281,96 +291,56 @@ export default function Assessments() {
   const getNextStatus = (current) => {
     if (current === 'SCHEDULED') return null;
     const idx = STATUS_ORDER.indexOf(current);
-    if (idx < 0) return null;
-    const nextIdx = idx + 1;
-    if (nextIdx >= STATUS_ORDER.length) return null;
-    return STATUS_ORDER[nextIdx];
+    if (idx < 0 || idx + 1 >= STATUS_ORDER.length) return null;
+    return STATUS_ORDER[idx + 1];
   };
 
-  const getStatusColor = (status) => {
-    const colors = {
-      DRAFT: 'bg-gray-300',
-      SCHEDULED: 'bg-blue-500',
-      ACTIVE: 'bg-green-500',
-      COMPLETED: 'bg-brand-red',
-      ARCHIVED: 'bg-gray-500',
-    };
-    return colors[status] || 'bg-gray-300';
-  };
+  const getStatusColor = (status) => ({
+    DRAFT: 'bg-gray-300', SCHEDULED: 'bg-blue-500', ACTIVE: 'bg-green-500',
+    COMPLETED: 'bg-brand-red', ARCHIVED: 'bg-gray-500',
+  }[status] || 'bg-gray-300');
 
-  const getStatusText = (status) => {
-    const texts = {
-      DRAFT: 'Draft',
-      SCHEDULED: 'Scheduled',
-      ACTIVE: 'Active',
-      COMPLETED: 'Completed',
-      ARCHIVED: 'Archived',
-    };
-    return texts[status] || status;
-  };
+  const getStatusText = (status) => ({
+    DRAFT: 'Draft', SCHEDULED: 'Scheduled', ACTIVE: 'Active',
+    COMPLETED: 'Completed', ARCHIVED: 'Archived',
+  }[status] || status);
 
-  const getAssessmentTypeColor = (type) => {
-    const colors = {
-      SelfAssessment: 'bg-blue-100 text-blue-800',
-      SupervisorOnly: 'bg-green-100 text-green-800',
-      Combined: 'bg-purple-100 text-purple-800',
-    };
-    return colors[type] || 'bg-gray-100 text-gray-800';
-  };
+  const getAssessmentTypeColor = (type) => ({
+    SelfAssessment: 'bg-blue-100 text-blue-800',
+    SupervisorOnly: 'bg-green-100 text-green-800',
+    Combined: 'bg-purple-100 text-purple-800',
+  }[type] || 'bg-gray-100 text-gray-800');
 
   const goToPage = (page) => {
-    if (page >= 1 && page <= pagination.totalPages) {
-      setPagination(prev => ({ ...prev, page }));
-    }
+    if (page >= 1 && page <= pagination.totalPages) setPagination(prev => ({ ...prev, page }));
   };
 
   const handlePageSizeChange = (e) => {
     const newLimit = parseInt(e.target.value, 10);
-    setPagination({
-      page: 1,
-      limit: newLimit,
-      total: pagination.total,
-      totalPages: Math.ceil(pagination.total / newLimit)
-    });
+    setPagination({ page: 1, limit: newLimit, total: pagination.total, totalPages: Math.ceil(pagination.total / newLimit) });
   };
 
-  const viewPendingEvaluations = () => {
-    nav('/supervisor/pending');
-  };
+  const requiresSupervisorEvaluation = (assessment) =>
+    assessment.type === 'SupervisorOnly' || assessment.type === 'Combined';
 
-  const requiresSupervisorEvaluation = (assessment) => {
-    return assessment.type === 'SupervisorOnly' || assessment.type === 'Combined';
-  };
-
-  const handleScoreResults = async (assessmentId) => {
-    setScoreConfirm(assessmentId);
-  };
-
-  const [scoreConfirm, setScoreConfirm] = useState(null);
+  const handleScoreResults = (assessmentId) => setScoreConfirm(assessmentId);
 
   const executeScoreResults = async (assessmentId) => {
     setScoreConfirm(null);
     try {
       const res = await api.post(`/results/score/${assessmentId}`);
       show(res.data.message || 'Results scored successfully.', 'success');
-      fetch();
+      fetchAssessments();
     } catch (err) {
       show(err.response?.data?.message || 'Failed to score results.', 'error');
     }
   };
 
-  const getQuestionTypeCount = (type) => {
-    return questions.filter(q => q.type === type).length;
-  };
-
-  const getTotalAutoQuestions = () => {
-    return Object.values(autoSelectionConfig.questionTypes).reduce((sum, count) => sum + count, 0);
-  };
+  const getQuestionTypeCount = (type) => questions.filter(q => q.type === type).length;
+  const getTotalAutoQuestions = () => Object.values(autoSelectionConfig.questionTypes).reduce((s, c) => s + c, 0);
 
   const getTimeUntil = (dateStr) => {
-    const now = new Date();
-    const target = new Date(dateStr);
-    const diff = target - now;
+    const diff = new Date(dateStr) - new Date();
     if (diff <= 0) return 'Starting soon...';
     const days = Math.floor(diff / (1000 * 60 * 60 * 24));
     const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
@@ -380,6 +350,157 @@ export default function Assessments() {
     return `in ${minutes}m`;
   };
 
+  const formatTargetAudience = (a) => {
+    if (!a.targetAudience) return a.target?.department || 'All Departments';
+    if (a.targetAudience.type === 'ALL_DEPARTMENTS') return 'All Departments';
+    if (a.targetAudience.type === 'DEPARTMENT_ALL') return a.targetAudience.departments?.join(', ') || 'Specific Departments';
+    if (a.targetAudience.type === 'SPECIFIC_EMPLOYEES') return `${a.targetAudience.employeeIds?.length || 0} specific employee(s)`;
+    return 'All Departments';
+  };
+
+  // ─── TARGET AUDIENCE PICKER ───────────────────────────────────────────────
+  const TargetAudiencePicker = () => (
+    <div className="border border-gray-200 rounded-xl p-4 space-y-3">
+      <label className="block text-sm font-semibold text-gray-700">Target Audience *</label>
+
+      <div className="grid grid-cols-3 gap-2">
+        {[
+          { value: 'ALL_DEPARTMENTS', label: 'All Departments' },
+          { value: 'DEPARTMENT_ALL', label: 'Specific Dept(s)' },
+          { value: 'SPECIFIC_EMPLOYEES', label: 'Specific Employee(s)' },
+        ].map(opt => (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => setForm(prev => ({ ...prev, targetAudience: { type: opt.value, departments: [], employeeIds: [] } }))}
+            className={`px-3 py-2 rounded-lg text-xs font-medium border transition-all ${
+              form.targetAudience.type === opt.value
+                ? 'bg-brand-red text-white border-brand-red'
+                : 'bg-white text-gray-600 border-gray-300 hover:border-brand-red'
+            }`}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
+      {form.targetAudience.type === 'ALL_DEPARTMENTS' && (
+        <p className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
+          All active employees across all departments will be assigned this assessment.
+        </p>
+      )}
+
+      {form.targetAudience.type === 'DEPARTMENT_ALL' && (
+        <div>
+          <label className="text-xs text-gray-500 mb-1 block">Select Departments *</label>
+          {departments.length === 0 ? (
+            <p className="text-xs text-gray-400 italic">No departments found.</p>
+          ) : (
+            <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-2 space-y-1 bg-white">
+              {departments.map(dept => (
+                <label key={dept} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-gray-50 p-1 rounded">
+                  <input
+                    type="checkbox"
+                    checked={form.targetAudience.departments.includes(dept)}
+                    onChange={e => {
+                      const depts = e.target.checked
+                        ? [...form.targetAudience.departments, dept]
+                        : form.targetAudience.departments.filter(d => d !== dept);
+                      setForm(prev => ({ ...prev, targetAudience: { ...prev.targetAudience, departments: depts } }));
+                    }}
+                    className="w-4 h-4 accent-brand-red"
+                  />
+                  <span className="text-gray-700">{dept}</span>
+                </label>
+              ))}
+            </div>
+          )}
+          {form.targetAudience.departments.length > 0 && (
+            <p className="text-xs text-brand-red font-medium mt-1">
+              {form.targetAudience.departments.length} department(s) selected
+            </p>
+          )}
+        </div>
+      )}
+
+      {form.targetAudience.type === 'SPECIFIC_EMPLOYEES' && (
+        <div className="space-y-2">
+          <div className="grid grid-cols-3 gap-2">
+            <input
+              type="text"
+              placeholder="Search by name…"
+              value={employeeSearch.name}
+              onChange={e => setEmployeeSearch(prev => ({ ...prev, name: e.target.value }))}
+              onKeyDown={e => e.key === 'Enter' && handleEmployeeSearch()}
+              className="border border-gray-300 rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-brand-red"
+            />
+            <select
+              value={employeeSearch.department}
+              onChange={e => setEmployeeSearch(prev => ({ ...prev, department: e.target.value }))}
+              className="border border-gray-300 rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-brand-red"
+            >
+              <option value="">All Departments</option>
+              {departments.map(d => <option key={d} value={d}>{d}</option>)}
+            </select>
+            <input
+              type="text"
+              placeholder="Filter by position…"
+              value={employeeSearch.position}
+              onChange={e => setEmployeeSearch(prev => ({ ...prev, position: e.target.value }))}
+              onKeyDown={e => e.key === 'Enter' && handleEmployeeSearch()}
+              className="border border-gray-300 rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-brand-red"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={handleEmployeeSearch}
+            className="w-full py-2 text-xs bg-gray-100 hover:bg-gray-200 rounded-lg font-medium transition-colors flex items-center justify-center gap-1"
+          >
+            <Search className="w-3 h-3" /> Search Employees
+          </button>
+
+          {searchResults.length > 0 && (
+            <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-lg divide-y bg-white">
+              {searchResults.map(emp => {
+                const selected = form.targetAudience.employeeIds.includes(emp._id);
+                return (
+                  <label
+                    key={emp._id}
+                    className={`flex items-center gap-3 p-2.5 cursor-pointer hover:bg-gray-50 transition-colors ${selected ? 'bg-red-50' : ''}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selected}
+                      onChange={e => {
+                        const ids = e.target.checked
+                          ? [...form.targetAudience.employeeIds, emp._id]
+                          : form.targetAudience.employeeIds.filter(id => id !== emp._id);
+                        setForm(prev => ({ ...prev, targetAudience: { ...prev.targetAudience, employeeIds: ids } }));
+                      }}
+                      className="w-4 h-4 accent-brand-red flex-shrink-0"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-gray-800 truncate">{emp.name}</p>
+                      <p className="text-xs text-gray-400">{emp.department} · {emp.position}</p>
+                    </div>
+                    {selected && <Check className="w-3 h-3 text-brand-red flex-shrink-0" />}
+                  </label>
+                );
+              })}
+            </div>
+          )}
+
+          {form.targetAudience.employeeIds.length > 0 && (
+            <div className="flex items-center gap-2 text-xs text-brand-red font-semibold bg-red-50 px-3 py-1.5 rounded-lg">
+              <Users className="w-3 h-3" />
+              {form.targetAudience.employeeIds.length} employee(s) selected
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div className="p-7 h-[calc(100vh-4rem)] flex flex-col">
       <div className="flex justify-between items-start mb-6 flex-shrink-0">
@@ -388,17 +509,15 @@ export default function Assessments() {
           <p className="text-gray-500 mt-1">
             {isAdmin
               ? 'Create, schedule, and manage assessments.'
-              : user?.role === 'SUPERVISOR'
+              : isSupervisor
                 ? 'Your active assessments and evaluations.'
-                : 'Your scheduled and active assessments.'
-            }
+                : 'Your scheduled and active assessments.'}
           </p>
         </div>
-
         <div className="flex gap-3">
-          {user?.role === 'SUPERVISOR' && supervisorStats.pendingEvaluations > 0 && (
+          {isSupervisor && supervisorStats.pendingEvaluations > 0 && (
             <button
-              onClick={viewPendingEvaluations}
+              onClick={() => nav('/supervisor/pending')}
               className="relative px-4 py-2 bg-orange-100 text-orange-700 rounded-lg border border-orange-200 hover:bg-orange-200 transition-colors font-semibold flex items-center gap-2"
             >
               <Target className="w-4 h-4" />
@@ -408,7 +527,6 @@ export default function Assessments() {
               </span>
             </button>
           )}
-
           {isAdmin && (
             <button onClick={openCreate} className="flex items-center gap-2 px-5 py-2.5 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors">
               <Plus className="w-4 h-4" /> Create Assessment
@@ -421,43 +539,20 @@ export default function Assessments() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 flex-shrink-0">
           <div className="bg-white rounded-xl p-5 shadow-card border border-gray-100">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
-                <Target className="w-5 h-5 text-blue-600" />
-              </div>
-              <div>
-                <div className="text-xs text-gray-500 uppercase font-semibold">Pending Evaluations</div>
-                <div className="text-2xl font-bold text-brand-black">
-                  {supervisorStats.pendingEvaluations}
-                </div>
-              </div>
+              <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center"><Target className="w-5 h-5 text-blue-600" /></div>
+              <div><div className="text-xs text-gray-500 uppercase font-semibold">Pending Evaluations</div><div className="text-2xl font-bold text-brand-black">{supervisorStats.pendingEvaluations}</div></div>
             </div>
           </div>
-
           <div className="bg-white rounded-xl p-5 shadow-card border border-gray-100">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
-                <Users className="w-5 h-5 text-green-600" />
-              </div>
-              <div>
-                <div className="text-xs text-gray-500 uppercase font-semibold">Completed</div>
-                <div className="text-2xl font-bold text-brand-black">
-                  {supervisorStats.completedEvaluations}
-                </div>
-              </div>
+              <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center"><Users className="w-5 h-5 text-green-600" /></div>
+              <div><div className="text-xs text-gray-500 uppercase font-semibold">Completed</div><div className="text-2xl font-bold text-brand-black">{supervisorStats.completedEvaluations}</div></div>
             </div>
           </div>
-
           <div className="bg-white rounded-xl p-5 shadow-card border border-gray-100">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center">
-                <Eye className="w-5 h-5 text-purple-600" />
-              </div>
-              <div>
-                <div className="text-xs text-gray-500 uppercase font-semibold">Active Assessments</div>
-                <div className="text-2xl font-bold text-brand-black">
-                  {items.filter(a => a.status === 'ACTIVE' && requiresSupervisorEvaluation(a)).length}
-                </div>
-              </div>
+              <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center"><Eye className="w-5 h-5 text-purple-600" /></div>
+              <div><div className="text-xs text-gray-500 uppercase font-semibold">Active Assessments</div><div className="text-2xl font-bold text-brand-black">{items.filter(a => a.status === 'ACTIVE' && requiresSupervisorEvaluation(a)).length}</div></div>
             </div>
           </div>
         </div>
@@ -466,38 +561,21 @@ export default function Assessments() {
       {isAdmin && (
         <div className="flex justify-between items-center mb-6 flex-shrink-0">
           <div className="flex gap-2 flex-wrap">
-            <button
-              onClick={() => {
-                setFilterStatus('');
-                setPagination(prev => ({ ...prev, page: 1 }));
-              }}
-              className={`px-4 py-2 rounded-lg border-2 font-semibold text-sm transition-all ${filterStatus === '' ? 'border-brand-red bg-brand-red/10 text-brand-red' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
-                }`}
-            >
+            <button onClick={() => { setFilterStatus(''); setPagination(prev => ({ ...prev, page: 1 })); }}
+              className={`px-4 py-2 rounded-lg border-2 font-semibold text-sm transition-all ${filterStatus === '' ? 'border-brand-red bg-brand-red/10 text-brand-red' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'}`}>
               All
             </button>
             {STATUS_ORDER.map((s) => (
-              <button
-                key={s}
-                onClick={() => {
-                  setFilterStatus(s);
-                  setPagination(prev => ({ ...prev, page: 1 }));
-                }}
-                className={`px-4 py-2 rounded-lg border-2 font-semibold text-sm transition-all ${filterStatus === s ? 'border-brand-red bg-brand-red/10 text-brand-red' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
-                  }`}
-              >
+              <button key={s} onClick={() => { setFilterStatus(s); setPagination(prev => ({ ...prev, page: 1 })); }}
+                className={`px-4 py-2 rounded-lg border-2 font-semibold text-sm transition-all ${filterStatus === s ? 'border-brand-red bg-brand-red/10 text-brand-red' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'}`}>
                 {getStatusText(s)}
               </button>
             ))}
           </div>
-
           <div className="flex items-center gap-2">
             <span className="text-sm text-gray-600">Show:</span>
-            <select
-              value={pagination.limit}
-              onChange={handlePageSizeChange}
-              className="px-3 py-1.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm"
-            >
+            <select value={pagination.limit} onChange={handlePageSizeChange}
+              className="px-3 py-1.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm">
               <option value="6">6 per page</option>
               <option value="12">12 per page</option>
               <option value="24">24 per page</option>

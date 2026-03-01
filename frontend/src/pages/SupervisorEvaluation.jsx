@@ -13,7 +13,8 @@ import {
   CheckCircle,
   TrendingUp,
   Award,
-  MessageSquare
+  MessageSquare,
+  Shield
 } from 'lucide-react';
 import api from '../utils/api';
 
@@ -21,7 +22,7 @@ export default function SupervisorEvaluation() {
   const { assessmentId } = useParams();
   const [searchParams] = useSearchParams();
   const employeeId = searchParams.get('employeeId');
-  const { user } = useAuth();
+  const { user, isSupervisor, isAdmin } = useAuth(); // Added role flags
   const navigate = useNavigate();
   const { show } = useToast();
   
@@ -33,10 +34,16 @@ export default function SupervisorEvaluation() {
   const [score, setScore] = useState(0);
   const [comments, setComments] = useState('');
   const [hasExistingEvaluation, setHasExistingEvaluation] = useState(false);
+  const [permissionError, setPermissionError] = useState(false);
 
   useEffect(() => {
+    // Check if user has permission to access this page
+    if (!isSupervisor && !isAdmin) {
+      setPermissionError(true);
+      return;
+    }
     loadEvaluationData();
-  }, [assessmentId, employeeId]);
+  }, [assessmentId, employeeId, isSupervisor, isAdmin]);
 
   const loadEvaluationData = async () => {
     try {
@@ -57,7 +64,13 @@ export default function SupervisorEvaluation() {
         setHasExistingEvaluation(true);
       }
     } catch (err) {
-      show('Failed to load data', 'error');
+      console.error('Error loading evaluation data:', err);
+      if (err.response?.status === 403) {
+        setPermissionError(true);
+        show('You do not have permission to evaluate this employee', 'error');
+      } else {
+        show('Failed to load data', 'error');
+      }
     } finally {
       setLoading(false);
     }
@@ -99,7 +112,12 @@ export default function SupervisorEvaluation() {
       show('Draft saved', 'success');
       setHasExistingEvaluation(true);
     } catch (err) {
-      show('Save failed', 'error');
+      console.error('Error saving draft:', err);
+      if (err.response?.status === 403) {
+        show('You do not have permission to evaluate this employee', 'error');
+      } else {
+        show('Save failed', 'error');
+      }
     } finally {
       setSaving(false);
     }
@@ -122,11 +140,43 @@ export default function SupervisorEvaluation() {
       
       setTimeout(() => navigate('/supervisor/pending'), 1500);
     } catch (err) {
-      show(err.response?.data?.message || 'Submission failed', 'error');
+      console.error('Error submitting evaluation:', err);
+      if (err.response?.status === 403) {
+        show('You do not have permission to submit this evaluation', 'error');
+      } else {
+        show(err.response?.data?.message || 'Submission failed', 'error');
+      }
     } finally {
       setSubmitting(false);
     }
   };
+
+  // Permission error state
+  if (permissionError) {
+    return (
+      <div className="min-h-screen bg-gray-50 p-4 md:p-6">
+        <div className="max-w-2xl mx-auto">
+          <div className="bg-white rounded-xl shadow-card p-8 text-center">
+            <div className="w-20 h-20 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-6">
+              <Shield className="w-10 h-10 text-red-600" />
+            </div>
+            <h1 className="text-2xl font-bold text-brand-black mb-4">
+              Access Denied
+            </h1>
+            <p className="text-gray-600 mb-6">
+              You do not have permission to access this evaluation page. This page is only accessible to supervisors and administrators.
+            </p>
+            <button
+              onClick={() => navigate('/supervisor/pending')}
+              className="px-6 py-3 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors"
+            >
+              Return to Pending Evaluations
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -138,15 +188,26 @@ export default function SupervisorEvaluation() {
 
   if (!assessment || !employee) {
     return (
-      <div className="p-8 text-center">
-        <AlertCircle className="w-16 h-16 mx-auto text-red-500 mb-4" />
-        <h2 className="text-xl font-semibold text-gray-700 mb-2">Evaluation Not Found</h2>
-        <p className="text-gray-500">The requested evaluation could not be loaded.</p>
+      <div className="min-h-screen bg-gray-50 p-4 md:p-6">
+        <div className="max-w-2xl mx-auto">
+          <div className="bg-white rounded-xl shadow-card p-8 text-center">
+            <AlertCircle className="w-16 h-16 mx-auto text-red-500 mb-4" />
+            <h2 className="text-xl font-semibold text-gray-700 mb-2">Evaluation Not Found</h2>
+            <p className="text-gray-500 mb-6">The requested evaluation could not be loaded.</p>
+            <button
+              onClick={() => navigate('/supervisor/pending')}
+              className="px-6 py-3 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors"
+            >
+              Return to Pending Evaluations
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
 
   const performanceLevel = getPerformanceLevel(score);
+  const PerformanceIcon = performanceLevel.icon;
 
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-6">
@@ -160,6 +221,7 @@ export default function SupervisorEvaluation() {
               </h1>
               <p className="text-gray-600">
                 Evaluate {employee.name}'s performance for this competency
+                {isAdmin && <span className="ml-2 text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded-full">Admin View</span>}
               </p>
             </div>
             
@@ -240,7 +302,7 @@ export default function SupervisorEvaluation() {
             </div>
             
             <div className={`px-6 py-3 rounded-full border-2 flex items-center gap-2 mb-4 ${getScoreColor(score)}`}>
-              <performanceLevel.icon className="w-5 h-5" />
+              <PerformanceIcon className="w-5 h-5" />
               <span className="font-bold text-lg">{performanceLevel.label}</span>
             </div>
           </div>
@@ -292,18 +354,18 @@ export default function SupervisorEvaluation() {
             <label className="block text-lg font-semibold text-gray-700 mb-3">
               Enter Score Manually
             </label>
-            <div className="flex items-center gap-4">
+            <div className="flex flex-col md:flex-row items-start md:items-center gap-4">
               <input
                 type="number"
                 min="0"
                 max="100"
                 value={score}
                 onChange={(e) => handleScoreChange(e.target.value)}
-                className="flex-1 px-6 py-4 text-3xl font-bold text-center border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-brand-red focus:border-transparent"
+                className="w-full md:w-32 px-6 py-4 text-3xl font-bold text-center border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-brand-red focus:border-transparent"
               />
               <div className="text-sm text-gray-500">
                 <div className="font-semibold mb-1">Quick Set:</div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   {[50, 60, 70, 80, 90, 100].map((quickScore) => (
                     <button
                       key={quickScore}

@@ -73,16 +73,16 @@ const calculateAndSaveResult = async (assessment, employeeId) => {
   );
 
   // 4. Update HR Report Snapshot
-  await Report.findOneAndUpdate(
-      { assessmentId: assessment._id, 'user.userId': employeeId },
-      {
-          user: { userId: emp._id, name: emp.name, department: emp.department, position: emp.position, email: emp.email },
-          competencyId: assessment.competencyId,
-          competencyName: assessment.competencyId.name || 'Competency',
-          finalScore, level, recommendation: rec?.recommendation || '', scoreDetails, updatedAt: new Date()
-      },
-      { upsert: true }
-  );
+//   await Report.findOneAndUpdate(
+//       { assessmentId: assessment._id, 'user.userId': employeeId },
+//       {
+//           user: { userId: emp._id, name: emp.name, department: emp.department, position: emp.position, email: emp.email },
+//           competencyId: assessment.competencyId,
+//           competencyName: assessment.competencyId.name || 'Competency',
+//           finalScore, level, recommendation: rec?.recommendation || '', scoreDetails, updatedAt: new Date()
+//       },
+//       { upsert: true }
+//   );
 
   console.log(`✅ Success: Result for ${emp.name} finalized with ${selfQuestionDetails.length} question details.\n`);
   return result;

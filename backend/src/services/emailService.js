@@ -126,3 +126,32 @@ export const sendSupervisorReminder = async (supervisor, employeeName, assessmen
   `);
   return send(supervisor.email, subject, html, text);
 };
+
+// ─── 6. Assessment reminder (days before deadline) ──────────────────────────
+export const sendAssessmentReminderEmail = async (user, assessment) => {
+  const now = new Date();
+  const deadline = new Date(assessment.endDate);
+  const daysLeft = Math.max(1, Math.ceil((deadline - now) / (1000 * 60 * 60 * 24)));
+  const subject = `Reminder: "${assessment.description || 'Assessment'}" – Deadline in ${daysLeft} Day(s)`;
+  const text    = `Hi ${user.name},\n\nThis is a reminder that the assessment "${assessment.description || 'Assessment'}" deadline is in ${daysLeft} day(s).\nDeadline: ${assessment.endDate}\n`;
+  const html    = wrap(`
+    <p>Hi <strong>${user.name}</strong>,</p>
+    <p>This is a friendly reminder that the following assessment deadline is approaching:</p>
+    <table style="border-collapse:collapse;width:100%;margin:16px 0">
+      <tr>
+        <td style="padding:8px;border:1px solid #ddd;background:#f9f9f9;font-weight:bold">Assessment</td>
+        <td style="padding:8px;border:1px solid #ddd">${assessment.description || 'Assessment'}</td>
+      </tr>
+      <tr>
+        <td style="padding:8px;border:1px solid #ddd;background:#f9f9f9;font-weight:bold">Deadline</td>
+        <td style="padding:8px;border:1px solid #ddd;color:#C8102E;font-weight:bold">${new Date(assessment.endDate).toLocaleString()}</td>
+      </tr>
+      <tr>
+        <td style="padding:8px;border:1px solid #ddd;background:#f9f9f9;font-weight:bold">Days Remaining</td>
+        <td style="padding:8px;border:1px solid #ddd">${daysLeft} day(s)</td>
+      </tr>
+    </table>
+    <p>Please log in and complete your assessment before the deadline.</p>
+  `);
+  return send(user.email, subject, html, text);
+};

@@ -1,34 +1,33 @@
-/* routes/reportRoutes.js */
+/* routes/reportRoutes.js  –  v2 with advanced analytics */
 import express from 'express';
 import { protect, authorize } from '../middleware/auth.js';
 import * as repCtrl from '../controllers/reportController.js';
 
 const router = express.Router();
-
 router.use(protect);
 
-// ── HR_ADMIN: full access ─────────────────────────────────────────────────────
-router.get('/',                          authorize('HR_ADMIN'), repCtrl.getReports);
-router.get('/heatmap',                   authorize('HR_ADMIN'), repCtrl.getHeatmap);
-router.get('/department/:department',    authorize('HR_ADMIN'), repCtrl.getDepartmentReports);
+// ── Advanced HR-admin analytics (new) ────────────────────────────────────────
+router.get('/advanced/filter-options', authorize('HR_ADMIN'), repCtrl.getAdvancedFilterOptions);
+router.get('/advanced/stats',          authorize('HR_ADMIN'), repCtrl.getAdvancedStats);
+router.get('/advanced/results',        authorize('HR_ADMIN'), repCtrl.getAdvancedResults);
+router.get('/advanced/heatmap',        authorize('HR_ADMIN'), repCtrl.getHeatmap);
+router.get('/advanced/employees',      authorize('HR_ADMIN'), repCtrl.getEmployeeList);
+router.get('/advanced/employee/:userId', authorize('HR_ADMIN'), repCtrl.getEmployeeDeepDive);
+router.get('/advanced/export/excel',   authorize('HR_ADMIN'), repCtrl.exportAdvancedExcel);
+router.get('/advanced/export/pdf',     authorize('HR_ADMIN'), repCtrl.exportAdvancedPDF);
 
-// ── Employee list (for the individual-report employee selector) ──────────────
-router.get('/employees',                 authorize('HR_ADMIN', 'SUPERVISOR'), repCtrl.getEmployees);
-
-// ── Filtered exports (PDF / Excel) ──────────────────────────────────────────
-//   Query params: department, level, dateFrom, dateTo, employeeId
-router.get('/export/pdf',               repCtrl.exportFilteredPDF);
-router.get('/export/excel',             repCtrl.exportFilteredExcel);
-
-// ── Individual employee exports (PDF / Excel) ───────────────────────────────
-//   Access-checked inside the controller
-router.get('/export/individual/:userId/pdf',   repCtrl.exportIndividualPDF);
-router.get('/export/individual/:userId/excel', repCtrl.exportIndividualExcel);
-
-// ── Individual reports (access-checked inside controller) ────────────────────
-router.get('/individual/:userId',        repCtrl.getIndividualReports);
-
-// ── Legacy JSON export (access-checked inside controller) ────────────────────
-router.get('/export/:userId',            repCtrl.exportReports);
+// ── Legacy endpoints (unchanged) ─────────────────────────────────────────────
+import * as legacyCtrl from '../controllers/reportController.js';
+router.get('/stats',                   authorize('HR_ADMIN'), legacyCtrl.getAdvancedStats);   // upgrade in place
+router.get('/filter-options',          authorize('HR_ADMIN'), legacyCtrl.getAdvancedFilterOptions);
+router.get('/heatmap',                 authorize('HR_ADMIN'), legacyCtrl.getHeatmap);
+router.get('/department/:department',  authorize('HR_ADMIN'), legacyCtrl.getAdvancedStats);
+router.get('/',                        authorize('HR_ADMIN'), legacyCtrl.getAdvancedResults);
+router.get('/employees',               authorize('HR_ADMIN', 'SUPERVISOR'), legacyCtrl.getEmployeeList);
+router.get('/export/pdf',              legacyCtrl.exportAdvancedPDF);
+router.get('/export/excel',            legacyCtrl.exportAdvancedExcel);
+router.get('/individual/:userId',      legacyCtrl.getEmployeeDeepDive);
+router.get('/export/individual/:userId/pdf',   legacyCtrl.exportAdvancedPDF);
+router.get('/export/individual/:userId/excel', legacyCtrl.exportAdvancedExcel);
 
 export default router;

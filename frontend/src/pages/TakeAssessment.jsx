@@ -14,7 +14,7 @@ import api from '../utils/api';
 
 export default function TakeAssessment() {
   const { assessmentId } = useParams();
-  const { user } = useAuth();
+  const { user, isAdmin, isSupervisor, isEmployee } = useAuth(); // Added role flags
   const nav = useNavigate();
   const { show } = useToast();
 
@@ -34,7 +34,8 @@ export default function TakeAssessment() {
   const [countdown, setCountdown] = useState(null);
   const countdownRef = useRef(null);
 
-  const respondentType = user?.role === 'SUPERVISOR' ? 'supervisor' : 'self';
+  // Determine respondent type based on role and URL params
+  const respondentType = isSupervisor ? 'supervisor' : 'self';
   const employeeId = respondentType === 'supervisor'
     ? new URLSearchParams(window.location.search).get('employeeId') || user?._id
     : user?._id;
@@ -58,6 +59,19 @@ export default function TakeAssessment() {
         const fetched = data.data.assessment;
         setAssessment(fetched);
 
+        // Check if user has permission to take this assessment
+        if (isEmployee && fetched.type === 'SupervisorOnly') {
+          show('This assessment is for supervisors only.', 'error');
+          nav('/assessments');
+          return;
+        }
+
+        if (isSupervisor && fetched.type === 'SelfAssessment' && !employeeId) {
+          show('Please select an employee to evaluate.', 'error');
+          nav('/supervisor/pending');
+          return;
+        }
+
         if (fetched.status === 'SCHEDULED') {
           setIsWaitingForStart(true);
         } else if (fetched.status === 'ACTIVE') {
@@ -68,20 +82,27 @@ export default function TakeAssessment() {
         }
 
         if (fetched.status === 'ACTIVE' || fetched.status === 'COMPLETED') {
-          const prog = await api.get(`/responses/progress/${assessmentId}`);
+          const prog = await api.get(`/responses/progress/${assessmentId}`, {
+            params: { employeeId, respondentType }
+          });
           if (prog.data.data.isSubmitted) {
             setSubmitted(true);
             await checkResult();
           }
         }
       } catch (err) {
-        show('Failed to load assessment.', 'error');
+        console.error('Error loading assessment:', err);
+        if (err.response?.status === 403) {
+          show('You do not have permission to access this assessment.', 'error');
+        } else {
+          show('Failed to load assessment.', 'error');
+        }
         nav('/assessments');
       }
       setLoading(false);
     };
     load();
-  }, [assessmentId]);
+  }, [assessmentId, employeeId, respondentType, isEmployee, isSupervisor]);
 
   useEffect(() => {
     if (!assessment || assessment.status !== 'SCHEDULED') return;
@@ -194,7 +215,9 @@ export default function TakeAssessment() {
           respondentType,
           securityLog: security.getViolationLog(),
         });
-      } catch (_) { }
+      } catch (err) {
+        console.error('Auto-save failed:', err);
+      }
     }, 600);
   };
 
@@ -231,7 +254,7 @@ export default function TakeAssessment() {
       setShowSubmitWarning(false);
       show('Assessment submitted successfully!', 'success');
 
-      if (assessment.type === 'SelfAssessment') {
+      if (assessment.type === 'SelfAssessment' && respondentType === 'self') {
         setScoringInProgress(true);
         try {
           await api.post(`/results/auto-score`, {
@@ -279,7 +302,12 @@ export default function TakeAssessment() {
 
       security.exitFullscreen();
     } catch (err) {
-      show(err.response?.data?.message || 'Submit failed.', 'error');
+      console.error('Submit error:', err);
+      if (err.response?.status === 403) {
+        show('You do not have permission to submit this assessment.', 'error');
+      } else {
+        show(err.response?.data?.message || 'Submit failed.', 'error');
+      }
     }
   };
 
@@ -628,6 +656,17 @@ export default function TakeAssessment() {
   const progressPercent = questions.length > 0 ? Math.round((answeredCount / questions.length) * 100) : 0;
   const isLastQuestion = currentQuestionIndex === questions.length - 1;
 
+  // Show role badge in header
+  const roleBadge = isSupervisor ? (
+    <span className="ml-2 px-2 py-0.5 bg-purple-100 text-purple-700 rounded-full text-[10px] font-semibold">
+      Supervisor View
+    </span>
+  ) : isAdmin ? (
+    <span className="ml-2 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-[10px] font-semibold">
+      Admin View
+    </span>
+  ) : null;
+
   if (isWaitingForStart && !submitted) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
@@ -780,7 +819,7 @@ export default function TakeAssessment() {
                 </div>
               </div>
 
-              {assessment.type === 'SelfAssessment' && (
+              {assessment.type === 'SelfAssessment' && respondentType === 'self' && (
                 <div className="flex items-start gap-2">
                   <TrendingUp className="w-4 h-4 text-brand-red flex-shrink-0 mt-0.5" />
                   <div>
@@ -820,7 +859,7 @@ export default function TakeAssessment() {
     );
   }
 
-  if (submitted && assessment.type === 'SelfAssessment') {
+  if (submitted && assessment.type === 'SelfAssessment' && respondentType === 'self') {
     if (scoringInProgress) {
       return (
         <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
@@ -1032,6 +1071,7 @@ export default function TakeAssessment() {
             </button>
 
             <div className="flex items-center gap-3">
+              {roleBadge}
               {security.timeRemaining !== null && (
                 <div className={`flex items-center gap-1 px-2 py-1 rounded-lg font-semibold text-xs ${security.timeRemaining < 300
                     ? 'bg-red-100 text-red-700'
@@ -1174,9 +1214,15 @@ export default function TakeAssessment() {
           </div>
         </div>
 
-        {assessment.type === 'SelfAssessment' && (
+        {assessment.type === 'SelfAssessment' && respondentType === 'self' && (
           <p className="text-center text-[10px] text-gray-500 mt-3">
             Results shown immediately after submission
+          </p>
+        )}
+        
+        {respondentType === 'supervisor' && (
+          <p className="text-center text-[10px] text-gray-500 mt-3">
+            You are evaluating this employee as a supervisor
           </p>
         )}
       </div>
