@@ -1,6 +1,6 @@
 /* pages/Users.jsx */
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, Search, Trash2, Edit2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, Search, Trash2, Edit2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Eye } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import Modal from '../components/Modal';
 import api from '../utils/api';
@@ -33,6 +33,8 @@ export default function Users() {
   const [pagination, setPagination] = useState({
     page: 1, limit: 10, total: 0, totalPages: 0,
   });
+
+  const [expandedUser, setExpandedUser] = useState(null);
 
   const initForm = () => ({
     employeeId:  '',
@@ -161,7 +163,9 @@ export default function Users() {
     setPagination((prev) => ({ ...prev, page: 1 }));
   };
 
-  // Whether the form includes EMPLOYEE role (show supervisor field)
+  const toggleExpand = (userId) => {
+    setExpandedUser(expandedUser === userId ? null : userId);
+  };
   const hasEmployeeRole = form.roles.includes('EMPLOYEE');
 
   return (
@@ -238,7 +242,7 @@ export default function Users() {
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-100 sticky top-0 z-10">
                 <tr>
-                  {['Employee ID','Name','Email','Roles','Gender','Department','Supervisor','Status','Actions'].map((h) => (
+                  {['Employee ID','Name','Roles','Status','Actions'].map((h) => (
                     <th key={h} className="text-left px-6 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider bg-gray-50">
                       {h}
                     </th>
@@ -248,47 +252,86 @@ export default function Users() {
               <tbody className="divide-y divide-gray-100">
                 {users.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="px-6 py-8 text-center text-gray-400">No users found.</td>
+                    <td colSpan={5} className="px-6 py-8 text-center text-gray-400">No users found.</td>
                   </tr>
                 )}
                 {users.map((u) => (
-                  <tr key={u._id} className="hover:bg-brand-red-muted transition-colors">
-                    <td className="px-6 py-3 font-mono text-sm text-gray-600">{u.employeeId}</td>
-                    <td className="px-6 py-3 font-semibold text-sm text-brand-black-soft">{u.name}</td>
-                    <td className="px-6 py-3 text-sm text-gray-600">{u.email}</td>
+                  <>
+                    <tr key={u._id} className="hover:bg-brand-red-muted transition-colors">
+                      <td className="px-6 py-3 font-mono text-sm text-gray-600">{u.employeeId}</td>
+                      <td className="px-6 py-3 font-semibold text-sm text-brand-black-soft">{u.name}</td>
 
-                    {/* Roles – show all as badges */}
-                    <td className="px-6 py-3">
-                      <div className="flex flex-wrap gap-1">
-                        {(u.roles || []).map((r) => (
-                          <span key={r} className={`badge badge-${r.toLowerCase()}`}>
-                            {ROLE_LABELS[r] ?? r}
-                          </span>
-                        ))}
-                      </div>
-                    </td>
+                      {/* Roles – show with attractive separator */}
+                      <td className="px-6 py-3">
+                        <div className="flex flex-wrap items-center gap-1">
+                          {(u.roles || []).map((r, idx) => (
+                            <span key={r} className="flex items-center">
+                              <span className={`badge badge-${r.toLowerCase()}`}>
+                                {ROLE_LABELS[r] ?? r}
+                              </span>
+                              {idx < (u.roles || []).length - 1 && (
+                                <span className="mx-1.5 text-brand-red font-bold">&</span>
+                              )}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
 
-                    <td className="px-6 py-3 text-sm text-gray-600">
-                      {u.gender ? (GENDER_LABELS[u.gender] ?? u.gender) : '—'}
-                    </td>
-                    <td className="px-6 py-3 text-sm text-gray-600">{u.department || '—'}</td>
-                    <td className="px-6 py-3 text-sm text-gray-600">{u.supervisorId?.name || '—'}</td>
-                    <td className="px-6 py-3">
-                      <span className={`badge badge-${u.status.toLowerCase()}`}>{u.status}</span>
-                    </td>
-                    <td className="px-6 py-3">
-                      <div className="flex gap-2">
-                        <button onClick={() => openEdit(u)} className="p-1.5 hover:bg-gray-100 rounded transition-colors">
-                          <Edit2 className="w-4 h-4 text-gray-500" />
-                        </button>
-                        {u.status === 'ACTIVE' && (
-                          <button onClick={() => handleDeactivate(u._id)} className="p-1.5 hover:bg-red-50 rounded transition-colors">
-                            <Trash2 className="w-4 h-4 text-red-600" />
+                      <td className="px-6 py-3">
+                        <span className={`badge badge-${u.status.toLowerCase()}`}>{u.status}</span>
+                      </td>
+                      <td className="px-6 py-3">
+                        <div className="flex gap-2">
+                          <button 
+                            onClick={() => toggleExpand(u._id)} 
+                            className="p-1.5 hover:bg-blue-50 rounded transition-colors"
+                            title="View Details"
+                          >
+                            {expandedUser === u._id ? (
+                              <ChevronUp className="w-4 h-4 text-blue-600" />
+                            ) : (
+                              <ChevronDown className="w-4 h-4 text-blue-600" />
+                            )}
                           </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
+                          <button onClick={() => openEdit(u)} className="p-1.5 hover:bg-gray-100 rounded transition-colors">
+                            <Edit2 className="w-4 h-4 text-gray-500" />
+                          </button>
+                          {u.status === 'ACTIVE' && (
+                            <button onClick={() => handleDeactivate(u._id)} className="p-1.5 hover:bg-red-50 rounded transition-colors">
+                              <Trash2 className="w-4 h-4 text-red-600" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                    {/* Expanded Details Row */}
+                    {expandedUser === u._id && (
+                      <tr className="bg-gray-50/50">
+                        <td colSpan={5} className="px-6 py-4">
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                            <div>
+                              <span className="text-gray-500 text-xs uppercase font-semibold">Email</span>
+                              <p className="text-gray-700 mt-0.5">{u.email}</p>
+                            </div>
+                            <div>
+                              <span className="text-gray-500 text-xs uppercase font-semibold">Gender</span>
+                              <p className="text-gray-700 mt-0.5">
+                                {u.gender ? (GENDER_LABELS[u.gender] ?? u.gender) : '—'}
+                              </p>
+                            </div>
+                            <div>
+                              <span className="text-gray-500 text-xs uppercase font-semibold">Department</span>
+                              <p className="text-gray-700 mt-0.5">{u.department || '—'}</p>
+                            </div>
+                            <div>
+                              <span className="text-gray-500 text-xs uppercase font-semibold">Supervisor</span>
+                              <p className="text-gray-700 mt-0.5">{u.supervisorId?.name || '—'}</p>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </>
                 ))}
               </tbody>
             </table>
