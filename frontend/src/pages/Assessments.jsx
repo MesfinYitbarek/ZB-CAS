@@ -514,9 +514,9 @@ export default function Assessments() {
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mb-4">
               {items.length === 0 && (
-                <div className="col-span-full text-center py-16 text-gray-400">
+                <div className="col-span-full text-center py-12 text-gray-400">
                   {user?.role === 'SUPERVISOR'
                     ? 'No assessments requiring your evaluation at the moment.'
                     : user?.role === 'EMPLOYEE'
@@ -525,156 +525,158 @@ export default function Assessments() {
                   }
                 </div>
               )}
-              {items.map((a) => {
+              {items.map((a, index) => {
                 const next = getNextStatus(a.status);
                 const isActive = a.status === 'ACTIVE';
                 const isScheduled = a.status === 'SCHEDULED';
                 const requiresSupervisor = requiresSupervisorEvaluation(a);
 
                 return (
-                  <div key={a._id} className="bg-white rounded-xl shadow-card hover:shadow-card-hover transition-all border border-gray-100 overflow-hidden">
-                    <div className={`h-2 ${getStatusColor(a.status)}`} />
-                    <div className="p-5">
-                      <div className="flex justify-between items-start mb-3">
-                        <span className={`px-2 py-1 rounded-full text-xs font-bold ${getAssessmentTypeColor(a.type)}`}>
+                  <div 
+                    key={a._id} 
+                    className="bg-white rounded-lg shadow-sm hover:shadow-lg hover:-translate-y-1 hover:scale-[1.02] transition-all duration-300 ease-out border border-gray-200 overflow-hidden flex flex-col group"
+                    style={{ animation: `fadeIn 0.4s ease-out ${index * 50}ms both` }}
+                  >
+                    <div className={`h-1.5 ${getStatusColor(a.status)}`} />
+                    <div className="p-3 flex-1">
+                      {/* Header: Type & Status */}
+                      <div className="flex justify-between items-center mb-2">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide ${getAssessmentTypeColor(a.type)}`}>
                           {a.type}
                         </span>
-                        <span className={`px-2 py-1 rounded-full text-xs font-bold ${a.status === 'DRAFT' ? 'bg-gray-100 text-gray-800' :
-                          a.status === 'SCHEDULED' ? 'bg-blue-100 text-blue-800' :
-                            a.status === 'ACTIVE' ? 'bg-green-100 text-green-800' :
-                              a.status === 'COMPLETED' ? 'bg-red-100 text-red-800' :
-                                'bg-gray-100 text-gray-800'
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${a.status === 'DRAFT' ? 'bg-gray-100 text-gray-600' :
+                          a.status === 'SCHEDULED' ? 'bg-blue-100 text-blue-700' :
+                            a.status === 'ACTIVE' ? 'bg-green-100 text-green-700' :
+                              a.status === 'COMPLETED' ? 'bg-red-100 text-red-700' :
+                                'bg-gray-100 text-gray-600'
                           }`}>
                           {getStatusText(a.status)}
                         </span>
                       </div>
 
-                      <h3 className="text-base font-bold text-brand-black mb-2 line-clamp-2">
+                      {/* Title */}
+                      <h3 className="text-sm font-semibold text-gray-900 mb-1.5 line-clamp-2 leading-tight">
                         {a.description || 'Untitled Assessment'}
                       </h3>
 
-                      <p className="text-sm text-gray-500 mb-3 flex items-center gap-1">
-                        <Target className="w-3 h-3" />
+                      {/* Competency */}
+                      <p className="text-xs text-gray-500 mb-2 flex items-center gap-1">
+                        <Target className="w-3 h-3 text-gray-400" />
                         {a.competencyId?.name || 'No competency'}
                       </p>
 
+                      {/* Target - inline */}
                       {a.target?.department && (
-                        <div className="text-xs text-gray-500 mb-2 flex items-center gap-1">
+                        <p className="text-[11px] text-gray-400 mb-2 flex items-center gap-1">
                           <Users className="w-3 h-3" />
-                          Target: {a.target.department}
-                          {a.target.position && ` • ${a.target.position}`}
-                        </div>
+                          {a.target.department}{a.target.position && ` • ${a.target.position}`}
+                        </p>
                       )}
 
+                      {/* Scheduled countdown - compact */}
                       {isScheduled && (
-                        <div className="bg-blue-50 border-l-4 border-blue-500 rounded p-2 mb-3">
-                          <div className="text-xs text-blue-800 font-semibold flex items-center gap-1">
-                            <Clock className="w-3 h-3" />
-                            Starts {getTimeUntil(a.startDate)}
-                          </div>
-                          <div className="text-[10px] text-blue-600 mt-0.5">
-                            {new Date(a.startDate).toLocaleString('en-US', {
-                              month: 'short', day: 'numeric',
-                              hour: '2-digit', minute: '2-digit'
-                            })}
+                        <div className="bg-blue-50/70 border border-blue-100 rounded-md px-2 py-1.5 mb-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] text-blue-700 font-medium flex items-center gap-1">
+                              <Clock className="w-3 h-3" />
+                              Starts {getTimeUntil(a.startDate)}
+                            </span>
+                            <span className="text-[10px] text-blue-500">
+                              {new Date(a.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                            </span>
                           </div>
                         </div>
                       )}
 
-                      <div className="flex gap-4 text-xs text-gray-400 mb-4">
+                      {/* Date & Duration - inline */}
+                      <div className="flex items-center justify-between text-[11px] text-gray-400">
                         <span className="flex items-center gap-1">
                           <Calendar className="w-3 h-3" />
-                          {new Date(a.startDate).toLocaleDateString('en-US', {
-                            month: 'short',
-                            day: 'numeric',
-                            year: 'numeric'
-                          })}
+                          {new Date(a.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                         </span>
                         <span className="flex items-center gap-1">
                           <Clock className="w-3 h-3" />
-                          {a.timeLimit ? `${a.timeLimit} min` : 'No limit'}
+                          {a.timeLimit ? `${a.timeLimit}m` : '∞'}
                         </span>
                       </div>
 
+                      {/* Combined weights - subtle */}
                       {a.type === 'Combined' && (
-                        <div className="text-xs text-gray-600 bg-gray-50 p-2 rounded-lg mb-3">
-                          <div className="flex justify-between">
-                            <span>Self: {a.weight?.selfAssessment || 20}%</span>
-                            <span>Supervisor: {a.weight?.supervisor || 80}%</span>
-                          </div>
+                        <div className="mt-2 pt-2 border-t border-gray-100 flex justify-between text-[10px] text-gray-500">
+                          <span>Self: {a.weight?.selfAssessment || 20}%</span>
+                          <span>Sup: {a.weight?.supervisor || 80}%</span>
                         </div>
                       )}
                     </div>
 
-                    <div className="border-t border-gray-100 px-5 py-3 flex justify-between items-center bg-gray-50">
+                    {/* Action Footer */}
+                    <div className="border-t border-gray-100 px-3 py-2 bg-gray-50/50 flex justify-between items-center">
                       {isAdmin && next && a.status !== 'SCHEDULED' && (
                         <button
                           onClick={() => changeStatus(a._id, next)}
-                          className="px-3 py-1.5 text-xs font-semibold text-brand-red border border-brand-red rounded-lg hover:bg-brand-red-muted transition-colors"
+                          className="px-2 py-1 text-[11px] font-medium text-brand-red border border-brand-red/30 rounded hover:bg-brand-red/5 transition-colors"
                         >
-                          Move to {getStatusText(next)}
+                          {getStatusText(next)}
                         </button>
                       )}
 
                       {isAdmin && isScheduled && (
-                        <span className="text-xs text-blue-600 flex items-center gap-1 font-medium">
+                        <span className="text-[10px] text-blue-600 flex items-center gap-1">
                           <Clock className="w-3 h-3" />
-                          Auto-activates {new Date(a.startDate).toLocaleDateString('en-US', {
-                            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
-                          })}
+                          Auto
                         </span>
                       )}
 
                       {!isAdmin && isActive && !requiresSupervisor && (
                         <button
                           onClick={() => nav(`/assessments/${a._id}/take`)}
-                          className="px-3 py-1.5 text-xs font-semibold bg-brand-red text-white rounded-lg hover:bg-brand-red-dark transition-colors"
+                          className="px-2.5 py-1 text-[11px] font-medium bg-brand-red text-white rounded hover:bg-brand-red-dark transition-colors"
                         >
-                          Start Assessment
+                          Start
                         </button>
                       )}
 
                       {!isAdmin && isScheduled && (
                         <button
                           onClick={() => nav(`/assessments/${a._id}/take`)}
-                          className="px-3 py-1.5 text-xs font-semibold bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors flex items-center gap-1"
+                          className="px-2.5 py-1 text-[11px] font-medium bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors flex items-center gap-1"
                         >
                           <Eye className="w-3 h-3" />
-                          View Details
+                          View
                         </button>
                       )}
 
                       {user?.role === 'SUPERVISOR' && isActive && requiresSupervisor && (
                         <button
                           onClick={() => nav(`/assessments/${a._id}/evaluate`)}
-                          className="px-3 py-1.5 text-xs font-semibold bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                          className="px-2.5 py-1 text-[11px] font-medium bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
                         >
-                          Evaluate Team
+                          Evaluate
                         </button>
                       )}
 
                       {user?.role === 'EMPLOYEE' && isActive && a.type === 'Combined' && (
                         <button
                           onClick={() => nav(`/assessments/${a._id}/take`)}
-                          className="px-3 py-1.5 text-xs font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                          className="px-2.5 py-1 text-[11px] font-medium bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
                         >
-                          Start Self-Assessment
+                          Self-Assess
                         </button>
                       )}
 
                       {isAdmin && a.status === 'COMPLETED' && a.type === 'Combined' && (
                         <button
                           onClick={() => handleScoreResults(a._id)}
-                          className="px-3 py-1.5 text-xs font-semibold text-white bg-purple-600 rounded-lg hover:bg-purple-700 transition-colors flex items-center gap-1"
+                          className="px-2.5 py-1 text-[11px] font-medium text-white bg-purple-600 rounded hover:bg-purple-700 transition-colors flex items-center gap-1"
                         >
                           <Target className="w-3 h-3" />
-                          Score Combined Results
+                          Score
                         </button>
                       )}
                       {isAdmin && (
                         <button
                           onClick={() => nav(`/assessments/${a._id}`)}
-                          className="text-xs font-semibold text-gray-500 hover:text-brand-red transition-colors flex items-center gap-1"
+                          className="text-[11px] font-medium text-gray-400 hover:text-brand-red transition-colors flex items-center gap-0.5"
                         >
                           Details <ChevronRight className="w-3 h-3" />
                         </button>
