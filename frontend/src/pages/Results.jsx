@@ -1278,7 +1278,7 @@ export default function Results() {
 
       <div className="bg-white rounded-xl shadow-card border border-gray-200 p-5 mb-6">
         <div className="flex flex-col md:flex-row md:items-end gap-4">
-          <div className="flex-1">
+          <div className="max-w-md">
             <label className="block text-xs font-medium text-gray-700 mb-1.5">
               Select Assessment
             </label>
