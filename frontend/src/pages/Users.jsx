@@ -165,9 +165,9 @@ export default function Users() {
   const hasEmployeeRole = form.roles.includes('EMPLOYEE');
 
   return (
-    <div className="p-7">
-      {/* Header */}
-      <div className="flex justify-between items-start mb-6">
+    <div className="p-7 h-[calc(100vh-4rem)] flex flex-col">
+      {/* Sticky Header */}
+      <div className="flex justify-between items-start mb-6 flex-shrink-0">
         <div>
           <h1 className="text-3xl font-display font-bold text-brand-black">User Management</h1>
           <p className="text-gray-500 mt-1">Manage employees, supervisors, and HR administrators.</p>
@@ -180,8 +180,8 @@ export default function Users() {
         </button>
       </div>
 
-      {/* Filters */}
-      <div className="flex justify-between items-center gap-3 mb-5 flex-wrap">
+      {/* Sticky Filters */}
+      <div className="flex justify-between items-center gap-3 mb-5 flex-wrap flex-shrink-0">
         <div className="flex gap-3 flex-wrap">
           <div className="relative min-w-[200px]">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -227,19 +227,19 @@ export default function Users() {
         </div>
       </div>
 
-      {/* Table */}
-      <div className="bg-white rounded-xl shadow-card border border-gray-100 overflow-hidden mb-4">
+      {/* Table Container - Scrollable */}
+      <div className="bg-white rounded-xl shadow-card border border-gray-100 overflow-hidden flex flex-col flex-1 min-h-0">
         {loading ? (
-          <div className="flex items-center justify-center p-16">
+          <div className="flex items-center justify-center p-16 flex-1">
             <div className="w-10 h-10 border-4 border-brand-red border-t-transparent rounded-full animate-spin" />
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-auto flex-1">
             <table className="w-full">
-              <thead className="bg-gray-50 border-b border-gray-100">
+              <thead className="bg-gray-50 border-b border-gray-100 sticky top-0 z-10">
                 <tr>
                   {['Employee ID','Name','Email','Roles','Gender','Department','Supervisor','Status','Actions'].map((h) => (
-                    <th key={h} className="text-left px-6 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    <th key={h} className="text-left px-6 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider bg-gray-50">
                       {h}
                     </th>
                   ))}
@@ -298,7 +298,7 @@ export default function Users() {
 
       {/* Pagination */}
       {pagination.total > pagination.limit && (
-        <div className="flex flex-col sm:flex-row justify-between items-center gap-4 pt-4 border-t border-gray-200">
+        <div className="flex flex-col sm:flex-row justify-between items-center gap-4 pt-4 border-t border-gray-200 flex-shrink-0 bg-white">
           <div className="text-sm text-gray-600">
             Showing {(pagination.page - 1) * pagination.limit + 1} to{' '}
             {Math.min(pagination.page * pagination.limit, pagination.total)} of{' '}
