@@ -253,7 +253,7 @@ export default function Feedback() {
                   <div key={f._id} className="bg-white border border-slate-200 rounded-xl p-4 hover:border-slate-300 transition-colors">
                     <div className="flex justify-between items-start mb-2">
                       <p className="font-semibold text-sm text-slate-800 leading-snug">
-                        {f.assessmentId?.description || 'Assessment'}
+                        {f.assessmentId?.competencyId?.name}
                       </p>
                       {f.rating > 0 && <StarRating value={f.rating} size="sm" />}
                     </div>

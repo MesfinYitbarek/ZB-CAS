@@ -1,1030 +1,876 @@
-/**
- * reportController.js  –  HR_ADMIN Comprehensive Reporting Engine
- *
- * Every public function is an asyncHandler.  All heavy reads go through
- * MongoDB aggregation pipelines so we never pull full documents into Node.
- *
- * Filter dimensions supported:
- *   User       : department, position, gender, status, supervisorId, employeeId(s)
- *   Competency : competencyId, competencyCategory, targetGroup (of competency)
- *   Assessment : assessmentId, assessmentType, assessmentStatus, purpose
- *   Result     : level, scoreMin, scoreMax, resultStatus (PENDING/FINAL)
- *   Date       : dateFrom, dateTo  (on generatedAt / Result.createdAt)
- *   Search     : free-text across employee name, competency name
- *   Sort       : any field, asc/desc
- *
- * Performance: all aggregation stages use indexed fields first ($match early),
- * $lookup uses pipeline form with $match to avoid loading full collections,
- * and cursor-based pagination is used for large exports.
- */
-
 import mongoose from 'mongoose';
 import PDFDocument from 'pdfkit';
 import ExcelJS from 'exceljs';
-
 import Report from '../models/Report.js';
-import Result from '../models/Result.js';
-import User from '../models/User.js';
 import Assessment from '../models/Assessment.js';
-import Competency from '../models/Competency.js';
+import User from '../models/User.js';
 import AppError from '../utils/AppError.js';
 import asyncHandler from '../utils/asyncHandler.js';
 
-// ─── tiny helpers ─────────────────────────────────────────────────────────────
-const toOid = (str) =>
-  str && mongoose.Types.ObjectId.isValid(str)
-    ? new mongoose.Types.ObjectId(str)
-    : null;
-
-const clampNum = (val, min, max, fallback) => {
-  const n = parseFloat(val);
-  if (isNaN(n)) return fallback;
-  return Math.min(max, Math.max(min, n));
+const toObjectId = (str) => {
+  if (mongoose.Types.ObjectId.isValid(str)) return new mongoose.Types.ObjectId(str);
+  return null;
 };
 
-const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const assignLevel = (score) => {
+  if (score >= 85) return 'Expert';
+  if (score >= 70) return 'Advanced';
+  if (score >= 50) return 'Intermediate';
+  return 'Basic';
+};
 
-// ─────────────────────────────────────────────────────────────────────────────
-// CORE FILTER BUILDER
-// Builds a MongoDB $match object from query params.
-// Works against the Result collection (has all data via populate/lookup).
-// Returns { resultMatch, userMatch } so callers can choose join strategy.
-// ─────────────────────────────────────────────────────────────────────────────
-const buildResultMatch = async (query) => {
+// ─── Build human-readable filter summary for PDF/Excel headers ────────────────
+const buildFilterSummary = (query) => {
+  const labels = {
+    department: 'Dept', position: 'Position', gender: 'Gender',
+    assessmentId: 'Assessment', assessmentType: 'Type', purpose: 'Purpose',
+    targetGroup: 'Target Group', competencyId: 'Competency',
+    competencyCategory: 'Category', overallLevel: 'Level',
+    scoreMin: 'Score ≥', scoreMax: 'Score ≤',
+    dateFrom: 'From', dateTo: 'To',
+    employeeId: 'Employee', status: 'Status',
+    selfScoreMin: 'Self ≥', selfScoreMax: 'Self ≤',
+    supervisorScoreMin: 'Sup ≥', supervisorScoreMax: 'Sup ≤',
+    assessmentStartFrom: 'Assess Start ≥', assessmentEndTo: 'Assess End ≤',
+  };
+  const parts = [];
+  Object.entries(labels).forEach(([k, label]) => {
+    if (query[k] && query[k] !== 'undefined' && query[k] !== 'null') {
+      parts.push(`${label}: ${query[k]}`);
+    }
+  });
+  return parts.length ? parts.join('  |  ') : null;
+};
+
+// ─── MASTER FILTER BUILDER ────────────────────────────────────────────────────
+// Supports every filterable attribute in the Report schema
+const buildFilter = async (query, user) => {
   const {
-    // User filters
-    department, position, gender, userStatus, supervisorId, employeeId,
-    // Competency filters
-    competencyId, competencyCategory, competencyTargetGroup,
-    // Assessment filters
-    assessmentId, assessmentType, assessmentStatus, purpose,
-    // Result filters
-    level, scoreMin, scoreMax, resultStatus,
-    // Date
-    dateFrom, dateTo,
-    // Search
-    search,
+    // ── User attributes ──────────────────────────────────────
+    employeeId,           // specific user ObjectId
+    department,           // user.department exact match
+    departmentSearch,     // user.department regex search
+    position,             // user.position exact match
+    positionSearch,       // user.position regex search
+    gender,               // user.gender: Male | Female
+    employeeIdCode,       // user.employeeId string (the HR code, not mongo _id)
+
+    // ── Assessment attributes ────────────────────────────────
+    assessmentId,         // assessment.assessmentId ObjectId
+    assessmentType,       // assessment.type: SelfAssessment | SupervisorOnly | Combined
+    purpose,              // assessment.purpose
+    targetGroup,          // assessment.targetGroup: managerial | non-managerial | common
+    assessmentStatus,     // assessment.status (snapshot)
+    assessmentStartFrom,  // assessment.startDate >= date
+    assessmentStartTo,    // assessment.startDate <= date
+    assessmentEndFrom,    // assessment.endDate >= date
+    assessmentEndTo,      // assessment.endDate <= date
+
+    // ── Competency attributes ────────────────────────────────
+    competencyId,         // competencyResults[].competencyId ObjectId
+    competencyName,       // competencyResults[].competencyName regex
+    competencyCategory,   // competencyResults[].category
+
+    // ── Result attributes ────────────────────────────────────
+    overallLevel,         // overallLevel (report level)
+    competencyLevel,      // competencyResults[].level filter
+    scoreMin,             // overallScore >= value
+    scoreMax,             // overallScore <= value
+    selfScoreMin,         // competencyResults[].scoreDetails.selfScore >=
+    selfScoreMax,         // competencyResults[].scoreDetails.selfScore <=
+    supervisorScoreMin,   // competencyResults[].scoreDetails.supervisorScore >=
+    supervisorScoreMax,   // competencyResults[].scoreDetails.supervisorScore <=
+
+    // ── Report meta ──────────────────────────────────────────
+    status,               // report status: PARTIAL | COMPLETE
+    dateFrom,             // generatedAt >= date
+    dateTo,               // generatedAt <= date
+
+    // ── Sorting & pagination (passed through, not used here) ─
+    // sortBy, sortDir, page, limit
   } = query;
 
-  const match = {};
+  const filter = {};
 
-  // ── Result-level fields (directly on Result) ──────────────────────────────
-  if (assessmentId) { const oid = toOid(assessmentId); if (oid) match.assessmentId = oid; }
-  if (competencyId) { const oid = toOid(competencyId); if (oid) match.competencyId = oid; }
-  if (level)        match.level = Array.isArray(level) ? { $in: level } : level;
-  if (resultStatus) match.status = resultStatus;
+  // ── User filters ─────────────────────────────────────────────────────────
+  if (employeeId) {
+    const oid = toObjectId(employeeId);
+    if (oid) filter['user.userId'] = oid;
+  }
+  if (department)       filter['user.department'] = department;
+  if (departmentSearch) filter['user.department'] = { $regex: departmentSearch, $options: 'i' };
+  if (position)         filter['user.position']   = position;
+  if (positionSearch)   filter['user.position']   = { $regex: positionSearch, $options: 'i' };
+  if (gender)           filter['user.gender']     = gender;
+  if (employeeIdCode)   filter['user.employeeId'] = { $regex: employeeIdCode, $options: 'i' };
+
+  // ── Assessment filters ────────────────────────────────────────────────────
+  if (assessmentId) {
+    const oid = toObjectId(assessmentId);
+    if (oid) filter['assessment.assessmentId'] = oid;
+  }
+  if (assessmentType)   filter['assessment.type']        = assessmentType;
+  if (purpose)          filter['assessment.purpose']     = purpose;
+  if (targetGroup)      filter['assessment.targetGroup'] = targetGroup;
+
+  if (assessmentStartFrom || assessmentStartTo) {
+    filter['assessment.startDate'] = {};
+    if (assessmentStartFrom) filter['assessment.startDate'].$gte = new Date(assessmentStartFrom);
+    if (assessmentStartTo)   filter['assessment.startDate'].$lte = new Date(assessmentStartTo);
+  }
+  if (assessmentEndFrom || assessmentEndTo) {
+    filter['assessment.endDate'] = {};
+    if (assessmentEndFrom) filter['assessment.endDate'].$gte = new Date(assessmentEndFrom);
+    if (assessmentEndTo)   filter['assessment.endDate'].$lte = new Date(assessmentEndTo);
+  }
+
+  // ── Competency filters ────────────────────────────────────────────────────
+  if (competencyId) {
+    const oid = toObjectId(competencyId);
+    if (oid) filter['competencyResults.competencyId'] = oid;
+  }
+  if (competencyName)     filter['competencyResults.competencyName'] = { $regex: competencyName, $options: 'i' };
+  if (competencyCategory) filter['competencyResults.category']       = competencyCategory;
+  if (competencyLevel)    filter['competencyResults.level']          = competencyLevel;
+
+  // Per-competency score filters (these filter reports that have at least one
+  // competency result matching the score range)
+  if (selfScoreMin !== undefined || selfScoreMax !== undefined) {
+    const cond = {};
+    if (selfScoreMin !== undefined) cond.$gte = Number(selfScoreMin);
+    if (selfScoreMax !== undefined) cond.$lte = Number(selfScoreMax);
+    filter['competencyResults.scoreDetails.selfScore'] = cond;
+  }
+  if (supervisorScoreMin !== undefined || supervisorScoreMax !== undefined) {
+    const cond = {};
+    if (supervisorScoreMin !== undefined) cond.$gte = Number(supervisorScoreMin);
+    if (supervisorScoreMax !== undefined) cond.$lte = Number(supervisorScoreMax);
+    filter['competencyResults.scoreDetails.supervisorScore'] = cond;
+  }
+
+  // ── Overall result filters ────────────────────────────────────────────────
+  if (overallLevel) filter.overallLevel = overallLevel;
+  if (status)       filter.status       = status;
 
   if (scoreMin !== undefined || scoreMax !== undefined) {
-    match.finalScore = {};
-    if (scoreMin !== undefined) match.finalScore.$gte = clampNum(scoreMin, 0, 100, 0);
-    if (scoreMax !== undefined) match.finalScore.$lte = clampNum(scoreMax, 0, 100, 100);
+    filter.overallScore = {};
+    if (scoreMin !== undefined) filter.overallScore.$gte = Number(scoreMin);
+    if (scoreMax !== undefined) filter.overallScore.$lte = Number(scoreMax);
   }
 
+  // ── Generated-at date range ───────────────────────────────────────────────
   if (dateFrom || dateTo) {
-    match.createdAt = {};
-    if (dateFrom) match.createdAt.$gte = new Date(dateFrom);
+    filter.generatedAt = {};
+    if (dateFrom) filter.generatedAt.$gte = new Date(dateFrom);
     if (dateTo) {
-      const e = new Date(dateTo);
-      e.setHours(23, 59, 59, 999);
-      match.createdAt.$lte = e;
+      const end = new Date(dateTo);
+      end.setHours(23, 59, 59, 999);
+      filter.generatedAt.$lte = end;
     }
   }
 
-  // ── User filters — resolve to userId list ─────────────────────────────────
-  const userFilterActive = department || position || gender || userStatus || supervisorId || search || employeeId;
-  if (userFilterActive) {
-    const uFilter = {};
-    if (department)   uFilter.department = { $regex: department, $options: 'i' };
-    if (position)     uFilter.position   = { $regex: position,   $options: 'i' };
-    if (gender)       uFilter.gender     = gender;
-    if (userStatus)   uFilter.status     = userStatus;
-    if (supervisorId) { const oid = toOid(supervisorId); if (oid) uFilter.supervisorId = oid; }
-    if (employeeId)   { const oid = toOid(employeeId);   if (oid) uFilter._id = oid; }
-    if (search) {
-      uFilter.$or = [
-        { name:       { $regex: search, $options: 'i' } },
-        { email:      { $regex: search, $options: 'i' } },
-        { employeeId: { $regex: search, $options: 'i' } },
-      ];
-    }
-    const users = await User.find(uFilter).select('_id').lean();
-    const ids = users.map(u => u._id);
-    if (ids.length === 0) return null; // no matching users → zero results
-    match.userId = { $in: ids };
+  // ── Role-based scoping (always enforced last) ─────────────────────────────
+  if (user.role === 'EMPLOYEE') {
+    filter['user.userId'] = toObjectId(user.id);
+  } else if (user.role === 'SUPERVISOR' && !filter['user.userId']) {
+    const subs = await User.find({ supervisorId: user.id }).select('_id').lean();
+    filter['user.userId'] = { $in: subs.map(s => s._id) };
   }
 
-  // ── Assessment filters — resolve to assessmentId list ────────────────────
-  const aFilterActive = assessmentType || assessmentStatus || purpose;
-  if (aFilterActive && !assessmentId) {
-    const aFilter = {};
-    if (assessmentType)   aFilter.type    = assessmentType;
-    if (assessmentStatus) aFilter.status  = assessmentStatus;
-    if (purpose)          aFilter.purpose = purpose;
-    const assessments = await Assessment.find(aFilter).select('_id').lean();
-    const ids = assessments.map(a => a._id);
-    if (ids.length === 0) return null;
-    match.assessmentId = { $in: ids };
-  }
-
-  // ── Competency filters — resolve to competencyId list ────────────────────
-  const cFilterActive = competencyCategory || competencyTargetGroup;
-  if (cFilterActive && !competencyId) {
-    const cFilter = {};
-    if (competencyCategory)    cFilter.category = competencyCategory;
-    if (competencyTargetGroup) cFilter['targetGroups.targetGroup'] = competencyTargetGroup;
-    const comps = await Competency.find(cFilter).select('_id').lean();
-    const ids = comps.map(c => c._id);
-    if (ids.length === 0) return null;
-    // merge with existing if present
-    if (match.competencyId && match.competencyId.$in) {
-      const existing = match.competencyId.$in.map(String);
-      match.competencyId = { $in: ids.filter(id => existing.includes(id.toString())) };
-    } else {
-      match.competencyId = { $in: ids };
-    }
-    if (match.competencyId.$in.length === 0) return null;
-  }
-
-  return match;
+  return filter;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PIPELINE BUILDER
-// Returns an aggregation pipeline that joins Result → User → Assessment → Competency
-// and projects a flat, rich document ready for reporting.
+// PDF EXPORT  — professional, clean layout
 // ─────────────────────────────────────────────────────────────────────────────
-const buildRichPipeline = (match, { sort = { createdAt: -1 }, skip = 0, limit = 50 } = {}) => {
-  const stages = [
-    { $match: match },
+const BRAND_RED  = '#C8102E';
+const BRAND_DARK = '#1e293b';
+const GRAY_BG    = '#F8FAFC';
+const GRAY_LINE  = '#E2E8F0';
 
-    // Join user
-    { $lookup: {
-      from: 'users',
-      let: { uid: '$userId' },
-      pipeline: [
-        { $match: { $expr: { $eq: ['$_id', '$$uid'] } } },
-        { $project: { name:1, email:1, employeeId:1, department:1, position:1, gender:1, status:1, supervisorId:1, roles:1 } },
-      ],
-      as: '_user',
-    }},
-    { $unwind: { path: '$_user', preserveNullAndEmptyArrays: true } },
-
-    // Join assessment
-    { $lookup: {
-      from: 'assessments',
-      let: { aid: '$assessmentId' },
-      pipeline: [
-        { $match: { $expr: { $eq: ['$_id', '$$aid'] } } },
-        { $project: { description:1, type:1, status:1, purpose:1, targetGroup:1, startDate:1, endDate:1, weight:1 } },
-      ],
-      as: '_assessment',
-    }},
-    { $unwind: { path: '$_assessment', preserveNullAndEmptyArrays: true } },
-
-    // Join competency
-    { $lookup: {
-      from: 'competencies',
-      let: { cid: '$competencyId' },
-      pipeline: [
-        { $match: { $expr: { $eq: ['$_id', '$$cid'] } } },
-        { $project: { name:1, category:1, targetGroups:1 } },
-      ],
-      as: '_competency',
-    }},
-    { $unwind: { path: '$_competency', preserveNullAndEmptyArrays: true } },
-
-    // Flat projection
-    { $project: {
-      // Result
-      _id: 1, finalScore: 1, level: 1, status: 1, recommendation: 1, createdAt: 1,
-      selfScore:       '$scoreDetails.selfScore',
-      supervisorScore: '$scoreDetails.supervisorScore',
-      weightSelf:      '$scoreDetails.weightUsed.selfAssessment',
-      weightSup:       '$scoreDetails.weightUsed.supervisor',
-      totalQuestions:  { $size: { $ifNull: ['$scoreDetails.questionDetails', []] } },
-      correctAnswers:  { $size: {
-        $filter: { input: { $ifNull: ['$scoreDetails.questionDetails', []] }, cond: '$$this.isCorrect' }
-      }},
-      // User
-      userName:        '$_user.name',
-      userEmail:       '$_user.email',
-      userEmployeeId:  '$_user.employeeId',
-      userDepartment:  '$_user.department',
-      userPosition:    '$_user.position',
-      userGender:      '$_user.gender',
-      userStatus:      '$_user.status',
-      userRoles:       '$_user.roles',
-      userId:          '$_user._id',
-      // Assessment
-      assessmentDescription: '$_assessment.description',
-      assessmentType:        '$_assessment.type',
-      assessmentStatus:      '$_assessment.status',
-      assessmentPurpose:     '$_assessment.purpose',
-      assessmentTargetGroup: '$_assessment.targetGroup',
-      assessmentStartDate:   '$_assessment.startDate',
-      assessmentEndDate:     '$_assessment.endDate',
-      assessmentWeightSelf:  '$_assessment.weight.selfAssessment',
-      assessmentWeightSup:   '$_assessment.weight.supervisor',
-      // Competency
-      competencyName:     '$_competency.name',
-      competencyCategory: '$_competency.category',
-    }},
-
-    { $sort: sort },
-    { $skip: skip },
-    { $limit: limit },
-  ];
-  return stages;
+const levelColor = (level) => {
+  if (level === 'Expert')       return '#16A34A';
+  if (level === 'Advanced')     return '#2563EB';
+  if (level === 'Intermediate') return '#D97706';
+  return '#DC2626'; // Basic
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GET FILTER OPTIONS  (dropdown values for the UI)
-// ─────────────────────────────────────────────────────────────────────────────
-export const getAdvancedFilterOptions = asyncHandler(async (_req, res) => {
-  const [
-    departments, positions, genders,
-    competencies, competencyCategories,
-    assessments, supervisors,
-  ] = await Promise.all([
-    User.distinct('department').then(r => r.filter(Boolean).sort()),
-    User.distinct('position').then(r => r.filter(Boolean).sort()),
-    User.distinct('gender').then(r => r.filter(Boolean).sort()),
-    Competency.find({}).select('_id name category targetGroups').lean(),
-    Competency.distinct('category').then(r => r.filter(Boolean).sort()),
-    Assessment.find({ status: { $ne: 'DRAFT' } }).select('_id description type status purpose targetGroup startDate endDate').lean(),
-    User.find({ roles: 'SUPERVISOR' }).select('_id name department').lean(),
-  ]);
+const generateConsolidatedPDF = (res, reports, { title, subtitle, filename }) => {
+  const PAGE_W = 595.28; // A4
+  const MARGIN = 40;
+  const CONTENT_W = PAGE_W - MARGIN * 2;
 
-  res.status(200).json({
-    status: 'success',
-    data: {
-      departments,
-      positions,
-      genders,
-      competencies: competencies.map(c => ({ _id: c._id, name: c.name, category: c.category })),
-      competencyCategories,
-      assessments,
-      supervisors,
-      levels: ['Basic', 'Intermediate', 'Advanced', 'Expert'],
-      assessmentTypes: ['SelfAssessment', 'SupervisorOnly', 'Combined'],
-      assessmentStatuses: ['DRAFT', 'SCHEDULED', 'ACTIVE', 'COMPLETED', 'ARCHIVED'],
-      purposes: ['Career Development', 'Succession Planning', 'Performance Improvement', 'Training Needs Analysis', 'Promotion Readiness', 'Other'],
-      targetGroups: ['managerial', 'non-managerial', 'common'],
-      userStatuses: ['ACTIVE', 'INACTIVE'],
-      resultStatuses: ['PENDING', 'FINAL'],
-    },
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// GET RICH RESULTS — paginated, all dimensions
-// ─────────────────────────────────────────────────────────────────────────────
-export const getAdvancedResults = asyncHandler(async (req, res) => {
-  const { page = 1, limit = 25, sortBy = 'createdAt', sortDir = 'desc' } = req.query;
-
-  const match = await buildResultMatch(req.query);
-  if (match === null) {
-    return res.status(200).json({
-      status: 'success',
-      data: { results: [], pagination: { total: 0, page: 1, limit: parseInt(limit), totalPages: 0 } },
-    });
-  }
-
-  const lim = Math.min(parseInt(limit) || 25, 200);
-  const skip = (parseInt(page) - 1) * lim;
-  const sort = { [sortBy]: sortDir === 'asc' ? 1 : -1 };
-
-  const [results, totalArr] = await Promise.all([
-    Result.aggregate(buildRichPipeline(match, { sort, skip, limit: lim })),
-    Result.aggregate([{ $match: match }, { $count: 'total' }]),
-  ]);
-
-  const total = totalArr[0]?.total || 0;
-  res.status(200).json({
-    status: 'success',
-    data: {
-      results,
-      pagination: { total, page: parseInt(page), limit: lim, totalPages: Math.ceil(total / lim) },
-    },
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// GET COMPREHENSIVE STATS — all analytics in one call (parallel aggregations)
-// ─────────────────────────────────────────────────────────────────────────────
-export const getAdvancedStats = asyncHandler(async (req, res) => {
-  const match = await buildResultMatch(req.query);
-  if (match === null) {
-    return res.status(200).json({ status: 'success', data: buildEmptyStats() });
-  }
-
-  const [
-    overall,
-    levelDist,
-    departmentStats,
-    competencyStats,
-    assessmentTypeStats,
-    purposeStats,
-    genderStats,
-    monthlyTrend,
-    topEmployees,
-    bottomEmployees,
-    assessmentStats,
-    targetGroupStats,
-    positionStats,
-    scoreDistribution,
-    supervisorStats,
-  ] = await Promise.all([
-
-    // 1. Overall KPIs
-    Result.aggregate([
-      { $match: match },
-      { $lookup: { from:'users', localField:'userId', foreignField:'_id', as:'u' }},
-      { $unwind: { path:'$u', preserveNullAndEmptyArrays: true } },
-      { $group: {
-        _id: null,
-        total:             { $sum: 1 },
-        avgScore:          { $avg: '$finalScore' },
-        maxScore:          { $max: '$finalScore' },
-        minScore:          { $min: '$finalScore' },
-        stdDev:            { $stdDevPop: '$finalScore' },
-        uniqueEmployees:   { $addToSet: '$userId' },
-        uniqueDepts:       { $addToSet: '$u.department' },
-        uniqueCompetencies:{ $addToSet: '$competencyId' },
-        uniqueAssessments: { $addToSet: '$assessmentId' },
-        pending:           { $sum: { $cond: [{ $eq: ['$status','PENDING'] }, 1, 0] } },
-        final:             { $sum: { $cond: [{ $eq: ['$status','FINAL'] }, 1, 0] } },
-      }},
-      { $project: {
-        total:1, avgScore:{ $round:['$avgScore',1] }, maxScore:1, minScore:1,
-        stdDev:{ $round:['$stdDev',1] }, pending:1, final:1,
-        uniqueEmployees:   { $size: '$uniqueEmployees' },
-        uniqueDepts:       { $size: '$uniqueDepts' },
-        uniqueCompetencies:{ $size: '$uniqueCompetencies' },
-        uniqueAssessments: { $size: '$uniqueAssessments' },
-      }},
-    ]),
-
-    // 2. Level distribution
-    Result.aggregate([
-      { $match: match },
-      { $group: {
-        _id: '$level',
-        count:    { $sum: 1 },
-        avgScore: { $avg: '$finalScore' },
-      }},
-      { $sort: { _id: 1 } },
-    ]),
-
-    // 3. Department breakdown (top 20)
-    Result.aggregate([
-      { $match: match },
-      { $lookup: { from:'users', localField:'userId', foreignField:'_id', as:'u' }},
-      { $unwind: { path:'$u', preserveNullAndEmptyArrays: true } },
-      { $group: {
-        _id:      '$u.department',
-        count:    { $sum: 1 },
-        avgScore: { $avg: '$finalScore' },
-        maxScore: { $max: '$finalScore' },
-        minScore: { $min: '$finalScore' },
-        basicCount:        { $sum: { $cond: [{ $eq:['$level','Basic'] }, 1, 0] } },
-        intermediateCount: { $sum: { $cond: [{ $eq:['$level','Intermediate'] }, 1, 0] } },
-        advancedCount:     { $sum: { $cond: [{ $eq:['$level','Advanced'] }, 1, 0] } },
-        expertCount:       { $sum: { $cond: [{ $eq:['$level','Expert'] }, 1, 0] } },
-        uniqueEmployees:   { $addToSet: '$userId' },
-      }},
-      { $project: {
-        count:1, avgScore:{ $round:['$avgScore',1] }, maxScore:1, minScore:1,
-        basicCount:1, intermediateCount:1, advancedCount:1, expertCount:1,
-        employeeCount: { $size: '$uniqueEmployees' },
-      }},
-      { $sort: { avgScore: -1 } },
-      { $limit: 20 },
-    ]),
-
-    // 4. Competency breakdown
-    Result.aggregate([
-      { $match: match },
-      { $lookup: { from:'competencies', localField:'competencyId', foreignField:'_id', as:'c' }},
-      { $unwind: { path:'$c', preserveNullAndEmptyArrays: true } },
-      { $group: {
-        _id:      '$competencyId',
-        name:     { $first: '$c.name' },
-        category: { $first: '$c.category' },
-        count:    { $sum: 1 },
-        avgScore: { $avg: '$finalScore' },
-        maxScore: { $max: '$finalScore' },
-        minScore: { $min: '$finalScore' },
-        expertCount: { $sum: { $cond: [{ $eq:['$level','Expert'] }, 1, 0] } },
-        basicCount:  { $sum: { $cond: [{ $eq:['$level','Basic'] }, 1, 0] } },
-      }},
-      { $project: {
-        name:1, category:1, count:1,
-        avgScore:{ $round:['$avgScore',1] }, maxScore:1, minScore:1,
-        expertCount:1, basicCount:1,
-      }},
-      { $sort: { avgScore: -1 } },
-    ]),
-
-    // 5. Assessment type breakdown
-    Result.aggregate([
-      { $match: match },
-      { $lookup: { from:'assessments', localField:'assessmentId', foreignField:'_id', as:'a' }},
-      { $unwind: { path:'$a', preserveNullAndEmptyArrays: true } },
-      { $group: {
-        _id:      '$a.type',
-        count:    { $sum: 1 },
-        avgScore: { $avg: '$finalScore' },
-      }},
-      { $sort: { count: -1 } },
-    ]),
-
-    // 6. Purpose breakdown
-    Result.aggregate([
-      { $match: match },
-      { $lookup: { from:'assessments', localField:'assessmentId', foreignField:'_id', as:'a' }},
-      { $unwind: { path:'$a', preserveNullAndEmptyArrays: true } },
-      { $group: {
-        _id:      '$a.purpose',
-        count:    { $sum: 1 },
-        avgScore: { $avg: '$finalScore' },
-      }},
-      { $sort: { count: -1 } },
-    ]),
-
-    // 7. Gender breakdown
-    Result.aggregate([
-      { $match: match },
-      { $lookup: { from:'users', localField:'userId', foreignField:'_id', as:'u' }},
-      { $unwind: { path:'$u', preserveNullAndEmptyArrays: true } },
-      { $group: {
-        _id:      '$u.gender',
-        count:    { $sum: 1 },
-        avgScore: { $avg: '$finalScore' },
-        expertCount: { $sum: { $cond: [{ $eq:['$level','Expert'] }, 1, 0] } },
-        basicCount:  { $sum: { $cond: [{ $eq:['$level','Basic'] }, 1, 0] } },
-      }},
-    ]),
-
-    // 8. Monthly trend (12 months)
-    Result.aggregate([
-      { $match: { ...match, createdAt: { $gte: new Date(Date.now() - 365*24*60*60*1000) } } },
-      { $group: {
-        _id:      { year: { $year:'$createdAt' }, month: { $month:'$createdAt' } },
-        count:    { $sum: 1 },
-        avgScore: { $avg: '$finalScore' },
-        expertCount:       { $sum: { $cond: [{ $eq:['$level','Expert'] }, 1, 0] } },
-        basicCount:        { $sum: { $cond: [{ $eq:['$level','Basic'] }, 1, 0] } },
-        uniqueEmployees:   { $addToSet: '$userId' },
-      }},
-      { $project: {
-        count:1, avgScore:{ $round:['$avgScore',1] },
-        expertCount:1, basicCount:1,
-        uniqueEmployees: { $size: '$uniqueEmployees' },
-      }},
-      { $sort: { '_id.year':1, '_id.month':1 } },
-    ]),
-
-    // 9. Top 10 performers
-    Result.aggregate([
-      { $match: match },
-      { $lookup: { from:'users', localField:'userId', foreignField:'_id', as:'u' }},
-      { $unwind: { path:'$u', preserveNullAndEmptyArrays: true } },
-      { $group: {
-        _id:        '$userId',
-        name:       { $first: '$u.name' },
-        department: { $first: '$u.department' },
-        position:   { $first: '$u.position' },
-        employeeId: { $first: '$u.employeeId' },
-        avgScore:   { $avg: '$finalScore' },
-        maxScore:   { $max: '$finalScore' },
-        count:      { $sum: 1 },
-        expertCount:{ $sum: { $cond: [{ $eq:['$level','Expert'] }, 1, 0] } },
-      }},
-      { $project: { name:1, department:1, position:1, employeeId:1,
-        avgScore:{ $round:['$avgScore',1] }, maxScore:1, count:1, expertCount:1 }},
-      { $sort: { avgScore: -1 } },
-      { $limit: 10 },
-    ]),
-
-    // 10. Bottom 10 (needs support)
-    Result.aggregate([
-      { $match: match },
-      { $lookup: { from:'users', localField:'userId', foreignField:'_id', as:'u' }},
-      { $unwind: { path:'$u', preserveNullAndEmptyArrays: true } },
-      { $group: {
-        _id:        '$userId',
-        name:       { $first: '$u.name' },
-        department: { $first: '$u.department' },
-        position:   { $first: '$u.position' },
-        employeeId: { $first: '$u.employeeId' },
-        avgScore:   { $avg: '$finalScore' },
-        minScore:   { $min: '$finalScore' },
-        count:      { $sum: 1 },
-        basicCount: { $sum: { $cond: [{ $eq:['$level','Basic'] }, 1, 0] } },
-      }},
-      { $project: { name:1, department:1, position:1, employeeId:1,
-        avgScore:{ $round:['$avgScore',1] }, minScore:1, count:1, basicCount:1 }},
-      { $sort: { avgScore: 1 } },
-      { $limit: 10 },
-    ]),
-
-    // 11. Assessment-level stats
-    Result.aggregate([
-      { $match: match },
-      { $lookup: { from:'assessments', localField:'assessmentId', foreignField:'_id', as:'a' }},
-      { $unwind: { path:'$a', preserveNullAndEmptyArrays: true } },
-      { $group: {
-        _id:         '$assessmentId',
-        description: { $first: '$a.description' },
-        type:        { $first: '$a.type' },
-        purpose:     { $first: '$a.purpose' },
-        status:      { $first: '$a.status' },
-        count:       { $sum: 1 },
-        avgScore:    { $avg: '$finalScore' },
-        maxScore:    { $max: '$finalScore' },
-        minScore:    { $min: '$finalScore' },
-        expertCount: { $sum: { $cond: [{ $eq:['$level','Expert'] }, 1, 0] } },
-        basicCount:  { $sum: { $cond: [{ $eq:['$level','Basic'] }, 1, 0] } },
-        passRate: { $avg: {
-          $cond: [{ $gte:['$finalScore', 60] }, 1, 0]
-        }},
-      }},
-      { $project: {
-        description:1, type:1, purpose:1, status:1, count:1,
-        avgScore:{ $round:['$avgScore',1] }, maxScore:1, minScore:1,
-        expertCount:1, basicCount:1,
-        passRate: { $round: [{ $multiply:['$passRate', 100] }, 1] },
-      }},
-      { $sort: { count: -1 } },
-      { $limit: 20 },
-    ]),
-
-    // 12. Target group stats
-    Result.aggregate([
-      { $match: match },
-      { $lookup: { from:'assessments', localField:'assessmentId', foreignField:'_id', as:'a' }},
-      { $unwind: { path:'$a', preserveNullAndEmptyArrays: true } },
-      { $group: {
-        _id:      '$a.targetGroup',
-        count:    { $sum: 1 },
-        avgScore: { $avg: '$finalScore' },
-        expertCount: { $sum: { $cond: [{ $eq:['$level','Expert'] }, 1, 0] } },
-        basicCount:  { $sum: { $cond: [{ $eq:['$level','Basic'] }, 1, 0] } },
-      }},
-      { $project: { count:1, avgScore:{ $round:['$avgScore',1] }, expertCount:1, basicCount:1 }},
-    ]),
-
-    // 13. Position stats (top 15)
-    Result.aggregate([
-      { $match: match },
-      { $lookup: { from:'users', localField:'userId', foreignField:'_id', as:'u' }},
-      { $unwind: { path:'$u', preserveNullAndEmptyArrays: true } },
-      { $group: {
-        _id:      '$u.position',
-        count:    { $sum: 1 },
-        avgScore: { $avg: '$finalScore' },
-        uniqueEmployees: { $addToSet: '$userId' },
-      }},
-      { $project: {
-        count:1, avgScore:{ $round:['$avgScore',1] },
-        employeeCount: { $size: '$uniqueEmployees' },
-      }},
-      { $sort: { count: -1 } },
-      { $limit: 15 },
-    ]),
-
-    // 14. Score distribution buckets
-    Result.aggregate([
-      { $match: match },
-      { $bucket: {
-        groupBy: '$finalScore',
-        boundaries: [0, 20, 40, 60, 80, 100],
-        default: '100',
-        output: { count: { $sum: 1 }, avgScore: { $avg: '$finalScore' } },
-      }},
-    ]),
-
-    // 15. Supervisor-level stats (top 10 by team avg)
-    Result.aggregate([
-      { $match: match },
-      { $lookup: { from:'users', localField:'userId', foreignField:'_id', as:'u' }},
-      { $unwind: { path:'$u', preserveNullAndEmptyArrays: true } },
-      { $match: { 'u.supervisorId': { $ne: null } } },
-      { $group: {
-        _id:         '$u.supervisorId',
-        teamSize:    { $addToSet: '$userId' },
-        count:       { $sum: 1 },
-        avgScore:    { $avg: '$finalScore' },
-        expertCount: { $sum: { $cond: [{ $eq:['$level','Expert'] }, 1, 0] } },
-      }},
-      { $lookup: { from:'users', localField:'_id', foreignField:'_id', as:'sup' }},
-      { $unwind: { path:'$sup', preserveNullAndEmptyArrays: true } },
-      { $project: {
-        supervisorName: '$sup.name',
-        supervisorDept: '$sup.department',
-        teamSize: { $size: '$teamSize' },
-        count:1, avgScore:{ $round:['$avgScore',1] }, expertCount:1,
-      }},
-      { $sort: { avgScore: -1 } },
-      { $limit: 10 },
-    ]),
-  ]);
-
-  res.status(200).json({
-    status: 'success',
-    data: {
-      overall: overall[0] || buildEmptyStats().overall,
-      levelDistribution:   levelDist,
-      departmentStats,
-      competencyStats,
-      assessmentTypeStats,
-      purposeStats,
-      genderStats,
-      monthlyTrend: monthlyTrend.map(t => ({
-        ...t,
-        label: `${MONTH_NAMES[t._id.month - 1]} ${t._id.year}`,
-      })),
-      topEmployees,
-      bottomEmployees,
-      assessmentStats,
-      targetGroupStats,
-      positionStats,
-      scoreDistribution: scoreDistribution.map(b => ({
-        range: b._id === 100 ? '100' : `${b._id}–${b._id + 19}`,
-        count: b.count,
-        avgScore: parseFloat((b.avgScore || 0).toFixed(1)),
-      })),
-      supervisorStats,
-    },
-  });
-});
-
-const buildEmptyStats = () => ({
-  overall: { total:0, avgScore:0, maxScore:0, minScore:0, stdDev:0, pending:0, final:0,
-    uniqueEmployees:0, uniqueDepts:0, uniqueCompetencies:0, uniqueAssessments:0 },
-  levelDistribution: [], departmentStats: [], competencyStats: [],
-  assessmentTypeStats: [], purposeStats: [], genderStats: [],
-  monthlyTrend: [], topEmployees: [], bottomEmployees: [],
-  assessmentStats: [], targetGroupStats: [], positionStats: [],
-  scoreDistribution: [], supervisorStats: [],
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// COMPETENCY × DEPARTMENT HEATMAP
-// ─────────────────────────────────────────────────────────────────────────────
-export const getHeatmap = asyncHandler(async (req, res) => {
-  const match = await buildResultMatch(req.query);
-  if (match === null) return res.status(200).json({ status:'success', data:{ heatmap:{} } });
-
-  const rows = await Result.aggregate([
-    { $match: match },
-    { $lookup: { from:'users', localField:'userId', foreignField:'_id', as:'u' }},
-    { $unwind: { path:'$u', preserveNullAndEmptyArrays: true } },
-    { $lookup: { from:'competencies', localField:'competencyId', foreignField:'_id', as:'c' }},
-    { $unwind: { path:'$c', preserveNullAndEmptyArrays: true } },
-    { $group: {
-      _id: { comp: '$c.name', dept: '$u.department' },
-      avgScore: { $avg: '$finalScore' },
-      count: { $sum: 1 },
-    }},
-    { $sort: { '_id.comp':1, '_id.dept':1 } },
-  ]);
-
-  const map = {};
-  rows.forEach(r => {
-    const comp = r._id.comp || 'Unknown';
-    const dept = r._id.dept || 'Unknown';
-    if (!map[comp]) map[comp] = [];
-    map[comp].push({ department: dept, avgScore: parseFloat(r.avgScore.toFixed(1)), count: r.count });
-  });
-
-  res.status(200).json({ status:'success', data:{ heatmap: map } });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// INDIVIDUAL EMPLOYEE DEEP DIVE
-// ─────────────────────────────────────────────────────────────────────────────
-export const getEmployeeDeepDive = asyncHandler(async (req, res, next) => {
-  const { userId } = req.params;
-  const oid = toOid(userId);
-  if (!oid) return next(new AppError('Invalid user ID.', 400));
-
-  const [employee, results, competencyProgress, assessmentHistory] = await Promise.all([
-    User.findById(oid).select('-passwordHash -refreshToken -passwordResetToken -passwordResetExpires').lean(),
-    Result.find({ userId: oid })
-      .populate('assessmentId', 'description type purpose targetGroup startDate endDate status')
-      .populate('competencyId', 'name category')
-      .sort({ createdAt: -1 })
-      .lean(),
-    // Competency-level aggregation for this employee
-    Result.aggregate([
-      { $match: { userId: oid } },
-      { $lookup: { from:'competencies', localField:'competencyId', foreignField:'_id', as:'c' }},
-      { $unwind: { path:'$c', preserveNullAndEmptyArrays: true } },
-      { $group: {
-        _id:          '$competencyId',
-        name:         { $first: '$c.name' },
-        category:     { $first: '$c.category' },
-        attempts:     { $sum: 1 },
-        latestScore:  { $last: '$finalScore' },
-        bestScore:    { $max: '$finalScore' },
-        avgScore:     { $avg: '$finalScore' },
-        latestLevel:  { $last: '$level' },
-        latestDate:   { $max: '$createdAt' },
-      }},
-      { $project: {
-        name:1, category:1, attempts:1,
-        latestScore:{ $round:['$latestScore',1] },
-        bestScore:{ $round:['$bestScore',1] },
-        avgScore:{ $round:['$avgScore',1] },
-        latestLevel:1, latestDate:1,
-      }},
-      { $sort: { latestDate: -1 } },
-    ]),
-    // Timeline
-    Result.aggregate([
-      { $match: { userId: oid } },
-      { $group: {
-        _id: { year: { $year:'$createdAt' }, month: { $month:'$createdAt' } },
-        count: { $sum: 1 },
-        avgScore: { $avg: '$finalScore' },
-      }},
-      { $sort: { '_id.year':1, '_id.month':1 } },
-      { $project: {
-        label: { $concat: [
-          { $arrayElemAt: [MONTH_NAMES, { $subtract: ['$_id.month',1] }] },
-          ' ',
-          { $toString: '$_id.year' }
-        ]},
-        count:1, avgScore:{ $round:['$avgScore',1] },
-      }},
-    ]),
-  ]);
-
-  if (!employee) return next(new AppError('Employee not found.', 404));
-
-  res.status(200).json({
-    status: 'success',
-    data: { employee, results, competencyProgress, assessmentHistory },
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// EXPORT — EXCEL (rich, multi-sheet)
-// ─────────────────────────────────────────────────────────────────────────────
-export const exportAdvancedExcel = asyncHandler(async (req, res, next) => {
-  const match = await buildResultMatch(req.query);
-  if (match === null) return next(new AppError('No data matching the selected filters.', 404));
-
-  // Cursor-based fetch (up to 5000 rows for Excel)
-  const results = await Result.aggregate(buildRichPipeline(match, { sort: { createdAt: -1 }, skip: 0, limit: 5000 }));
-  if (!results.length) return next(new AppError('No data matching the selected filters.', 404));
-
-  const wb = new ExcelJS.Workbook();
-  wb.creator = 'HR Competency System';
-  wb.created = new Date();
-
-  // ── Sheet 1: Raw Data ─────────────────────────────────────────────────────
-  const raw = wb.addWorksheet('Results Data');
-  const RED = 'FFC8102E';
-  const headerStyle = { font: { bold:true, color:{ argb:'FFFFFFFF' }, size:10 }, fill: { type:'pattern', pattern:'solid', fgColor:{ argb:RED } }, alignment: { vertical:'middle', wrapText:true } };
-
-  const cols = [
-    { header:'Employee Name',    key:'userName',           width:22 },
-    { header:'Employee ID',      key:'userEmployeeId',     width:14 },
-    { header:'Email',            key:'userEmail',          width:26 },
-    { header:'Department',       key:'userDepartment',     width:20 },
-    { header:'Position',         key:'userPosition',       width:20 },
-    { header:'Gender',           key:'userGender',         width:10 },
-    { header:'User Status',      key:'userStatus',         width:12 },
-    { header:'Competency',       key:'competencyName',     width:28 },
-    { header:'Competency Cat.',  key:'competencyCategory', width:24 },
-    { header:'Assessment',       key:'assessmentDescription', width:30 },
-    { header:'Assess. Type',     key:'assessmentType',     width:16 },
-    { header:'Purpose',          key:'assessmentPurpose',  width:22 },
-    { header:'Target Group',     key:'assessmentTargetGroup', width:16 },
-    { header:'Final Score (%)',  key:'finalScore',         width:14 },
-    { header:'Self Score (%)',   key:'selfScore',          width:13 },
-    { header:'Supervisor Score (%)', key:'supervisorScore',width:18 },
-    { header:'Level',            key:'level',              width:14 },
-    { header:'Result Status',    key:'status',             width:14 },
-    { header:'Total Questions',  key:'totalQuestions',     width:15 },
-    { header:'Correct Answers',  key:'correctAnswers',     width:15 },
-    { header:'Recommendation',   key:'recommendation',     width:40 },
-    { header:'Date',             key:'createdAt',          width:14 },
-  ];
-  raw.columns = cols;
-  const hRow = raw.getRow(1);
-  hRow.eachCell((cell, i) => {
-    if (cols[i-1]) {
-      cell.value = cols[i-1].header;
-      Object.assign(cell, headerStyle);
-    }
-  });
-  raw.autoFilter = { from:'A1', to:`${String.fromCharCode(64+cols.length)}1` };
-
-  results.forEach((r, i) => {
-    const row = raw.addRow({
-      ...r,
-      finalScore:      r.finalScore ?? '',
-      selfScore:       r.selfScore ?? '',
-      supervisorScore: r.supervisorScore ?? '',
-      createdAt:       r.createdAt ? new Date(r.createdAt).toLocaleDateString() : '',
-    });
-    if (i % 2 === 1) row.fill = { type:'pattern', pattern:'solid', fgColor:{ argb:'FFF9F9F9' } };
-    // Color-code level
-    const levelCell = row.getCell('level');
-    const lColors = { Expert:'FF16A34A', Advanced:'FF2563EB', Intermediate:'FFEA580C', Basic:'FFF59E0B' };
-    if (lColors[r.level]) levelCell.font = { bold:true, color:{ argb: lColors[r.level] } };
-  });
-  raw.getRow(1).height = 30;
-
-  // ── Sheet 2: Summary by Department ───────────────────────────────────────
-  const deptSheet = wb.addWorksheet('By Department');
-  deptSheet.columns = [
-    { header:'Department', key:'dept', width:24 },
-    { header:'Total Results', key:'count', width:14 },
-    { header:'Employees', key:'employeeCount', width:12 },
-    { header:'Avg Score (%)', key:'avgScore', width:14 },
-    { header:'Max Score', key:'maxScore', width:12 },
-    { header:'Min Score', key:'minScore', width:12 },
-    { header:'Basic', key:'basic', width:10 },
-    { header:'Intermediate', key:'intermediate', width:14 },
-    { header:'Advanced', key:'advanced', width:12 },
-    { header:'Expert', key:'expert', width:10 },
-  ];
-  deptSheet.getRow(1).eachCell(cell => Object.assign(cell, headerStyle));
-
-  // Aggregate department data from results
-  const deptMap = {};
-  results.forEach(r => {
-    const d = r.userDepartment || 'Unknown';
-    if (!deptMap[d]) deptMap[d] = { count:0, employees:new Set(), scores:[], basic:0, intermediate:0, advanced:0, expert:0, maxScore:-Infinity, minScore:Infinity };
-    const dm = deptMap[d];
-    dm.count++; dm.employees.add(r.userId?.toString()); dm.scores.push(r.finalScore || 0);
-    if (r.userDepartment) dm.maxScore = Math.max(dm.maxScore, r.finalScore);
-    if (r.userDepartment) dm.minScore = Math.min(dm.minScore, r.finalScore);
-    if (r.level === 'Basic') dm.basic++;
-    if (r.level === 'Intermediate') dm.intermediate++;
-    if (r.level === 'Advanced') dm.advanced++;
-    if (r.level === 'Expert') dm.expert++;
-  });
-  Object.entries(deptMap).sort((a,b) => {
-    const aAvg = a[1].scores.reduce((s,v)=>s+v,0)/a[1].scores.length;
-    const bAvg = b[1].scores.reduce((s,v)=>s+v,0)/b[1].scores.length;
-    return bAvg - aAvg;
-  }).forEach(([dept, d]) => {
-    const avg = d.scores.reduce((s,v)=>s+v,0)/d.scores.length;
-    deptSheet.addRow({ dept, count: d.count, employeeCount: d.employees.size, avgScore: parseFloat(avg.toFixed(1)), maxScore: d.maxScore === -Infinity ? '' : d.maxScore, minScore: d.minScore === Infinity ? '' : d.minScore, basic: d.basic, intermediate: d.intermediate, advanced: d.advanced, expert: d.expert });
-  });
-
-  // ── Sheet 3: Summary by Competency ───────────────────────────────────────
-  const compSheet = wb.addWorksheet('By Competency');
-  compSheet.columns = [
-    { header:'Competency', key:'name', width:32 },
-    { header:'Category', key:'category', width:24 },
-    { header:'Total', key:'count', width:10 },
-    { header:'Avg Score (%)', key:'avgScore', width:14 },
-    { header:'Max', key:'maxScore', width:10 },
-    { header:'Min', key:'minScore', width:10 },
-    { header:'Expert #', key:'expertCount', width:10 },
-    { header:'Basic #', key:'basicCount', width:10 },
-  ];
-  compSheet.getRow(1).eachCell(cell => Object.assign(cell, headerStyle));
-  const compMap = {};
-  results.forEach(r => {
-    const k = r.competencyName || 'Unknown';
-    if (!compMap[k]) compMap[k] = { category: r.competencyCategory||'', count:0, scores:[], expert:0, basic:0, max:-Infinity, min:Infinity };
-    const cm = compMap[k];
-    cm.count++; cm.scores.push(r.finalScore||0);
-    cm.max = Math.max(cm.max, r.finalScore||0); cm.min = Math.min(cm.min, r.finalScore||Infinity);
-    if (r.level==='Expert') cm.expert++; if (r.level==='Basic') cm.basic++;
-  });
-  Object.entries(compMap).sort((a,b) => {
-    const aA = a[1].scores.reduce((s,v)=>s+v,0)/a[1].scores.length;
-    const bA = b[1].scores.reduce((s,v)=>s+v,0)/b[1].scores.length;
-    return bA - aA;
-  }).forEach(([name, c]) => {
-    const avg = c.scores.reduce((s,v)=>s+v,0)/c.scores.length;
-    compSheet.addRow({ name, category:c.category, count:c.count, avgScore:parseFloat(avg.toFixed(1)), maxScore: c.max, minScore: c.min, expertCount:c.expert, basicCount:c.basic });
-  });
-
-  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-  res.setHeader('Content-Disposition', `attachment; filename="hr_report_${new Date().toISOString().split('T')[0]}.xlsx"`);
-  await wb.xlsx.write(res);
-  res.end();
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// EXPORT — PDF (summary report)
-// ─────────────────────────────────────────────────────────────────────────────
-export const exportAdvancedPDF = asyncHandler(async (req, res, next) => {
-  const match = await buildResultMatch(req.query);
-  if (match === null) return next(new AppError('No data matching the selected filters.', 404));
-
-  const results = await Result.aggregate(buildRichPipeline(match, { sort:{ createdAt:-1 }, skip:0, limit:2000 }));
-  if (!results.length) return next(new AppError('No data matching the selected filters.', 404));
-
-  const doc = new PDFDocument({ margin:45, size:'A4', bufferPages:true });
+  const doc = new PDFDocument({ margin: MARGIN, size: 'A4', bufferPages: true, autoFirstPage: true });
   res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename="hr_report_${new Date().toISOString().split('T')[0]}.pdf"`);
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   doc.pipe(res);
 
-  const W = 505; // usable width
-  const avg = results.reduce((s,r) => s + (r.finalScore||0), 0) / results.length;
-  const levelCounts = { Basic:0, Intermediate:0, Advanced:0, Expert:0 };
-  results.forEach(r => { if (levelCounts[r.level] !== undefined) levelCounts[r.level]++; });
+  // ── Cover / title block ──────────────────────────────────────────────────
+  // Red header band
+  doc.fillColor(BRAND_RED).rect(0, 0, PAGE_W, 70).fill();
+  doc.fillColor('#FFFFFF').fontSize(18).font('Helvetica-Bold')
+    .text(title, MARGIN, 22, { width: CONTENT_W, align: 'left' });
+  doc.fontSize(9).font('Helvetica').fillColor('rgba(255,255,255,0.8)')
+    .text(`Generated ${new Date().toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' })}  ·  ${reports.length} record${reports.length !== 1 ? 's' : ''}`, MARGIN, 48, { width: CONTENT_W });
 
-  // Title
-  doc.rect(0, 0, 595, 80).fill('#C8102E');
-  doc.fontSize(20).font('Helvetica-Bold').fillColor('#FFFFFF').text('HR Competency Assessment Report', 45, 20, { width: W });
-  doc.fontSize(10).font('Helvetica').fillColor('#FFCCCC').text(`Generated: ${new Date().toLocaleString()}  ·  ${results.length} records`, 45, 50, { width: W });
+  doc.y = 82;
 
-  doc.fillColor('#000').moveDown(4.5);
+  // Subtitle / filters
+  if (subtitle) {
+    doc.fillColor('#475569').fontSize(8).font('Helvetica')
+      .text(`Filters applied: ${subtitle}`, MARGIN, doc.y, { width: CONTENT_W });
+    doc.y += 14;
+  }
 
-  // Summary KPIs box
-  doc.rect(45, doc.y, W, 55).fillAndStroke('#F9FAFB', '#E5E7EB');
-  const kpiY = doc.y + 12;
-  const kpiCols = [
-    ['Total Records', results.length],
-    ['Avg Score', `${avg.toFixed(1)}%`],
-    ['Expert', levelCounts.Expert],
-    ['Advanced', levelCounts.Advanced],
-    ['Need Support', levelCounts.Basic],
+  // Summary stats row
+  const avg  = reports.length ? reports.reduce((s, r) => s + (r.overallScore || 0), 0) / reports.length : 0;
+  const dist = { Basic: 0, Intermediate: 0, Advanced: 0, Expert: 0 };
+  reports.forEach(r => { if (dist[r.overallLevel] !== undefined) dist[r.overallLevel]++; });
+
+  const statsY = doc.y + 4;
+  const statW  = CONTENT_W / 5;
+  const statItems = [
+    { label: 'Avg Score',    value: `${avg.toFixed(1)}%` },
+    { label: 'Basic',        value: String(dist.Basic) },
+    { label: 'Intermediate', value: String(dist.Intermediate) },
+    { label: 'Advanced',     value: String(dist.Advanced) },
+    { label: 'Expert',       value: String(dist.Expert) },
   ];
-  kpiCols.forEach((kpi, i) => {
-    const x = 55 + i * 98;
-    doc.fontSize(8).font('Helvetica').fillColor('#6B7280').text(kpi[0], x, kpiY, { width:90 });
-    doc.fontSize(14).font('Helvetica-Bold').fillColor('#111827').text(String(kpi[1]), x, kpiY + 14, { width:90 });
+  doc.fillColor(GRAY_BG).rect(MARGIN - 4, statsY - 4, CONTENT_W + 8, 32).fill();
+  statItems.forEach((s, i) => {
+    const x = MARGIN + i * statW;
+    doc.fillColor('#94A3B8').fontSize(7).font('Helvetica').text(s.label, x, statsY, { width: statW - 4, lineBreak: false });
+    doc.fillColor(BRAND_DARK).fontSize(11).font('Helvetica-Bold').text(s.value, x, statsY + 9, { width: statW - 4, lineBreak: false });
   });
-  doc.moveDown(4.5);
+  doc.y = statsY + 42;
 
-  // Table
-  const cols = ['Employee', 'Dept.', 'Competency', 'Type', 'Score', 'Level', 'Date'];
-  const colW = [110, 70, 110, 65, 45, 65, 55];
+  // ── Column definitions ───────────────────────────────────────────────────
+  // Adaptive: combined assessments show self+sup; others just score
+  const HAS_COMBINED = reports.some(r => r.assessment?.type === 'Combined');
+
+  const COLS_COMBINED = [
+    { x: MARGIN,      w: 88,  key: 'employee',    header: 'Employee' },
+    { x: MARGIN+90,   w: 65,  key: 'department',  header: 'Department' },
+    { x: MARGIN+157,  w: 65,  key: 'competency',  header: 'Competency' },
+    { x: MARGIN+224,  w: 52,  key: 'targetGroup', header: 'Target Group' },
+    { x: MARGIN+278,  w: 35,  key: 'type',        header: 'Type' },
+    { x: MARGIN+315,  w: 30,  key: 'self',        header: 'Self' },
+    { x: MARGIN+347,  w: 30,  key: 'sup',         header: 'Sup' },
+    { x: MARGIN+379,  w: 32,  key: 'score',       header: 'Score' },
+    { x: MARGIN+413,  w: 45,  key: 'level',       header: 'Level' },
+    { x: MARGIN+460,  w: 55,  key: 'date',        header: 'Date' },
+  ];
+  const COLS_SIMPLE = [
+    { x: MARGIN,      w: 100, key: 'employee',    header: 'Employee' },
+    { x: MARGIN+102,  w: 75,  key: 'department',  header: 'Department' },
+    { x: MARGIN+179,  w: 80,  key: 'competency',  header: 'Competency' },
+    { x: MARGIN+261,  w: 65,  key: 'targetGroup', header: 'Target Group' },
+    { x: MARGIN+328,  w: 48,  key: 'type',        header: 'Type' },
+    { x: MARGIN+378,  w: 35,  key: 'score',       header: 'Score' },
+    { x: MARGIN+415,  w: 50,  key: 'level',       header: 'Level' },
+    { x: MARGIN+467,  w: 48,  key: 'date',        header: 'Date' },
+  ];
+  const COLS = HAS_COMBINED ? COLS_COMBINED : COLS_SIMPLE;
+  const ROW_H = 13;
+
   const drawTableHeader = () => {
     const y = doc.y;
-    doc.rect(45, y - 3, W, 18).fill('#1F2937');
-    doc.fontSize(7).font('Helvetica-Bold').fillColor('#FFFFFF');
-    let x = 50;
-    cols.forEach((h, i) => { doc.text(h, x, y + 2, { width: colW[i] }); x += colW[i]; });
-    doc.moveDown(0.9);
+    doc.fillColor(BRAND_DARK).rect(MARGIN - 2, y - 3, CONTENT_W + 4, ROW_H + 2).fill();
+    doc.fillColor('#FFFFFF').fontSize(7).font('Helvetica-Bold');
+    COLS.forEach(c => doc.text(c.header, c.x, y, { width: c.w, lineBreak: false }));
+    doc.y = y + ROW_H + 2;
   };
+
   drawTableHeader();
 
-  results.forEach((r, idx) => {
-    if (doc.y > 760) { doc.addPage(); drawTableHeader(); }
-    const y = doc.y;
-    const bg = idx % 2 === 0 ? '#FFFFFF' : '#F9FAFB';
-    doc.rect(45, y - 2, W, 16).fill(bg);
-    doc.fontSize(7).font('Helvetica').fillColor('#374151');
-    let x = 50;
-    const vals = [
-      (r.userName||'—').substring(0,16),
-      (r.userDepartment||'—').substring(0,10),
-      (r.competencyName||'—').substring(0,16),
-      (r.assessmentType||'—'),
-      `${(r.finalScore||0).toFixed(1)}%`,
-      r.level||'—',
-      r.createdAt ? new Date(r.createdAt).toLocaleDateString() : '—',
-    ];
-    vals.forEach((v, i) => { doc.text(v, x, y + 2, { width: colW[i], lineBreak:false }); x += colW[i]; });
-    doc.moveDown(0.7);
+  reports.forEach((report, ri) => {
+    const isCombined = report.assessment?.type === 'Combined';
+    const empName  = (report.user?.name || 'N/A').substring(0, 18);
+    const dept     = (report.user?.department || '').substring(0, 14);
+    const date     = report.generatedAt ? new Date(report.generatedAt).toLocaleDateString('en-GB') : '—';
+    const rows     = report.competencyResults?.length
+      ? report.competencyResults
+      : [{ competencyName: '—', finalScore: report.overallScore || 0, level: report.overallLevel || '—', scoreDetails: {}, category: '' }];
+
+    rows.forEach((cr, ci) => {
+      if (doc.y > 760) { doc.addPage(); drawTableHeader(); }
+      const y  = doc.y;
+      const bg = ri % 2 === 0 ? '#FFFFFF' : GRAY_BG;
+      doc.fillColor(bg).rect(MARGIN - 2, y - 2, CONTENT_W + 4, ROW_H).fill();
+      doc.fontSize(7).font('Helvetica').fillColor(BRAND_DARK);
+
+      const targetGroup = (report.assessment?.targetGroup || '—').substring(0, 12);
+      const typeShort   = isCombined ? 'Combined' : (report.assessment?.type || '—').substring(0, 10);
+      const compName    = (cr.competencyName || '—').substring(0, 20);
+
+      if (HAS_COMBINED) {
+        const vals = {
+          employee:    ci === 0 ? empName : '',
+          department:  ci === 0 ? dept : '',
+          competency:  compName,
+          targetGroup: ci === 0 ? targetGroup : '',
+          type:        ci === 0 ? typeShort : '',
+          self:        isCombined && cr.scoreDetails?.selfScore != null ? `${cr.scoreDetails.selfScore}%` : (isCombined ? '—' : ''),
+          sup:         isCombined && cr.scoreDetails?.supervisorScore != null ? `${cr.scoreDetails.supervisorScore}%` : (isCombined ? '—' : ''),
+          score:       `${cr.finalScore ?? 0}%`,
+          level:       cr.level || '—',
+          date:        ci === 0 ? date : '',
+        };
+        COLS.forEach(c => {
+          if (c.key === 'level' && cr.level) {
+            doc.fillColor(levelColor(cr.level)).text(String(vals[c.key] || ''), c.x, y, { width: c.w, lineBreak: false });
+            doc.fillColor(BRAND_DARK);
+          } else {
+            doc.text(String(vals[c.key] || ''), c.x, y, { width: c.w, lineBreak: false });
+          }
+        });
+      } else {
+        const vals = {
+          employee:    ci === 0 ? empName : '',
+          department:  ci === 0 ? dept : '',
+          competency:  compName,
+          targetGroup: ci === 0 ? targetGroup : '',
+          type:        ci === 0 ? typeShort : '',
+          score:       `${cr.finalScore ?? 0}%`,
+          level:       cr.level || '—',
+          date:        ci === 0 ? date : '',
+        };
+        COLS.forEach(c => {
+          if (c.key === 'level' && cr.level) {
+            doc.fillColor(levelColor(cr.level)).text(String(vals[c.key] || ''), c.x, y, { width: c.w, lineBreak: false });
+            doc.fillColor(BRAND_DARK);
+          } else {
+            doc.text(String(vals[c.key] || ''), c.x, y, { width: c.w, lineBreak: false });
+          }
+        });
+      }
+      doc.y = y + ROW_H;
+    });
+
+    // Overall row for multi-competency reports
+    if (rows.length > 1) {
+      if (doc.y > 760) { doc.addPage(); drawTableHeader(); }
+      const y = doc.y;
+      doc.fillColor('#EFF6FF').rect(MARGIN - 2, y - 1, CONTENT_W + 4, ROW_H - 1).fill();
+      doc.fontSize(7).font('Helvetica-Bold');
+      const overallX = HAS_COMBINED ? COLS.find(c => c.key === 'competency')?.x : COLS.find(c => c.key === 'competency')?.x;
+      const scoreX   = COLS.find(c => c.key === 'score')?.x;
+      const levelX   = COLS.find(c => c.key === 'level')?.x;
+      if (overallX) doc.fillColor('#1D4ED8').text('OVERALL', overallX, y, { width: 60, lineBreak: false });
+      if (scoreX)   doc.fillColor('#1D4ED8').text(`${report.overallScore ?? 0}%`, scoreX, y, { width: 35, lineBreak: false });
+      if (levelX)   doc.fillColor(levelColor(report.overallLevel)).text(report.overallLevel || '', levelX, y, { width: 50, lineBreak: false });
+      doc.y = y + ROW_H + 1;
+    }
+
+    // Divider between employees
+    doc.strokeColor(GRAY_LINE).lineWidth(0.3).moveTo(MARGIN, doc.y).lineTo(PAGE_W - MARGIN, doc.y).stroke();
+    doc.y += 1;
   });
 
-  // Footer on all pages
+  // ── Footer on every page ─────────────────────────────────────────────────
   const range = doc.bufferedPageRange();
-  for (let i = range.start; i < range.start + range.count; i++) {
-    doc.switchToPage(i);
-    doc.fontSize(7).font('Helvetica').fillColor('#9CA3AF')
-      .text(`Page ${i - range.start + 1} of ${range.count}  ·  HR Competency Assessment System`, 45, 820, { width: W, align:'center' });
+  for (let i = 0; i < range.count; i++) {
+    doc.switchToPage(range.start + i);
+    doc.fillColor(BRAND_RED).rect(0, doc.page.height - 28, PAGE_W, 28).fill();
+    doc.fillColor('#FFFFFF').fontSize(7).font('Helvetica')
+      .text(`Competency Assessment System  ·  Confidential`, MARGIN, doc.page.height - 18, { width: CONTENT_W / 2, lineBreak: false });
+    doc.text(`Page ${i + 1} of ${range.count}`, MARGIN, doc.page.height - 18, { width: CONTENT_W, align: 'right', lineBreak: false });
   }
 
   doc.end();
-});
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
-// EMPLOYEE SELECTOR (for HR admin dropdowns)
+// EXCEL EXPORT  — professional multi-sheet workbook
 // ─────────────────────────────────────────────────────────────────────────────
-export const getEmployeeList = asyncHandler(async (req, res) => {
-  const { search, department, limit = 100 } = req.query;
-  const filter = {};
-  if (department) filter.department = department;
-  if (search) filter.$or = [
-    { name: { $regex: search, $options:'i' } },
-    { email: { $regex: search, $options:'i' } },
-    { employeeId: { $regex: search, $options:'i' } },
+const generateConsolidatedExcel = async (res, reports, { title, subtitle, filename }) => {
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'Competency Assessment System';
+  wb.created = new Date();
+
+  const RED    = 'FFC8102E';
+  const DARK   = 'FF1e293b';
+  const WHITE  = 'FFFFFFFF';
+  const GRAY   = 'FFF8FAFC';
+  const BLUE   = 'FFdbeafe';
+  const EXPERT_G  = 'FFdcfce7';
+  const ADV_B     = 'FFdbeafe';
+  const INT_Y     = 'FFfef3c7';
+  const BASIC_R   = 'FFfee2e2';
+
+  const levelFill = (level) => {
+    if (level === 'Expert')       return EXPERT_G;
+    if (level === 'Advanced')     return ADV_B;
+    if (level === 'Intermediate') return INT_Y;
+    return BASIC_R;
+  };
+
+  const headerStyle = (fill = DARK) => ({
+    font: { bold: true, color: { argb: WHITE }, size: 10 },
+    fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: fill } },
+    alignment: { vertical: 'middle', horizontal: 'center', wrapText: false },
+    border: { bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } } },
+  });
+
+  const applyHeader = (row, fillArgb = DARK) => {
+    Object.assign(row, headerStyle(fillArgb));
+    row.height = 24;
+    row.eachCell(cell => Object.assign(cell, headerStyle(fillArgb)));
+  };
+
+  const addTitleBlock = (sheet, colCount) => {
+    // Row 1: title
+    sheet.addRow([title]);
+    sheet.getRow(1).height = 32;
+    sheet.getRow(1).getCell(1).font = { bold: true, size: 14, color: { argb: RED } };
+    sheet.getRow(1).getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF1F2' } };
+    sheet.mergeCells(1, 1, 1, colCount);
+
+    // Row 2: meta
+    const meta = `Generated: ${new Date().toLocaleString()}   |   Records: ${reports.length}${subtitle ? `   |   Filters: ${subtitle}` : ''}`;
+    sheet.addRow([meta]);
+    sheet.getRow(2).getCell(1).font = { italic: true, size: 8, color: { argb: 'FF64748B' } };
+    sheet.mergeCells(2, 1, 2, colCount);
+    sheet.addRow([]); // spacer
+  };
+
+  // ── Sheet 1: Full Detail ─────────────────────────────────────────────────
+  const sh1 = wb.addWorksheet('Full Detail');
+  sh1.columns = [
+    { width: 22 }, { width: 12 }, { width: 18 }, { width: 18 }, { width: 10 },
+    { width: 26 }, { width: 16 }, { width: 22 }, { width: 15 },
+    { width: 12 }, { width: 12 },
+    { width: 26 }, { width: 16 }, { width: 12 }, { width: 16 }, { width: 10 }, { width: 14 },
+    { width: 45 }, { width: 13 }, { width: 13 }, { width: 16 },
   ];
-  const employees = await User.find(filter)
-    .select('_id name email employeeId department position gender status')
-    .sort({ name: 1 })
-    .limit(parseInt(limit))
-    .lean();
-  res.status(200).json({ status:'success', data:{ employees } });
+  addTitleBlock(sh1, 21);
+
+  const h1 = sh1.addRow([
+    'Employee', 'Emp ID', 'Department', 'Position', 'Gender',
+    'Assessment', 'Type', 'Purpose', 'Target Group', 'Opens', 'Closes',
+    'Competency', 'Category', 'Self Score', 'Sup Score', 'Final Score', 'Level',
+    'Recommendation', 'Overall Score', 'Overall Level', 'Generated',
+  ]);
+  applyHeader(h1);
+
+  reports.forEach((report, ri) => {
+    const u = report.user || {};
+    const a = report.assessment || {};
+    const isCombined = a.type === 'Combined';
+    const rowBg = ri % 2 === 0 ? 'FFFFFFFF' : GRAY;
+    const genAt = report.generatedAt ? new Date(report.generatedAt).toLocaleDateString() : '';
+    const crs = report.competencyResults?.length
+      ? report.competencyResults
+      : [{ competencyName: '', finalScore: report.overallScore, level: report.overallLevel, recommendation: '' }];
+
+    crs.forEach((cr, ci) => {
+      const row = sh1.addRow([
+        ci === 0 ? u.name       || '' : '',
+        ci === 0 ? u.employeeId || '' : '',
+        ci === 0 ? u.department || '' : '',
+        ci === 0 ? u.position   || '' : '',
+        ci === 0 ? u.gender     || '' : '',
+        ci === 0 ? a.description || '' : '',
+        ci === 0 ? a.type        || '' : '',
+        ci === 0 ? a.purpose     || '' : '',
+        ci === 0 ? a.targetGroup || '' : '',
+        ci === 0 && a.startDate ? new Date(a.startDate).toLocaleDateString() : '',
+        ci === 0 && a.endDate   ? new Date(a.endDate).toLocaleDateString()   : '',
+        cr.competencyName || '',
+        cr.category || '',
+        isCombined ? (cr.scoreDetails?.selfScore ?? '') : 'N/A',
+        isCombined ? (cr.scoreDetails?.supervisorScore ?? '') : 'N/A',
+        cr.finalScore ?? '',
+        cr.level || '',
+        cr.recommendation || '',
+        ci === 0 ? report.overallScore ?? '' : '',
+        ci === 0 ? report.overallLevel || '' : '',
+        ci === 0 ? genAt : '',
+      ]);
+      row.height = 16;
+      row.eachCell(cell => {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: rowBg } };
+        cell.border = { bottom: { style: 'hair', color: { argb: 'FFE2E8F0' } } };
+      });
+      // Colour level cell
+      if (cr.level) {
+        const lvlCell = row.getCell(17);
+        lvlCell.font = { bold: true, size: 9 };
+        lvlCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: levelFill(cr.level) } };
+      }
+    });
+
+    // Overall summary row for multi-competency
+    if (crs.length > 1) {
+      const sr = sh1.addRow(Array(21).fill(''));
+      sr.getCell(12).value = '▶ OVERALL';
+      sr.getCell(19).value = report.overallScore;
+      sr.getCell(20).value = report.overallLevel;
+      sr.height = 15;
+      sr.eachCell(cell => { cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: BLUE } }; });
+      sr.getCell(12).font = { bold: true, color: { argb: 'FF1D4ED8' }, size: 9 };
+      sr.getCell(19).font = { bold: true, color: { argb: 'FF1D4ED8' } };
+      if (report.overallLevel) {
+        sr.getCell(20).font = { bold: true };
+        sr.getCell(20).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: levelFill(report.overallLevel) } };
+      }
+    }
+  });
+  sh1.autoFilter = { from: { row: 4, column: 1 }, to: { row: 4, column: 21 } };
+  sh1.views = [{ state: 'frozen', ySplit: 4 }];
+
+  // ── Sheet 2: By Employee ─────────────────────────────────────────────────
+  const sh2 = wb.addWorksheet('By Employee');
+  sh2.columns = [{ width: 22 },{ width: 13 },{ width: 18 },{ width: 18 },{ width: 10 },{ width: 10 },{ width: 12 },{ width: 10 },{ width: 14 },{ width: 12 },{ width: 10 }];
+  addTitleBlock(sh2, 11);
+  const h2 = sh2.addRow(['Employee', 'Emp ID', 'Department', 'Position', 'Gender', 'Reports', 'Avg Score', 'Basic', 'Intermediate', 'Advanced', 'Expert']);
+  applyHeader(h2, RED);
+
+  const empMap = {};
+  reports.forEach(r => {
+    const k = r.user?.userId?.toString() || 'x';
+    if (!empMap[k]) empMap[k] = { name: r.user?.name||'', empId: r.user?.employeeId||'', dept: r.user?.department||'', pos: r.user?.position||'', gender: r.user?.gender||'', count: 0, total: 0, levels: { Basic:0,Intermediate:0,Advanced:0,Expert:0 } };
+    empMap[k].count++; empMap[k].total += r.overallScore||0;
+    if (empMap[k].levels[r.overallLevel] !== undefined) empMap[k].levels[r.overallLevel]++;
+  });
+  Object.values(empMap).forEach((e, i) => {
+    const avg = e.count ? parseFloat((e.total/e.count).toFixed(1)) : 0;
+    const r = sh2.addRow([e.name, e.empId, e.dept, e.pos, e.gender, e.count, avg, e.levels.Basic, e.levels.Intermediate, e.levels.Advanced, e.levels.Expert]);
+    r.height = 16;
+    if (i % 2 === 1) r.eachCell(c => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: GRAY } }; });
+  });
+  sh2.autoFilter = { from: { row: 4, column: 1 }, to: { row: 4, column: 11 } };
+
+  // ── Sheet 3: By Assessment ───────────────────────────────────────────────
+  const sh3 = wb.addWorksheet('By Assessment');
+  sh3.columns = [{ width: 35 },{ width: 16 },{ width: 22 },{ width: 15 },{ width: 14 },{ width: 12 },{ width: 10 },{ width: 14 },{ width: 12 },{ width: 10 }];
+  addTitleBlock(sh3, 10);
+  const h3 = sh3.addRow(['Assessment', 'Type', 'Purpose', 'Target Group', 'Participants', 'Avg Score', 'Basic', 'Intermediate', 'Advanced', 'Expert']);
+  applyHeader(h3, RED);
+
+  const aMap = {};
+  reports.forEach(r => {
+    const k = r.assessment?.assessmentId?.toString() || 'x';
+    if (!aMap[k]) aMap[k] = { desc: r.assessment?.description||'', type: r.assessment?.type||'', purpose: r.assessment?.purpose||'', tg: r.assessment?.targetGroup||'', count:0, total:0, levels:{Basic:0,Intermediate:0,Advanced:0,Expert:0} };
+    aMap[k].count++; aMap[k].total += r.overallScore||0;
+    if (aMap[k].levels[r.overallLevel] !== undefined) aMap[k].levels[r.overallLevel]++;
+  });
+  Object.values(aMap).forEach((a, i) => {
+    const avg = a.count ? parseFloat((a.total/a.count).toFixed(1)) : 0;
+    const r = sh3.addRow([a.desc, a.type, a.purpose, a.tg, a.count, avg, a.levels.Basic, a.levels.Intermediate, a.levels.Advanced, a.levels.Expert]);
+    r.height = 16;
+    if (i % 2 === 1) r.eachCell(c => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: GRAY } }; });
+  });
+  sh3.autoFilter = { from: { row: 4, column: 1 }, to: { row: 4, column: 10 } };
+
+  // ── Sheet 4: By Competency ───────────────────────────────────────────────
+  const sh4 = wb.addWorksheet('By Competency');
+  sh4.columns = [{ width: 28 },{ width: 16 },{ width: 12 },{ width: 12 },{ width: 10 },{ width: 10 },{ width: 10 },{ width: 14 },{ width: 12 },{ width: 10 }];
+  addTitleBlock(sh4, 10);
+  const h4 = sh4.addRow(['Competency', 'Category', 'Assessments', 'Avg Score', 'Max', 'Min', 'Basic', 'Intermediate', 'Advanced', 'Expert']);
+  applyHeader(h4, RED);
+
+  const cMap = {};
+  reports.forEach(r => {
+    (r.competencyResults || []).forEach(cr => {
+      const k = cr.competencyName || 'x';
+      if (!cMap[k]) cMap[k] = { cat: cr.category||'', count:0, total:0, max:0, min:100, levels:{Basic:0,Intermediate:0,Advanced:0,Expert:0} };
+      cMap[k].count++; cMap[k].total += cr.finalScore||0;
+      cMap[k].max = Math.max(cMap[k].max, cr.finalScore||0);
+      cMap[k].min = Math.min(cMap[k].min, cr.finalScore||100);
+      if (cMap[k].levels[cr.level] !== undefined) cMap[k].levels[cr.level]++;
+    });
+  });
+  Object.entries(cMap).forEach(([name, c], i) => {
+    const avg = c.count ? parseFloat((c.total/c.count).toFixed(1)) : 0;
+    const r = sh4.addRow([name, c.cat, c.count, avg, c.max, c.min, c.levels.Basic, c.levels.Intermediate, c.levels.Advanced, c.levels.Expert]);
+    r.height = 16;
+    if (i % 2 === 1) r.eachCell(cell => { cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: GRAY } }; });
+  });
+  sh4.autoFilter = { from: { row: 4, column: 1 }, to: { row: 4, column: 10 } };
+
+  // ── Sheet 5: By Department ───────────────────────────────────────────────
+  const sh5 = wb.addWorksheet('By Department');
+  sh5.columns = [{ width: 22 },{ width: 12 },{ width: 10 },{ width: 12 },{ width: 10 },{ width: 10 },{ width: 10 },{ width: 14 },{ width: 12 },{ width: 10 }];
+  addTitleBlock(sh5, 10);
+  const h5 = sh5.addRow(['Department', 'Employees', 'Reports', 'Avg Score', 'Max', 'Min', 'Basic', 'Intermediate', 'Advanced', 'Expert']);
+  applyHeader(h5, RED);
+
+  const dMap = {};
+  reports.forEach(r => {
+    const k = r.user?.department || 'Unspecified';
+    if (!dMap[k]) dMap[k] = { emps: new Set(), count:0, total:0, max:0, min:100, levels:{Basic:0,Intermediate:0,Advanced:0,Expert:0} };
+    dMap[k].count++; dMap[k].total += r.overallScore||0;
+    dMap[k].max = Math.max(dMap[k].max, r.overallScore||0);
+    dMap[k].min = Math.min(dMap[k].min, r.overallScore||100);
+    if (r.user?.userId) dMap[k].emps.add(r.user.userId.toString());
+    if (dMap[k].levels[r.overallLevel] !== undefined) dMap[k].levels[r.overallLevel]++;
+  });
+  Object.entries(dMap).forEach(([dept, d], i) => {
+    const avg = d.count ? parseFloat((d.total/d.count).toFixed(1)) : 0;
+    const r = sh5.addRow([dept, d.emps.size, d.count, avg, d.max, d.min, d.levels.Basic, d.levels.Intermediate, d.levels.Advanced, d.levels.Expert]);
+    r.height = 16;
+    if (i % 2 === 1) r.eachCell(c => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: GRAY } }; });
+  });
+  sh5.autoFilter = { from: { row: 4, column: 1 }, to: { row: 4, column: 10 } };
+
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  await wb.xlsx.write(res);
+  res.end();
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ENDPOINTS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ─── LIST ALL REPORTS (paginated + all filters) ───────────────────────────────
+export const getReports = asyncHandler(async (req, res) => {
+  const { page = 1, limit = 20, sortBy = 'generatedAt', sortDir = 'desc' } = req.query;
+  const filter = await buildFilter(req.query, req.user);
+  const skip   = (parseInt(page) - 1) * parseInt(limit);
+  const sort   = { [sortBy]: sortDir === 'asc' ? 1 : -1 };
+
+  const [reports, total] = await Promise.all([
+    Report.find(filter).sort(sort).skip(skip).limit(parseInt(limit)).lean(),
+    Report.countDocuments(filter),
+  ]);
+
+  res.status(200).json({
+    status: 'success',
+    data: { reports, pagination: { total, page: parseInt(page), limit: parseInt(limit), totalPages: Math.ceil(total / parseInt(limit)) } },
+  });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// LEGACY — keep old endpoints working
-// ─────────────────────────────────────────────────────────────────────────────
-export { getHeatmap as getHeatmapLegacy };
+// ─── SINGLE REPORT ────────────────────────────────────────────────────────────
+export const getReportById = asyncHandler(async (req, res, next) => {
+  const report = await Report.findById(req.params.reportId).lean();
+  if (!report) return next(new AppError('Report not found.', 404));
+  if (req.user.role === 'EMPLOYEE' && report.user?.userId?.toString() !== req.user.id)
+    return next(new AppError('Access denied.', 403));
+  if (req.user.role === 'SUPERVISOR') {
+    const subs = await User.find({ supervisorId: req.user.id }).select('_id').lean();
+    if (!subs.map(s => s._id.toString()).includes(report.user?.userId?.toString()))
+      return next(new AppError('Access denied.', 403));
+  }
+  res.status(200).json({ status: 'success', data: { report } });
+});
+
+// ─── INDIVIDUAL REPORTS for a user ───────────────────────────────────────────
+export const getIndividualReports = asyncHandler(async (req, res, next) => {
+  const { userId } = req.params;
+  const oid = toObjectId(userId);
+  if (req.user.role === 'EMPLOYEE' && req.user.id !== userId)
+    return next(new AppError('Access denied.', 403));
+  if (req.user.role === 'SUPERVISOR') {
+    const emp = await User.findById(userId).lean();
+    if (!emp || emp.supervisorId?.toString() !== req.user.id)
+      return next(new AppError('Access denied.', 403));
+  }
+  const reports = await Report.find({ 'user.userId': oid }).sort({ generatedAt: -1 }).lean();
+  res.status(200).json({ status: 'success', data: { reports } });
+});
+
+// ─── DEPARTMENT SUMMARY ───────────────────────────────────────────────────────
+export const getDepartmentReports = asyncHandler(async (req, res) => {
+  const { department } = req.params;
+  const summary = await Report.aggregate([
+    { $match: { 'user.department': department } },
+    { $unwind: '$competencyResults' },
+    { $group: { _id: '$competencyResults.competencyName', avgScore: { $avg: '$competencyResults.finalScore' }, totalReports: { $sum: 1 }, levels: { $push: '$competencyResults.level' } } },
+    { $sort: { _id: 1 } },
+  ]);
+  const withDistribution = summary.map(item => {
+    const dist = { Basic: 0, Intermediate: 0, Advanced: 0, Expert: 0 };
+    item.levels.forEach(l => { if (dist[l] !== undefined) dist[l]++; });
+    return { competencyName: item._id, avgScore: parseFloat(item.avgScore.toFixed(2)), totalReports: item.totalReports, levelDistribution: dist };
+  });
+  res.status(200).json({ status: 'success', data: { department, summary: withDistribution } });
+});
+
+// ─── HEATMAP ──────────────────────────────────────────────────────────────────
+export const getHeatmap = asyncHandler(async (req, res) => {
+  const heatmap = await Report.aggregate([
+    { $unwind: '$competencyResults' },
+    { $group: { _id: { competency: '$competencyResults.competencyName', department: '$user.department' }, avgScore: { $avg: '$competencyResults.finalScore' }, count: { $sum: 1 } } },
+    { $sort: { '_id.competency': 1, '_id.department': 1 } },
+  ]);
+  const map = {};
+  heatmap.forEach(item => {
+    const comp = item._id.competency;
+    const dept = item._id.department || 'Unspecified';
+    if (!map[comp]) map[comp] = [];
+    map[comp].push({ department: dept, avgScore: parseFloat(item.avgScore.toFixed(2)), count: item.count });
+  });
+  res.status(200).json({ status: 'success', data: { heatmap: map } });
+});
+
+// ─── ANALYTICS / STATS ───────────────────────────────────────────────────────
+export const getReportStats = asyncHandler(async (req, res) => {
+  const match = await buildFilter(req.query, req.user);
+  // Remove role filter for stats if HR_ADMIN
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  const [overall, levelDist, deptStats, competencyStats, trendData, topPerformers, bottomPerformers, assessmentStats, genderStats, positionStats] = await Promise.all([
+    Report.aggregate([{ $match: match }, { $group: { _id: null, total: { $sum: 1 }, avgScore: { $avg: '$overallScore' }, maxScore: { $max: '$overallScore' }, minScore: { $min: '$overallScore' }, uniqueEmployees: { $addToSet: '$user.userId' }, uniqueDepts: { $addToSet: '$user.department' }, uniqueAssessments: { $addToSet: '$assessment.assessmentId' } } }, { $project: { total: 1, avgScore: { $round: ['$avgScore', 1] }, maxScore: 1, minScore: 1, uniqueEmployees: { $size: '$uniqueEmployees' }, uniqueDepts: { $size: '$uniqueDepts' }, uniqueAssessments: { $size: '$uniqueAssessments' } } }]),
+    Report.aggregate([{ $match: match }, { $group: { _id: '$overallLevel', count: { $sum: 1 }, avgScore: { $avg: '$overallScore' } } }, { $sort: { avgScore: -1 } }]),
+    Report.aggregate([{ $match: match }, { $group: { _id: '$user.department', count: { $sum: 1 }, avgScore: { $avg: '$overallScore' }, maxScore: { $max: '$overallScore' }, minScore: { $min: '$overallScore' }, employeeCount: { $addToSet: '$user.userId' } } }, { $project: { count: 1, avgScore: { $round: ['$avgScore', 1] }, maxScore: 1, minScore: 1, employeeCount: { $size: '$employeeCount' } } }, { $sort: { avgScore: -1 } }, { $limit: 12 }]),
+    Report.aggregate([{ $match: match }, { $unwind: '$competencyResults' }, { $group: { _id: '$competencyResults.competencyName', competencyId: { $first: '$competencyResults.competencyId' }, category: { $first: '$competencyResults.category' }, count: { $sum: 1 }, avgScore: { $avg: '$competencyResults.finalScore' }, maxScore: { $max: '$competencyResults.finalScore' }, minScore: { $min: '$competencyResults.finalScore' }, expertCount: { $sum: { $cond: [{ $eq: ['$competencyResults.level', 'Expert'] }, 1, 0] } }, basicCount: { $sum: { $cond: [{ $eq: ['$competencyResults.level', 'Basic'] }, 1, 0] } } } }, { $sort: { avgScore: -1 } }]),
+    Report.aggregate([{ $match: { ...match, generatedAt: { $gte: new Date(Date.now() - 365*24*60*60*1000) } } }, { $group: { _id: { year: { $year: '$generatedAt' }, month: { $month: '$generatedAt' } }, count: { $sum: 1 }, avgScore: { $avg: '$overallScore' } } }, { $sort: { '_id.year': 1, '_id.month': 1 } }]),
+    Report.aggregate([{ $match: match }, { $group: { _id: '$user.userId', name: { $first: '$user.name' }, department: { $first: '$user.department' }, position: { $first: '$user.position' }, avgScore: { $avg: '$overallScore' }, count: { $sum: 1 }, expertCount: { $sum: { $cond: [{ $eq: ['$overallLevel', 'Expert'] }, 1, 0] } } } }, { $sort: { avgScore: -1 } }, { $limit: 5 }]),
+    Report.aggregate([{ $match: match }, { $group: { _id: '$user.userId', name: { $first: '$user.name' }, department: { $first: '$user.department' }, avgScore: { $avg: '$overallScore' }, count: { $sum: 1 }, basicCount: { $sum: { $cond: [{ $eq: ['$overallLevel', 'Basic'] }, 1, 0] } } } }, { $sort: { avgScore: 1 } }, { $limit: 5 }]),
+    Report.aggregate([{ $match: match }, { $group: { _id: '$assessment.assessmentId', description: { $first: '$assessment.description' }, type: { $first: '$assessment.type' }, purpose: { $first: '$assessment.purpose' }, targetGroup: { $first: '$assessment.targetGroup' }, count: { $sum: 1 }, avgScore: { $avg: '$overallScore' }, maxScore: { $max: '$overallScore' }, minScore: { $min: '$overallScore' } } }, { $sort: { avgScore: -1 } }, { $limit: 20 }]),
+    Report.aggregate([{ $match: match }, { $group: { _id: '$user.gender', count: { $sum: 1 }, avgScore: { $avg: '$overallScore' } } }]),
+    Report.aggregate([{ $match: match }, { $group: { _id: '$user.position', count: { $sum: 1 }, avgScore: { $avg: '$overallScore' } } }, { $sort: { avgScore: -1 } }, { $limit: 10 }]),
+  ]);
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      overall: overall[0] || { total: 0, avgScore: 0, maxScore: 0, minScore: 0, uniqueEmployees: 0, uniqueDepts: 0, uniqueAssessments: 0 },
+      levelDistribution: levelDist,
+      departmentBreakdown: deptStats,
+      competencyBreakdown: competencyStats,
+      monthlyTrend: trendData.map(t => ({ month: `${MONTHS[t._id.month-1]} ${t._id.year}`, count: t.count, avgScore: parseFloat(t.avgScore.toFixed(1)) })),
+      topPerformers, bottomPerformers,
+      assessmentBreakdown: assessmentStats,
+      genderBreakdown: genderStats,
+      positionBreakdown: positionStats,
+    },
+  });
+});
+
+// ─── FILTER OPTIONS (every distinct value for every dropdown) ─────────────────
+export const getReportFilterOptions = asyncHandler(async (req, res) => {
+  const [
+    departments, positions, genders,
+    competencies, competencyCategories,
+    assessments,
+    assessmentTypes, purposes, targetGroups,
+    levels, statuses,
+  ] = await Promise.all([
+    Report.distinct('user.department').then(a => a.filter(Boolean).sort()),
+    Report.distinct('user.position').then(a => a.filter(Boolean).sort()),
+    Report.distinct('user.gender').then(a => a.filter(Boolean).sort()),
+    Report.aggregate([
+      { $unwind: '$competencyResults' },
+      { $group: { _id: '$competencyResults.competencyId', name: { $first: '$competencyResults.competencyName' }, category: { $first: '$competencyResults.category' } } },
+      { $sort: { name: 1 } }
+    ]),
+    Report.distinct('competencyResults.category').then(a => a.filter(Boolean).sort()),
+    Report.aggregate([
+      { $group: { _id: '$assessment.assessmentId', description: { $first: '$assessment.description' }, type: { $first: '$assessment.type' }, purpose: { $first: '$assessment.purpose' }, targetGroup: { $first: '$assessment.targetGroup' } } },
+      { $sort: { description: 1 } }
+    ]),
+    Report.distinct('assessment.type').then(a => a.filter(Boolean).sort()),
+    Report.distinct('assessment.purpose').then(a => a.filter(Boolean).sort()),
+    Report.distinct('assessment.targetGroup').then(a => a.filter(Boolean).sort()),
+    Promise.resolve(['Basic', 'Intermediate', 'Advanced', 'Expert']),
+    Promise.resolve(['PARTIAL', 'COMPLETE']),
+  ]);
+
+  // Score range meta
+  const scoreRange = await Report.aggregate([
+    { $group: { _id: null, min: { $min: '$overallScore' }, max: { $max: '$overallScore' } } }
+  ]);
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      // User
+      departments, positions, genders,
+      // Competency
+      competencies: competencies.map(c => ({ _id: c._id, name: c.name, category: c.category })),
+      competencyCategories,
+      // Assessment
+      assessments,
+      assessmentTypes, purposes, targetGroups,
+      // Result
+      levels, statuses,
+      // Score meta
+      scoreRange: scoreRange[0] ? { min: Math.floor(scoreRange[0].min), max: Math.ceil(scoreRange[0].max) } : { min: 0, max: 100 },
+    },
+  });
+});
+
+// ─── EMPLOYEE LIST ────────────────────────────────────────────────────────────
+export const getEmployees = asyncHandler(async (req, res) => {
+  let filter = {};
+  if (req.user.role === 'SUPERVISOR') filter.supervisorId = req.user.id;
+  else if (req.user.role === 'EMPLOYEE') filter._id = req.user.id;
+  const employees = await User.find(filter).select('_id name email employeeId department position gender').sort({ name: 1 }).lean();
+  res.status(200).json({ status: 'success', data: { employees } });
+});
+
+// ─── EXPORT PDF ───────────────────────────────────────────────────────────────
+export const exportFilteredPDF = asyncHandler(async (req, res, next) => {
+  const filter = await buildFilter(req.query, req.user);
+  const reports = await Report.find(filter).sort({ generatedAt: -1 }).limit(3000).lean();
+  if (!reports.length) return next(new AppError('No reports found.', 404));
+  generateConsolidatedPDF(res, reports, {
+    title: 'Competency Assessment Reports',
+    subtitle: buildFilterSummary(req.query),
+    filename: `reports_${Date.now()}.pdf`,
+  });
+});
+
+// ─── EXPORT EXCEL ─────────────────────────────────────────────────────────────
+export const exportFilteredExcel = asyncHandler(async (req, res, next) => {
+  const filter = await buildFilter(req.query, req.user);
+  const reports = await Report.find(filter).sort({ generatedAt: -1 }).limit(10000).lean();
+  if (!reports.length) return next(new AppError('No reports found.', 404));
+  await generateConsolidatedExcel(res, reports, {
+    title: 'Competency Assessment Reports',
+    subtitle: buildFilterSummary(req.query),
+    filename: `reports_${Date.now()}.xlsx`,
+  });
+});
+
+// ─── EXPORT INDIVIDUAL PDF ────────────────────────────────────────────────────
+export const exportIndividualPDF = asyncHandler(async (req, res, next) => {
+  const { userId } = req.params;
+  const oid = toObjectId(userId);
+  if (req.user.role === 'EMPLOYEE' && req.user.id !== userId) return next(new AppError('Access denied.', 403));
+  if (req.user.role === 'SUPERVISOR') {
+    const emp = await User.findById(userId).lean();
+    if (!emp || emp.supervisorId?.toString() !== req.user.id) return next(new AppError('Access denied.', 403));
+  }
+  const reports = await Report.find({ 'user.userId': oid }).sort({ generatedAt: -1 }).lean();
+  if (!reports.length) return next(new AppError('No reports found.', 404));
+  const name = reports[0]?.user?.name || 'Employee';
+  generateConsolidatedPDF(res, reports, {
+    title: `Individual Report — ${name}`,
+    subtitle: `Dept: ${reports[0]?.user?.department || 'N/A'}  |  Position: ${reports[0]?.user?.position || 'N/A'}`,
+    filename: `report_${name.replace(/\s+/g, '_')}_${Date.now()}.pdf`,
+  });
+});
+
+// ─── EXPORT INDIVIDUAL EXCEL ──────────────────────────────────────────────────
+export const exportIndividualExcel = asyncHandler(async (req, res, next) => {
+  const { userId } = req.params;
+  const oid = toObjectId(userId);
+  if (req.user.role === 'EMPLOYEE' && req.user.id !== userId) return next(new AppError('Access denied.', 403));
+  if (req.user.role === 'SUPERVISOR') {
+    const emp = await User.findById(userId).lean();
+    if (!emp || emp.supervisorId?.toString() !== req.user.id) return next(new AppError('Access denied.', 403));
+  }
+  const reports = await Report.find({ 'user.userId': oid }).sort({ generatedAt: -1 }).lean();
+  if (!reports.length) return next(new AppError('No reports found.', 404));
+  const name = reports[0]?.user?.name || 'Employee';
+  await generateConsolidatedExcel(res, reports, {
+    title: `Individual Report — ${name}`,
+    subtitle: `Dept: ${reports[0]?.user?.department || 'N/A'}`,
+    filename: `report_${name.replace(/\s+/g, '_')}_${Date.now()}.xlsx`,
+  });
+});
+
+// ─── LEGACY JSON ──────────────────────────────────────────────────────────────
+export const exportReports = asyncHandler(async (req, res, next) => {
+  const { userId } = req.params;
+  const oid = toObjectId(userId);
+  if (req.user.role === 'EMPLOYEE' && req.user.id !== userId) return next(new AppError('Access denied.', 403));
+  const reports = await Report.find({ 'user.userId': oid }).sort({ generatedAt: -1 }).lean();
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Content-Disposition', `attachment; filename="reports_${userId}.json"`);
+  res.status(200).json(reports);
+});

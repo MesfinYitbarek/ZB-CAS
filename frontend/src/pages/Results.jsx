@@ -177,6 +177,35 @@ const QuestionDetailsSection = ({ questionDetails, summary, loading }) => {
 // ─── Result detail modal ──────────────────────────────────────────────────────
 const ResultDetailModal = ({ result, isOpen, onClose, isAdmin, questionDetails, questionSummary, loadingQuestions, securityData, loadingSecurity }) => {
   if (!isOpen || !result) return null;
+
+  // Helper function to format violation type for display
+  const formatViolationType = (type) => {
+    const types = {
+      'FULLSCREEN_EXIT': 'Fullscreen Exit',
+      'TAB_SWITCH': 'Tab Switch',
+      'WINDOW_BLUR': 'Window Blur',
+      'RIGHT_CLICK': 'Right Click',
+      'COPY_ATTEMPT': 'Copy Attempt',
+      'PRINT_ATTEMPT': 'Print Attempt',
+      'DEV_TOOLS': 'Developer Tools'
+    };
+    return types[type] || type.replace(/_/g, ' ');
+  };
+
+  // Helper function to get violation icon and color
+  const getViolationStyle = (type) => {
+    const styles = {
+      'FULLSCREEN_EXIT': { bg: 'bg-orange-100', text: 'text-orange-700', icon: '⛔' },
+      'TAB_SWITCH': { bg: 'bg-yellow-100', text: 'text-yellow-700', icon: '↹' },
+      'WINDOW_BLUR': { bg: 'bg-blue-100', text: 'text-blue-700', icon: '👁️' },
+      'RIGHT_CLICK': { bg: 'bg-red-100', text: 'text-red-700', icon: '🖱️' },
+      'COPY_ATTEMPT': { bg: 'bg-purple-100', text: 'text-purple-700', icon: '📋' },
+      'PRINT_ATTEMPT': { bg: 'bg-indigo-100', text: 'text-indigo-700', icon: '🖨️' },
+      'DEV_TOOLS': { bg: 'bg-pink-100', text: 'text-pink-700', icon: '🔧' }
+    };
+    return styles[type] || { bg: 'bg-gray-100', text: 'text-gray-700', icon: '⚠️' };
+  };
+
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
       <div className="flex items-center justify-center min-h-screen px-4 py-8">
@@ -210,7 +239,6 @@ const ResultDetailModal = ({ result, isOpen, onClose, isAdmin, questionDetails, 
             </div>
             {/* Assessment info */}
             <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 border border-blue-100">
-              <p>Assessment information</p>
               <div className="flex gap-2 mt-2 flex-wrap">
                 <TypeBadge type={result.assessmentType} />
                 {result.targetGroup && result.targetGroup !== 'N/A' && (
@@ -274,14 +302,115 @@ const ResultDetailModal = ({ result, isOpen, onClose, isAdmin, questionDetails, 
                 loading={loadingQuestions}
               />
             )}
-            {/* Security — admin only */}
+            {/* Security — admin only - Updated to show detailed violations */}
             {isAdmin && securityData && (
               <div className="bg-gray-50 rounded-xl p-4">
-                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-2">
-                  <Shield className="w-4 h-4 text-orange-500" />Security Violations
-                  {securityData.summary?.isHighRisk && <span className="bg-red-100 text-red-700 text-xs px-2 py-0.5 rounded-full font-bold">HIGH RISK</span>}
-                </h4>
-                <p className="text-sm text-gray-700">Total violations: <strong>{securityData.summary?.totalViolations || 0}</strong></p>
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-2">
+                    <Shield className="w-4 h-4 text-orange-500" /> Security Violations
+                  </h4>
+                  {securityData.summary?.isHighRisk && (
+                    <span className="bg-red-100 text-red-700 text-xs px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
+                      <AlertCircle className="w-3 h-3" /> HIGH RISK
+                    </span>
+                  )}
+                </div>
+                
+                {/* Summary stats */}
+                <div className="grid grid-cols-4 gap-2 mb-4">
+                  <div className="bg-white rounded-lg p-2 text-center border border-gray-200">
+                    <p className="text-lg font-bold text-gray-900">{securityData.summary?.totalViolations || 0}</p>
+                    <p className="text-xs text-gray-500">Total</p>
+                  </div>
+                  <div className="bg-white rounded-lg p-2 text-center border border-gray-200">
+                    <p className="text-lg font-bold text-orange-600">{securityData.summary?.fullscreenExits || 0}</p>
+                    <p className="text-xs text-gray-500">Fullscreen Exits</p>
+                  </div>
+                  <div className="bg-white rounded-lg p-2 text-center border border-gray-200">
+                    <p className="text-lg font-bold text-yellow-600">{securityData.summary?.tabSwitches || 0}</p>
+                    <p className="text-xs text-gray-500">Tab Switches</p>
+                  </div>
+                  <div className="bg-white rounded-lg p-2 text-center border border-gray-200">
+                    <p className="text-lg font-bold text-blue-600">{securityData.summary?.windowBlurs || 0}</p>
+                    <p className="text-xs text-gray-500">Window Blurs</p>
+                  </div>
+                </div>
+
+                {/* Detailed violations list */}
+                {securityData.violations && securityData.violations.length > 0 ? (
+                  <div>
+                    <h5 className="text-sm font-semibold text-gray-700 mb-2">Violation Details</h5>
+                    <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                      {securityData.violations.map((violation, index) => {
+                        const style = getViolationStyle(violation.type);
+                        return (
+                          <div key={index} className="bg-white rounded-lg border border-gray-200 p-3 hover:shadow-sm transition-shadow">
+                            <div className="flex items-start gap-3">
+                              <div className={`w-8 h-8 rounded-full ${style.bg} flex items-center justify-center flex-shrink-0`}>
+                                <span className="text-sm">{style.icon}</span>
+                              </div>
+                              <div className="flex-1">
+                                <div className="flex items-center justify-between">
+                                  <span className={`text-sm font-semibold ${style.text}`}>
+                                    {formatViolationType(violation.type)}
+                                  </span>
+                                  <span className="text-xs text-gray-400">
+                                    {new Date(violation.timestamp).toLocaleString()}
+                                  </span>
+                                </div>
+                                {violation.details && (
+                                  <p className="text-xs text-gray-600 mt-1">{violation.details}</p>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-green-50 rounded-lg p-4 text-center border border-green-200">
+                    <CheckCircle2 className="w-8 h-8 text-green-500 mx-auto mb-2" />
+                    <p className="text-sm text-green-700 font-medium">No security violations detected</p>
+                    <p className="text-xs text-green-600 mt-1">This assessment was completed without any security concerns.</p>
+                  </div>
+                )}
+
+                {/* Additional stats in a compact grid */}
+                {(securityData.summary?.rightClickAttempts > 0 || 
+                  securityData.summary?.copyAttempts > 0 || 
+                  securityData.summary?.printAttempts > 0 || 
+                  securityData.summary?.devToolsAttempts > 0) && (
+                  <div className="mt-4 pt-3 border-t border-gray-200">
+                    <p className="text-xs font-semibold text-gray-500 mb-2">Other Violations</p>
+                    <div className="grid grid-cols-4 gap-2">
+                      {securityData.summary?.rightClickAttempts > 0 && (
+                        <div className="bg-red-50 rounded p-1.5 text-center">
+                          <p className="text-xs font-bold text-red-700">{securityData.summary.rightClickAttempts}</p>
+                          <p className="text-[10px] text-red-600">Right Clicks</p>
+                        </div>
+                      )}
+                      {securityData.summary?.copyAttempts > 0 && (
+                        <div className="bg-purple-50 rounded p-1.5 text-center">
+                          <p className="text-xs font-bold text-purple-700">{securityData.summary.copyAttempts}</p>
+                          <p className="text-[10px] text-purple-600">Copy Attempts</p>
+                        </div>
+                      )}
+                      {securityData.summary?.printAttempts > 0 && (
+                        <div className="bg-indigo-50 rounded p-1.5 text-center">
+                          <p className="text-xs font-bold text-indigo-700">{securityData.summary.printAttempts}</p>
+                          <p className="text-[10px] text-indigo-600">Print Attempts</p>
+                        </div>
+                      )}
+                      {securityData.summary?.devToolsAttempts > 0 && (
+                        <div className="bg-pink-50 rounded p-1.5 text-center">
+                          <p className="text-xs font-bold text-pink-700">{securityData.summary.devToolsAttempts}</p>
+                          <p className="text-[10px] text-pink-600">Dev Tools</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -424,6 +553,8 @@ export default function Results() {
     }
   };
 
+  // ── Ref for the table header to handle sticky positioning ─────────────────
+  const tableContainerRef = useRef(null);
 
   // ─────────────────────────────────────────────────────────────────────────
   // RENDER — fixed outer shell, scrollable rows only
@@ -433,7 +564,7 @@ export default function Results() {
     <div className="flex flex-col h-full overflow-hidden">
 
       {/* ── Fixed top section (header + filters + stats + count bar) ── */}
-      <div className="flex-shrink-0 px-7 pt-7 pb-0 bg-white z-10 shadow-sm">
+      <div className="flex-shrink-0 px-7 pt-7 pb-0 bg-white z-20 shadow-sm">
 
         {/* Page header */}
         <div className="flex justify-between items-start mb-4 flex-wrap gap-4">
@@ -616,7 +747,7 @@ export default function Results() {
         </div>
       </div>
 
-      {/* ── Scrollable table area ── */}
+      {/* ── Scrollable table area with sticky header inside ── */}
       <div className="flex-1 overflow-hidden flex flex-col px-7 pb-7 min-h-0">
         {loading ? (
           <div className="flex items-center justify-center flex-1">
@@ -631,22 +762,22 @@ export default function Results() {
           </div>
         ) : (
           <div className="bg-white rounded-xl shadow-card border border-gray-100 flex flex-col flex-1 min-h-0 overflow-hidden">
-            {/* Table with sticky header */}
-            <div className="flex-1 overflow-auto">
-              <table className="w-full">
-                {/* Sticky column headers */}
-                <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
+            {/* Table with sticky header - using a nested structure to ensure proper scrolling */}
+            <div className="flex-1 overflow-auto" ref={tableContainerRef}>
+              <table className="w-full border-collapse">
+                {/* Sticky column headers - now sticky within the scrollable container */}
+                <thead className="bg-gray-50 sticky top-0 z-10 shadow-sm">
                   <tr>
                     {isAdmin && <>
-                      <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-600 uppercase tracking-wider">Employee</th>
-                      <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-600 uppercase tracking-wider">Department</th>
+                      <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-600 uppercase tracking-wider whitespace-nowrap">Employee</th>
+                      <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-600 uppercase tracking-wider whitespace-nowrap">Department</th>
                     </>}
-                    <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-600 uppercase tracking-wider">Competency</th>
-                    <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-600 uppercase tracking-wider">Assessment</th>
-                    <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-600 uppercase tracking-wider">Score</th>
-                    <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-600 uppercase tracking-wider">Level</th>
-                    <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-600 uppercase tracking-wider">Date</th>
-                    <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
+                    <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-600 uppercase tracking-wider whitespace-nowrap">Competency</th>
+                    <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-600 uppercase tracking-wider whitespace-nowrap">Assessment</th>
+                    <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-600 uppercase tracking-wider whitespace-nowrap">Score</th>
+                    <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-600 uppercase tracking-wider whitespace-nowrap">Level</th>
+                    <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-600 uppercase tracking-wider whitespace-nowrap">Date</th>
+                    <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-600 uppercase tracking-wider whitespace-nowrap">Actions</th>
                   </tr>
                 </thead>
                 {/* Scrollable rows */}
@@ -655,34 +786,34 @@ export default function Results() {
                     <tr key={result._id} className="hover:bg-gray-50/70 transition-colors">
                       {isAdmin && <>
                         <td className="px-5 py-4">
-                          <div className="font-semibold text-sm text-gray-900">{result.userName}</div>
-                          <div className="text-xs text-gray-400">{result.userPosition}</div>
+                          <div className="font-semibold text-sm text-gray-900 whitespace-nowrap">{result.userName}</div>
+                          <div className="text-xs text-gray-400 whitespace-nowrap">{result.userPosition}</div>
                         </td>
-                        <td className="px-5 py-4 text-sm text-gray-600">{result.userDepartment}</td>
+                        <td className="px-5 py-4 text-sm text-gray-600 whitespace-nowrap">{result.userDepartment}</td>
                       </>}
                       <td className="px-5 py-4">
-                        <div className="font-medium text-sm text-gray-900">{result.competencyName}</div>
-                        <div className="text-xs text-gray-400">{result.competencyCategory}</div>
+                        <div className="font-medium text-sm text-gray-900 whitespace-nowrap">{result.competencyName}</div>
+                        <div className="text-xs text-gray-400 whitespace-nowrap">{result.competencyCategory}</div>
                       </td>
                       <td className="px-5 py-4">
                         <div className="flex flex-col gap-1">
                           <TypeBadge type={result.assessmentType} />
                           {result.targetGroup && result.targetGroup !== 'N/A' && (
-                            <span className="text-xs text-gray-400 capitalize">{result.targetGroup.replace('-', ' ')}</span>
+                            <span className="text-xs text-gray-400 capitalize whitespace-nowrap">{result.targetGroup.replace('-', ' ')}</span>
                           )}
                         </div>
                       </td>
                       <td className="px-5 py-4"><ScoreBar score={result.finalScore} type={result.assessmentType} /></td>
                       <td className="px-5 py-4"><LevelBadge level={result.level} /></td>
                       <td className="px-5 py-4">
-                        <div className="flex items-center gap-1.5 text-xs text-gray-500">
+                        <div className="flex items-center gap-1.5 text-xs text-gray-500 whitespace-nowrap">
                           <Calendar className="w-3.5 h-3.5" />
                           {result.formattedDate}
                         </div>
                       </td>
                     
                       <td className="px-5 py-4">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 whitespace-nowrap">
                           <button onClick={() => openDetail(result)}
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors">
                             <Eye className="w-3.5 h-3.5" /> Details

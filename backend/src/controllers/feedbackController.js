@@ -74,14 +74,23 @@ export const getFeedbacks = asyncHandler(async (req, res) => {
     filter.userId = req.user.id;
   }
 
-  const skip = (parseInt(page, 10) - 1) * parseInt(limit, 10);
+  const pageNum = parseInt(page, 10);
+  const limitNum = parseInt(limit, 10);
+  const skip = (pageNum - 1) * limitNum;
 
   const [feedbacks, total] = await Promise.all([
     Feedback.find(filter)
       .populate('userId', 'name email department position employeeId')
-      .populate('assessmentId', 'description competencyId targetGroup purpose')
+      .populate({
+        path: 'assessmentId',
+        select: 'description targetGroup purpose competencyId',
+        populate: {
+          path: 'competencyId',
+          select: 'name'
+        }
+      })
       .skip(skip)
-      .limit(parseInt(limit, 10))
+      .limit(limitNum)
       .sort({ createdAt: -1 })
       .lean(),
     Feedback.countDocuments(filter),
@@ -93,8 +102,8 @@ export const getFeedbacks = asyncHandler(async (req, res) => {
       feedbacks,
       pagination: {
         total,
-        page: parseInt(page, 10),
-        limit: parseInt(limit, 10),
+        page: pageNum,
+        limit: limitNum,
       },
     },
   });
@@ -296,7 +305,13 @@ export const getEligibleAssessmentsForFeedback = asyncHandler(async (req, res) =
 export const getFeedback = asyncHandler(async (req, res, next) => {
   const feedback = await Feedback.findById(req.params.id)
     .populate('userId', 'name email department position')
-    .populate('assessmentId', 'description')
+    .populate({
+      path: 'assessmentId',
+      populate: {
+        path: 'competencyId',
+        select: 'name'
+      }
+    })
     .lean();
 
   if (!feedback) return next(new AppError('Feedback not found.', 404));

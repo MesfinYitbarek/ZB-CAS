@@ -131,7 +131,7 @@ export default function SupervisorDashboard() {
               { icon: Users,       label: 'Team Members',     value: stats.teamSize || 0,             sub: 'Active employees',   color: 'text-blue-600',    bg: 'bg-blue-50', link: '/team' },
               { icon: AlertCircle, label: 'Pending Evals',    value: stats.pendingEvaluations || 0,   sub: `${highPriority} urgent`, color: 'text-orange-600',  bg: 'bg-orange-50', urgent: highPriority > 0, link: '/supervisor/pending' },
               { icon: Award,       label: 'Team Avg Score',   value: `${stats.teamAvgScore || 0}%`,   sub: periodLabel,     color: 'text-emerald-600', bg: 'bg-emerald-50' },
-              { icon: BarChart2,   label: 'Period Results',   value: stats.periodResultCount || 0,    sub: periodLabel,          color: 'text-violet-600',  bg: 'bg-violet-50', link: '/results' },
+              
             ].map(({ icon: Icon, label, value, sub, color, bg, urgent, link }) => (
               <div 
                 key={label} 

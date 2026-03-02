@@ -36,7 +36,7 @@ const NAV_ITEMS = [
   { icon: MessageSquare, label: 'Feedback', path: '/feedback', roles: ['EMPLOYEE', 'HR_ADMIN'] },
 
   // ✅ Activity Log moved to VERY BOTTOM
-  { icon: Activity,   label: 'Activity Log',   path: '/activity-log',   roles: ['HR_ADMIN'] },
+  // { icon: Activity,   label: 'Activity Log',   path: '/activity-log',   roles: ['HR_ADMIN'] },
 ];
 
 // Human-readable role labels

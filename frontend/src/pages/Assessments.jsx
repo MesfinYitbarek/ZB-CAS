@@ -961,6 +961,31 @@ export default function Assessments() {
                 placeholder="e.g., 60 (leave empty for no limit)" min={1}
                 className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm max-w-xs" />
             </div>
+
+            {/* ── NEW: Reminder Days Field ── */}
+            <div className="mt-4 pt-4 border-t border-blue-200">
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5 flex items-center gap-2">
+                <Bell className="w-4 h-4 text-blue-600" />
+                Reminder <span className="text-gray-400 font-normal">(Optional)</span>
+              </label>
+              <div className="flex items-center gap-3">
+                <input
+                  type="number"
+                  value={form.reminderDaysBefore}
+                  onChange={(e) => setForm(prev => ({ ...prev, reminderDaysBefore: e.target.value }))}
+                  placeholder="e.g., 2"
+                  min={1}
+                  max={30}
+                  className="w-32 h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm"
+                />
+                <span className="text-sm text-gray-600">days before end date</span>
+              </div>
+              {form.reminderDaysBefore && (
+                <p className="mt-1 text-xs text-blue-600">
+                  Participants will be notified {form.reminderDaysBefore} day(s) before the assessment ends.
+                </p>
+              )}
+            </div>
           </div>
 
           {/* ── Target Audience ── */}

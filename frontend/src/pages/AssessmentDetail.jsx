@@ -225,14 +225,6 @@ export default function AssessmentDetail() {
           >
             <ArrowLeft className="w-5 h-5 text-gray-600" />
           </button>
-          <div className="min-w-0">
-            <h1 className="text-lg font-bold text-brand-black truncate">
-              {assessment.description || assessment.competencyId?.name || 'Assessment Details'}
-            </h1>
-            <p className="text-xs text-gray-500 truncate">
-              {assessment.competencyId?.name} · {assessment.competencyId?.category}
-            </p>
-          </div>
         </div>
 
         <div className="flex items-center gap-3 flex-shrink-0 ml-4">

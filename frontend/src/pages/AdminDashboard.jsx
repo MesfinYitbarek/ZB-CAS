@@ -127,7 +127,6 @@ export default function AdminDashboard() {
               { icon: Target,     label: 'Competencies',   value: stats.totalCompetencies || 0, sub: 'All categories', color: 'text-violet-600', bg: 'bg-violet-50',    link: '/competencies' },
               { icon: Zap,        label: 'Active',         value: stats.activeAssessments || 0, sub: `${stats.scheduledAssessments || 0} scheduled`, color: 'text-emerald-600', bg: 'bg-emerald-50', link: '/assessments' },
               { icon: ClipboardList, label: 'Total Results', value: stats.totalResults  || 0, sub: periodLabel, color: 'text-brand-red',  bg: 'bg-brand-red/10' },
-              { icon: BarChart2,  label: 'Avg Score',      value: `${stats.avgScore   || 0}%`, sub: `±${stats.stdDev || 0}`, color: 'text-amber-600', bg: 'bg-amber-50' }
             ].map(({ icon: Icon, label, value, sub, color, bg, link }) => (
               <div
                 key={label}
@@ -152,27 +151,22 @@ export default function AdminDashboard() {
           {/* CHARTS ROW */}
           <div className="grid lg:grid-cols-3 gap-5">
 
-            {/* Activity Trend */}
+            {/* Activity Trend - Now only showing Assessments */}
             <div className="lg:col-span-2 bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
               <div className="flex items-center justify-between mb-5">
                 <div>
                   <h3 className="text-sm font-bold text-gray-900">Activity Trend</h3>
-                  <p className="text-xs text-gray-400 mt-0.5">Assessments & Results · {periodLabel}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">Assessments created · {periodLabel}</p>
                 </div>
                 <div className="flex items-center gap-3 text-xs text-gray-400">
-                  <div className="flex items-center gap-1"><div className="w-3 h-0.5 bg-brand-red" /><span>Results</span></div>
                   <div className="flex items-center gap-1"><div className="w-3 h-0.5 bg-blue-400" /><span>Assessments</span></div>
                 </div>
               </div>
               <ResponsiveContainer width="100%" height={250}>
                 <AreaChart data={charts.trend || []} margin={{ top: 5, right: 5, bottom: 0, left: -25 }}>
                   <defs>
-                    <linearGradient id="gRed" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#C8102E" stopOpacity={0.15} />
-                      <stop offset="100%" stopColor="#C8102E" stopOpacity={0} />
-                    </linearGradient>
                     <linearGradient id="gBlue" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.12} />
+                      <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.15} />
                       <stop offset="100%" stopColor="#3b82f6" stopOpacity={0} />
                     </linearGradient>
                   </defs>
@@ -180,7 +174,6 @@ export default function AdminDashboard() {
                   <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
                   <Tooltip content={<ChartTooltip />} />
-                  <Area type="monotone" dataKey="results" stroke="#C8102E" strokeWidth={2} fill="url(#gRed)" dot={false} activeDot={{ r: 4 }} />
                   <Area type="monotone" dataKey="assessments" stroke="#3b82f6" strokeWidth={2} fill="url(#gBlue)" dot={false} activeDot={{ r: 4 }} />
                 </AreaChart>
               </ResponsiveContainer>
