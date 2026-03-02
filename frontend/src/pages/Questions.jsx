@@ -1248,13 +1248,13 @@ export default function Questions() {
         <div className="flex gap-2">
           <button
             onClick={openUpload}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm"
+            className="flex items-center gap-2 px-5 py-2.5 bg-blue-950 text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors"
           >
             <Upload className="w-3.5 h-3.5" /> Upload
           </button>
           <button
             onClick={openCreate}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition text-sm"
+            className="flex items-center gap-2 px-5 py-2.5 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors"
           >
             <Plus className="w-3.5 h-3.5" /> Add Questions
           </button>

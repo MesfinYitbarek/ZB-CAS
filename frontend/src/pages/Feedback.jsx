@@ -333,9 +333,6 @@ export default function Feedback() {
               {selectedSummary.targetGroup && (
                 <Chip color="slate">{selectedSummary.targetGroup.replace('-', ' ')}</Chip>
               )}
-              {selectedSummary.purpose && (
-                <Chip color="indigo">{selectedSummary.purpose}</Chip>
-              )}
             </div>
           </div>
         </div>
@@ -480,9 +477,6 @@ export default function Feedback() {
                 )}
                 {s.targetGroup && (
                   <Chip color="slate">{s.targetGroup.replace('-', ' ')}</Chip>
-                )}
-                {s.purpose && (
-                  <Chip color="indigo">{s.purpose}</Chip>
                 )}
               </div>
 
