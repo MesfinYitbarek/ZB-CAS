@@ -64,10 +64,37 @@ export default function Assessments() {
   const [form, setForm] = useState(initForm());
   const [scoreConfirm, setScoreConfirm] = useState(null);
 
+
+  useEffect(() => {
+    if (!form.competencyId || !form.targetGroup) {
+      // Optional: clear description only if you want to force-reset when TG changes
+      // setForm(prev => ({ ...prev, description: '' }));
+      return;
+    }
+
+    const selectedComp = competencies.find(c => c._id === form.competencyId);
+    if (!selectedComp) return;
+
+    const tgObj = selectedComp.targetGroups?.find(
+      t => t.targetGroup === form.targetGroup
+    );
+
+    if (tgObj?.description) {
+      // Auto-fill the assessment description with the target group's description
+      setForm(prev => ({
+        ...prev,
+        description: tgObj.description
+      }));
+    }
+    // If no description exists → do nothing (keep whatever user already typed)
+  }, [form.competencyId, form.targetGroup, competencies]);
+
+  
+
   // ── Load competencies and departments on mount ────────────────────────────
   useEffect(() => {
-    api.get('/competencies').then(({ data }) => setCompetencies(data.data.competencies)).catch(() => {});
-    api.get('/assessments/employees/departments').then(({ data }) => setDepartments(data.data.departments)).catch(() => {});
+    api.get('/competencies').then(({ data }) => setCompetencies(data.data.competencies)).catch(() => { });
+    api.get('/assessments/employees/departments').then(({ data }) => setDepartments(data.data.departments)).catch(() => { });
     if (isSupervisor) loadSupervisorStats();
   }, [isSupervisor]);
 
@@ -95,7 +122,7 @@ export default function Assessments() {
           setForm(prev => ({ ...prev, questionIds: [] }));
           setQuestionSelectionMode('auto');
         })
-        .catch(() => {});
+        .catch(() => { });
     } else {
       setQuestions([]);
     }
@@ -118,12 +145,12 @@ export default function Assessments() {
     try {
       let endpoint = '/assessments';
       let params = { page: pagination.page, limit: pagination.limit };
-      
+
       // Only apply status filter for admin or if explicitly requested
       if (filterStatus && isAdmin) {
         params.status = filterStatus;
       }
-      
+
       // For non-admin users, use the active endpoint which already has the filtering logic
       if (isSupervisor || isEmployee) {
         endpoint = '/assessments/active';
@@ -134,12 +161,12 @@ export default function Assessments() {
         // Don't send status filter for active endpoint as it already filters for SCHEDULED/ACTIVE
         delete params.status;
       }
-      
+
       const { data } = await api.get(endpoint, { params });
-      
+
       // For employees and supervisors, the backend already filters to only show assessments that include them
       setItems(data.data.assessments || []);
-      
+
       if (data.data.pagination) {
         setPagination(prev => ({
           ...prev,
@@ -373,11 +400,10 @@ export default function Assessments() {
             key={opt.value}
             type="button"
             onClick={() => setForm(prev => ({ ...prev, targetAudience: { type: opt.value, departments: [], employeeIds: [] } }))}
-            className={`px-3 py-2 rounded-lg text-xs font-medium border transition-all ${
-              form.targetAudience.type === opt.value
+            className={`px-3 py-2 rounded-lg text-xs font-medium border transition-all ${form.targetAudience.type === opt.value
                 ? 'bg-brand-red text-white border-brand-red'
                 : 'bg-white text-gray-600 border-gray-300 hover:border-brand-red'
-            }`}
+              }`}
           >
             {opt.label}
           </button>
@@ -624,12 +650,11 @@ export default function Assessments() {
                     <div className="p-5">
                       <div className="flex justify-between items-start mb-3">
                         <span className={`px-2 py-1 rounded-full text-xs font-bold ${getAssessmentTypeColor(a.type)}`}>{a.type}</span>
-                        <span className={`px-2 py-1 rounded-full text-xs font-bold ${
-                          a.status === 'DRAFT' ? 'bg-gray-100 text-gray-800' :
-                          a.status === 'SCHEDULED' ? 'bg-blue-100 text-blue-800' :
-                          a.status === 'ACTIVE' ? 'bg-green-100 text-green-800' :
-                          a.status === 'COMPLETED' ? 'bg-red-100 text-red-800' :
-                          'bg-gray-100 text-gray-800'}`}>
+                        <span className={`px-2 py-1 rounded-full text-xs font-bold ${a.status === 'DRAFT' ? 'bg-gray-100 text-gray-800' :
+                            a.status === 'SCHEDULED' ? 'bg-blue-100 text-blue-800' :
+                              a.status === 'ACTIVE' ? 'bg-green-100 text-green-800' :
+                                a.status === 'COMPLETED' ? 'bg-red-100 text-red-800' :
+                                  'bg-gray-100 text-gray-800'}`}>
                           {getStatusText(a.status)}
                         </span>
                       </div>
@@ -870,33 +895,23 @@ export default function Assessments() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 mt-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Description</label>
-                <input
-                  value={form.description}
-                  onChange={(e) => setForm(prev => ({ ...prev, description: e.target.value }))}
-                  placeholder="e.g., Q1 2025 Communication Skills Assessment"
-                  className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                  Reminder <span className="text-gray-400 font-normal text-xs">(days before deadline, optional)</span>
-                </label>
-                <div className="relative">
-                  <Bell className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <input
-                    type="number"
-                    min="1"
-                    max="30"
-                    placeholder="e.g. 3"
-                    value={form.reminderDaysBefore}
-                    onChange={(e) => setForm(prev => ({ ...prev, reminderDaysBefore: e.target.value }))}
-                    className="w-full h-10 pl-9 pr-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm"
-                  />
-                </div>
-              </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                Description
+              </label>
+              <input
+                value={form.description}
+                onChange={(e) => setForm(prev => ({ ...prev, description: e.target.value }))}
+                placeholder="e.g., Q1 2025 Communication Skills Assessment"
+                className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm"
+              />
+              {form.targetGroup && (
+                <p className="mt-1 text-xs text-gray-500 italic">
+                  {form.description
+                    ? "You can edit the auto-filled description above"
+                    : "Selecting a target group will suggest a description here"}
+                </p>
+              )}
             </div>
           </div>
 
