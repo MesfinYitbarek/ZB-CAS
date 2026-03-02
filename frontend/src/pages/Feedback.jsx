@@ -283,7 +283,7 @@ export default function Feedback() {
                 <option value="">— Select assessment —</option>
                 {pending.map(a => (
                   <option key={a._id} value={a._id}>
-                    {a.description || 'Assessment'}{a.competencyId?.name ? ` · ${a.competencyId.name}` : ''}{a.targetGroup ? ` (${a.targetGroup})` : ''}
+                    {a.competencyId?.name ? `  ${a.competencyId.name}` : ''}{a.targetGroup ? ` (${a.targetGroup})` : ''}
                   </option>
                 ))}
               </select>
@@ -324,12 +324,12 @@ export default function Feedback() {
           </button>
           <div>
             <h1 className="text-lg font-bold text-slate-800 leading-snug line-clamp-1">
-              {selectedSummary.assessmentDescription || 'Assessment Feedback'}
+              {selectedSummary.competencyName && (
+                <span className="text-slate-500">{selectedSummary.competencyName}</span>
+              )}
             </h1>
             <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-              {selectedSummary.competencyName && (
-                <span className="text-xltext-slate-500">{selectedSummary.competencyName}</span>
-              )}
+              
               {selectedSummary.targetGroup && (
                 <Chip color="slate">{selectedSummary.targetGroup.replace('-', ' ')}</Chip>
               )}
@@ -468,9 +468,6 @@ export default function Feedback() {
               className="bg-white border border-slate-200 rounded-xl p-4 hover:border-brand-red/40 hover:shadow-sm transition-all cursor-pointer group">
 
               {/* Title + chips */}
-              <h3 className="font-semibold text-sm text-slate-800 line-clamp-2 group-hover:text-brand-red transition-colors mb-1.5 leading-snug">
-                {s.assessmentDescription || 'Untitled Assessment'}
-              </h3>
               <div className="flex items-center gap-1 mb-3 flex-wrap">
                 {s.competencyName && (
                   <span className="text-[10px] text-slate-400">{s.competencyName}</span>
