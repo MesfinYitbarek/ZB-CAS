@@ -687,13 +687,13 @@ export default function TakeAssessment() {
               Assessment Details
             </h3>
             <p className="text-sm text-gray-700 leading-relaxed mb-3">
-              {assessment.description || 'No description provided.'}
+              <Target className="w-3 h-3 text-brand-red" />
+                <span>{assessment.competencyId?.name || 'N/A'}</span>
             </p>
 
             <div className="grid grid-cols-2 gap-3 text-xs">
               <div className="flex items-center gap-2 text-gray-600">
-                <Target className="w-3 h-3 text-brand-red" />
-                <span>{assessment.competencyId?.name || 'N/A'}</span>
+                
               </div>
               <div className="flex items-center gap-2 text-gray-600">
                 <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${

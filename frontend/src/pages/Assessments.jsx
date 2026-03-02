@@ -89,7 +89,7 @@ export default function Assessments() {
     // If no description exists → do nothing (keep whatever user already typed)
   }, [form.competencyId, form.targetGroup, competencies]);
 
-  
+
 
   // ── Load competencies and departments on mount ────────────────────────────
   useEffect(() => {
@@ -401,8 +401,8 @@ export default function Assessments() {
             type="button"
             onClick={() => setForm(prev => ({ ...prev, targetAudience: { type: opt.value, departments: [], employeeIds: [] } }))}
             className={`px-3 py-2 rounded-lg text-xs font-medium border transition-all ${form.targetAudience.type === opt.value
-                ? 'bg-brand-red text-white border-brand-red'
-                : 'bg-white text-gray-600 border-gray-300 hover:border-brand-red'
+              ? 'bg-brand-red text-white border-brand-red'
+              : 'bg-white text-gray-600 border-gray-300 hover:border-brand-red'
               }`}
           >
             {opt.label}
@@ -651,16 +651,18 @@ export default function Assessments() {
                       <div className="flex justify-between items-start mb-3">
                         <span className={`px-2 py-1 rounded-full text-xs font-bold ${getAssessmentTypeColor(a.type)}`}>{a.type}</span>
                         <span className={`px-2 py-1 rounded-full text-xs font-bold ${a.status === 'DRAFT' ? 'bg-gray-100 text-gray-800' :
-                            a.status === 'SCHEDULED' ? 'bg-blue-100 text-blue-800' :
-                              a.status === 'ACTIVE' ? 'bg-green-100 text-green-800' :
-                                a.status === 'COMPLETED' ? 'bg-red-100 text-red-800' :
-                                  'bg-gray-100 text-gray-800'}`}>
+                          a.status === 'SCHEDULED' ? 'bg-blue-100 text-blue-800' :
+                            a.status === 'ACTIVE' ? 'bg-green-100 text-green-800' :
+                              a.status === 'COMPLETED' ? 'bg-red-100 text-red-800' :
+                                'bg-gray-100 text-gray-800'}`}>
                           {getStatusText(a.status)}
                         </span>
                       </div>
 
                       <h3 className="text-base font-bold text-brand-black mb-1 line-clamp-2">
-                        {a.description || 'Untitled Assessment'}
+
+                        {a.competencyId?.name || 'No competency'}
+
                       </h3>
 
                       {a.purpose && (
@@ -668,13 +670,11 @@ export default function Assessments() {
                           {a.purpose}
                         </span>
                       )}
-
+                      {a.targetGroup && (
+                        <span className="ml-1 text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">{a.targetGroup}</span>
+                      )}
                       <p className="text-sm text-gray-500 mb-2 flex items-center gap-1">
-                        <Target className="w-3 h-3" />
-                        {a.competencyId?.name || 'No competency'}
-                        {a.targetGroup && (
-                          <span className="ml-1 text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">{a.targetGroup}</span>
-                        )}
+
                       </p>
 
                       <div className="text-xs text-gray-500 mb-3 flex items-center gap-1">

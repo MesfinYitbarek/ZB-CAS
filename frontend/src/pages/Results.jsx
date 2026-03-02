@@ -190,19 +190,7 @@ const ResultDetailModal = ({ result, isOpen, onClose, isAdmin, questionDetails, 
             <button onClick={onClose} className="text-white/80 hover:text-white"><XCircle className="w-5 h-5" /></button>
           </div>
           <div className="p-6 max-h-[80vh] overflow-y-auto space-y-5">
-            {/* Assessment info */}
-            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 border border-blue-100">
-              <p className="font-semibold text-blue-900">{result.assessmentDescription}</p>
-              <div className="flex gap-2 mt-2 flex-wrap">
-                <TypeBadge type={result.assessmentType} />
-                {result.targetGroup && result.targetGroup !== 'N/A' && (
-                  <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full capitalize">{result.targetGroup.replace('-', ' ')}</span>
-                )}
-                {result.purpose && result.purpose !== 'N/A' && (
-                  <span className="text-xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full">{result.purpose}</span>
-                )}
-              </div>
-            </div>
+            
             {/* Employee info (admin only) */}
             {isAdmin && (
               <div className="bg-gray-50 rounded-xl p-4">
@@ -219,6 +207,20 @@ const ResultDetailModal = ({ result, isOpen, onClose, isAdmin, questionDetails, 
               <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Competency</h4>
               <p className="font-medium text-gray-900">{result.competencyName}</p>
               <p className="text-xs text-gray-500 mt-0.5">{result.competencyCategory}</p>
+            </div>
+            {/* Assessment info */}
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 border border-blue-100">
+              <p>Assessment information</p>
+              <div className="flex gap-2 mt-2 flex-wrap">
+                <TypeBadge type={result.assessmentType} />
+                {result.targetGroup && result.targetGroup !== 'N/A' && (
+                  <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full capitalize">{result.targetGroup.replace('-', ' ')}</span>
+                )}
+                {result.purpose && result.purpose !== 'N/A' && (
+                  <span className="text-xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full">{result.purpose}</span>
+                )}
+              </div>
+              <p className="font-semibold text-blue-900">{result.assessmentDescription}</p>
             </div>
             {/* Scores */}
             <div className="bg-gray-50 rounded-xl p-4">
