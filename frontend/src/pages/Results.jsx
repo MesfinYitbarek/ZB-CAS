@@ -767,7 +767,7 @@ export default function Results() {
                   <tr>
                     {isAdmin && <>
                       <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-600 uppercase tracking-wider whitespace-nowrap">Employee</th>
-                      <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-600 uppercase tracking-wider whitespace-nowrap">Department</th>
+                      
                     </>}
                     <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-600 uppercase tracking-wider whitespace-nowrap">Competency</th>
                     <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-600 uppercase tracking-wider whitespace-nowrap">Assessment</th>
@@ -786,11 +786,10 @@ export default function Results() {
                           <div className="font-semibold text-sm text-gray-900 whitespace-nowrap">{result.userName}</div>
                           <div className="text-xs text-gray-400 whitespace-nowrap">{result.userPosition}</div>
                         </td>
-                        <td className="px-5 py-4 text-sm text-gray-600 whitespace-nowrap">{result.userDepartment}</td>
                       </>}
                       <td className="px-5 py-4">
                         <div className="font-medium text-sm text-gray-900 whitespace-nowrap">{result.competencyName}</div>
-                        <div className="text-xs text-gray-400 whitespace-nowrap">{result.competencyCategory}</div>
+                        
                       </td>
                       <td className="px-5 py-4">
                         <div className="flex flex-col gap-1">
@@ -800,7 +799,7 @@ export default function Results() {
                           )}
                         </div>
                       </td>
-                      <td className="px-5 py-4"><ScoreBar score={result.finalScore} type={result.assessmentType} /></td>
+                      <td className="px-5 py-4">{result.finalScore}</td>
                       <td className="px-5 py-4"><LevelBadge level={result.level} /></td>
                       <td className="px-5 py-4">
                         <div className="flex items-center gap-1.5 text-xs text-gray-500 whitespace-nowrap">

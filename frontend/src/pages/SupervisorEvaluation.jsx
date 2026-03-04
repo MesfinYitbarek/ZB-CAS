@@ -2,27 +2,101 @@ import { useState, useEffect } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
-import { 
-  Save, 
-  Send, 
-  User, 
-  Target, 
-  Calendar, 
-  Clock,
-  AlertCircle,
-  CheckCircle,
-  TrendingUp,
-  Award,
-  MessageSquare,
-  Shield,
-  ChevronLeft,
-  Star,
-  Briefcase,
-  Mail,
-  FileText
+import {
+  ChevronLeft, Save, Send, User, Target, Calendar,
+  AlertCircle, CheckCircle2, Shield, Briefcase,
+  MessageSquare, Award, TrendingUp, X,
 } from 'lucide-react';
 import api from '../utils/api';
 
+// ── Score helpers ─────────────────────────────────────────────────────────────
+const scoreLabel = (s) => {
+  if (s >= 90) return { text: 'Exceptional',       color: 'text-emerald-600', bar: 'bg-emerald-500', ring: 'ring-emerald-200' };
+  if (s >= 80) return { text: 'Excellent',          color: 'text-green-600',   bar: 'bg-green-500',   ring: 'ring-green-200'   };
+  if (s >= 70) return { text: 'Good',               color: 'text-blue-600',    bar: 'bg-blue-500',    ring: 'ring-blue-200'    };
+  if (s >= 60) return { text: 'Satisfactory',       color: 'text-yellow-600',  bar: 'bg-yellow-400',  ring: 'ring-yellow-200'  };
+  if (s >= 50) return { text: 'Needs Improvement',  color: 'text-orange-600',  bar: 'bg-orange-400',  ring: 'ring-orange-200'  };
+  return           { text: 'Unsatisfactory',        color: 'text-red-600',     bar: 'bg-red-500',     ring: 'ring-red-200'     };
+};
+
+const avatar = (name = '') =>
+  name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+
+const fmtDate = (d) => d
+  ? new Date(d).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+  : '—';
+
+// ── Confirm modal ─────────────────────────────────────────────────────────────
+function ConfirmModal({ open, onClose, onConfirm, loading, employee, score, hasExisting }) {
+  if (!open) return null;
+  const sl = scoreLabel(score);
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="fixed inset-0 bg-black/40 backdrop-blur-[2px]" onClick={onClose} />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <h3 className="text-sm font-bold text-gray-900">
+            {hasExisting ? 'Update Evaluation' : 'Submit Evaluation'}
+          </h3>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 transition">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="px-5 py-4 space-y-4">
+          <p className="text-sm text-gray-600">
+            You are about to {hasExisting ? 'update' : 'submit'} the evaluation for{' '}
+            <strong className="text-gray-900">{employee?.name}</strong>.
+          </p>
+
+          {/* Score preview */}
+          <div className="flex items-center justify-between bg-gray-50 rounded-xl px-4 py-3">
+            <span className="text-xs text-gray-500">Score</span>
+            <div className="flex items-center gap-2">
+              <span className={`text-xl font-black ${sl.color}`}>{score}</span>
+              <span className="text-xs text-gray-400">/ 100</span>
+              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ring-1 ${sl.ring} ${sl.color} bg-white`}>
+                {sl.text}
+              </span>
+            </div>
+          </div>
+
+          {!hasExisting && (
+            <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2.5 flex items-start gap-2">
+              <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+              Once submitted, you can still update this evaluation while the assessment is active.
+            </p>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex gap-2 px-5 py-4 border-t border-gray-100">
+          <button
+            onClick={onClose}
+            className="flex-1 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 transition"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={loading}
+            className="flex-1 py-2 rounded-lg bg-brand-red text-white text-sm font-semibold hover:bg-red-700 transition disabled:opacity-60 flex items-center justify-center gap-2"
+          >
+            {loading ? (
+              <><span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" /> Submitting…</>
+            ) : (
+              <><Send className="w-3.5 h-3.5" /> {hasExisting ? 'Update' : 'Submit'}</>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
 export default function SupervisorEvaluation() {
   const { assessmentId } = useParams();
   const [searchParams] = useSearchParams();
@@ -30,398 +104,295 @@ export default function SupervisorEvaluation() {
   const { user, isSupervisor, isAdmin } = useAuth();
   const navigate = useNavigate();
   const { show } = useToast();
-  
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [assessment, setAssessment] = useState(null);
-  const [employee, setEmployee] = useState(null);
-  const [score, setScore] = useState(0);
-  const [comments, setComments] = useState('');
-  const [hasExistingEvaluation, setHasExistingEvaluation] = useState(false);
-  const [permissionError, setPermissionError] = useState(false);
+
+  const [loading, setLoading]             = useState(true);
+  const [saving, setSaving]               = useState(false);
+  const [submitting, setSubmitting]       = useState(false);
+  const [showConfirm, setShowConfirm]     = useState(false);
+  const [assessment, setAssessment]       = useState(null);
+  const [employee, setEmployee]           = useState(null);
+  const [score, setScore]                 = useState(50);
+  const [comments, setComments]           = useState('');
+  const [hasExisting, setHasExisting]     = useState(false);
+  const [permissionError, setPermError]   = useState(false);
 
   useEffect(() => {
-    if (!isSupervisor && !isAdmin) {
-      setPermissionError(true);
-      return;
-    }
-    loadEvaluationData();
+    if (!isSupervisor && !isAdmin) { setPermError(true); return; }
+    load();
   }, [assessmentId, employeeId, isSupervisor, isAdmin]);
 
-  const loadEvaluationData = async () => {
+  const load = async () => {
     try {
       setLoading(true);
-      const assessRes = await api.get(`/assessments/${assessmentId}`);
+      const [assessRes, empRes, respRes] = await Promise.all([
+        api.get(`/assessments/${assessmentId}`),
+        api.get(`/users/${employeeId}`),
+        api.get(`/responses/supervisor/${assessmentId}/${employeeId}`).catch(() => null),
+      ]);
       setAssessment(assessRes.data.data.assessment);
-      
-      const empRes = await api.get(`/users/${employeeId}`);
       setEmployee(empRes.data.data.user);
-      
-      const respRes = await api.get(`/responses/supervisor/${assessmentId}/${employeeId}`);
-      
-      if (respRes.data.data.evaluation) {
-        const existing = respRes.data.data.evaluation;
-        setScore(existing.score || 0);
-        setComments(existing.comments || '');
-        setHasExistingEvaluation(true);
+      if (respRes?.data?.data?.evaluation) {
+        const e = respRes.data.data.evaluation;
+        setScore(e.score ?? 50);
+        setComments(e.comments ?? '');
+        setHasExisting(true);
       }
     } catch (err) {
-      console.error('Error loading evaluation data:', err);
-      if (err.response?.status === 403) {
-        setPermissionError(true);
-        show('You do not have permission to evaluate this employee', 'error');
-      } else {
-        show('Failed to load data', 'error');
-      }
+      if (err.response?.status === 403) { setPermError(true); return; }
+      show('Failed to load evaluation data.', 'error');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleScoreChange = (value) => {
-    const numValue = Math.min(100, Math.max(0, parseInt(value) || 0));
-    setScore(numValue);
-  };
-
-  const getScoreColor = (score) => {
-    if (score >= 90) return 'text-emerald-600 bg-emerald-100 border-emerald-200';
-    if (score >= 80) return 'text-green-600 bg-green-100 border-green-200';
-    if (score >= 70) return 'text-blue-600 bg-blue-100 border-blue-200';
-    if (score >= 60) return 'text-yellow-600 bg-yellow-100 border-yellow-200';
-    if (score >= 50) return 'text-orange-600 bg-orange-100 border-orange-200';
-    return 'text-red-600 bg-red-100 border-red-200';
-  };
-
-  const getPerformanceLevel = (score) => {
-    if (score >= 90) return { label: 'Exceptional', icon: Award, color: 'emerald' };
-    if (score >= 80) return { label: 'Excellent', icon: TrendingUp, color: 'green' };
-    if (score >= 70) return { label: 'Good', icon: CheckCircle, color: 'blue' };
-    if (score >= 60) return { label: 'Satisfactory', icon: CheckCircle, color: 'yellow' };
-    if (score >= 50) return { label: 'Needs Improvement', icon: AlertCircle, color: 'orange' };
-    return { label: 'Unsatisfactory', icon: AlertCircle, color: 'red' };
-  };
+  const clamp = (v) => Math.min(100, Math.max(0, Math.round(v)));
 
   const saveDraft = async () => {
     try {
       setSaving(true);
-      await api.post('/responses/supervisor/save', {
-        assessmentId,
-        employeeId,
-        score,
-        comments
-      });
-      show('Draft saved', 'success');
-      setHasExistingEvaluation(true);
+      await api.post('/responses/supervisor/save', { assessmentId, employeeId, score, comments });
+      show('Draft saved.', 'success');
+      setHasExisting(true);
     } catch (err) {
-      console.error('Error saving draft:', err);
-      if (err.response?.status === 403) {
-        show('You do not have permission to evaluate this employee', 'error');
-      } else {
-        show('Save failed', 'error');
-      }
+      show(err.response?.status === 403 ? 'Permission denied.' : 'Save failed.', 'error');
     } finally {
       setSaving(false);
     }
   };
 
-  const submitEvaluation = async () => {
-    if (!window.confirm('Submit this evaluation? This cannot be undone.')) return;
-
+  const doSubmit = async () => {
     try {
       setSubmitting(true);
- 
-      await api.post('/responses/supervisor/submit', {
-        assessmentId,
-        employeeId,
-        score,
-        comments
-      });
-      
-      show('Evaluation submitted successfully!', 'success');
-      
-      setTimeout(() => navigate('/evaluations'), 1500);
+      await api.post('/responses/supervisor/submit', { assessmentId, employeeId, score, comments });
+      show('Evaluation submitted!', 'success');
+      setShowConfirm(false);
+      setTimeout(() => navigate('/evaluations'), 1200);
     } catch (err) {
-      console.error('Error submitting evaluation:', err);
-      if (err.response?.status === 403) {
-        show('You do not have permission to submit this evaluation', 'error');
-      } else {
-        show(err.response?.data?.message || 'Submission failed', 'error');
-      }
+      show(err.response?.data?.message || 'Submission failed.', 'error');
     } finally {
       setSubmitting(false);
     }
   };
 
-  // Permission error state
-  if (permissionError) {
-    return (
-      <div className="h-[calc(100vh-4rem)] flex items-center justify-center p-4">
-        <div className="bg-white rounded-xl shadow-card p-8 text-center max-w-md">
-          <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4">
-            <Shield className="w-8 h-8 text-red-600" />
-          </div>
-          <h1 className="text-xl font-bold text-brand-black mb-2">
-            Access Denied
-          </h1>
-          <p className="text-gray-600 text-sm mb-6">
-            You do not have permission to access this evaluation page.
-          </p>
-          <button
-            onClick={() => navigate('/evaluations')}
-            className="w-full px-4 py-2 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors text-sm"
-          >
-            Return to Pending Evaluations
-          </button>
+  // ── Error / loading states ────────────────────────────────────────────────
+  if (permissionError) return (
+    <div className="h-[calc(100vh-4rem)] flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 text-center max-w-sm w-full">
+        <div className="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-4">
+          <Shield className="w-6 h-6 text-red-500" />
         </div>
+        <h2 className="text-base font-bold text-gray-900 mb-1">Access Denied</h2>
+        <p className="text-sm text-gray-400 mb-5">You don't have permission to access this evaluation.</p>
+        <button onClick={() => navigate('/supervisor/pending')}
+          className="w-full py-2 bg-brand-red text-white rounded-lg text-sm font-semibold hover:bg-red-700 transition">
+          Back to Pending
+        </button>
       </div>
-    );
-  }
+    </div>
+  );
 
-  if (loading) {
-    return (
-      <div className="h-[calc(100vh-4rem)] flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-10 h-10 border-4 border-brand-red border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-          <p className="text-sm text-gray-400">Loading evaluation…</p>
-        </div>
+  if (loading) return (
+    <div className="h-[calc(100vh-4rem)] flex items-center justify-center">
+      <div className="w-8 h-8 border-[3px] border-brand-red border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+
+  if (!assessment || !employee) return (
+    <div className="h-[calc(100vh-4rem)] flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 text-center max-w-sm w-full">
+        <AlertCircle className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+        <p className="text-sm text-gray-500 mb-4">Evaluation could not be loaded.</p>
+        <button onClick={() => navigate('/supervisor/pending')}
+          className="w-full py-2 bg-brand-red text-white rounded-lg text-sm font-semibold hover:bg-red-700 transition">
+          Go Back
+        </button>
       </div>
-    );
-  }
+    </div>
+  );
 
-  if (!assessment || !employee) {
-    return (
-      <div className="h-[calc(100vh-4rem)] flex items-center justify-center p-4">
-        <div className="bg-white rounded-xl shadow-card p-8 text-center max-w-md">
-          <AlertCircle className="w-12 h-12 mx-auto text-red-500 mb-3" />
-          <h2 className="text-lg font-semibold text-gray-700 mb-2">Evaluation Not Found</h2>
-          <p className="text-gray-500 text-sm mb-4">The requested evaluation could not be loaded.</p>
-          <button
-            onClick={() => navigate('/evaluations')}
-            className="w-full px-4 py-2 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors text-sm"
-          >
-            Return to Pending Evaluations
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  const performanceLevel = getPerformanceLevel(score);
-  const PerformanceIcon = performanceLevel.icon;
+  const sl = scoreLabel(score);
+  const isExpired = assessment.endDate && new Date(assessment.endDate) < new Date();
 
   return (
     <div className="h-[calc(100vh-4rem)] flex flex-col bg-gray-50 overflow-hidden">
-      {/* Sticky Header */}
-      <div className="flex-shrink-0 bg-white border-b border-gray-200 shadow-sm z-10">
-        <div className="max-w-6xl mx-auto px-4 py-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => navigate('/supervisor/pending')}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <ChevronLeft className="w-5 h-5 text-gray-600" />
-              </button>
-              <div>
-                <h1 className="text-lg font-bold text-brand-black">Supervisor Evaluation</h1>
-                <p className="text-xs text-gray-500">
-                  {assessment.competencyId?.name || 'Competency Evaluation'}
-                </p>
-              </div>
-            </div>
-            
-            <div className="flex items-center gap-3">
-              {hasExistingEvaluation && (
-                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg border border-blue-200">
-                  <CheckCircle className="w-4 h-4" />
-                  <span className="text-xs font-semibold">Draft Saved</span>
-                </div>
-              )}
-              <div className={`px-3 py-1.5 rounded-lg text-xs font-bold ${
-                new Date(assessment.endDate) > new Date() 
-                  ? 'bg-green-100 text-green-700' 
-                  : 'bg-red-100 text-red-700'
-              }`}>
-                {new Date(assessment.endDate) > new Date() ? 'Active' : 'Expired'}
-              </div>
-            </div>
+
+      {/* ── Sticky header ──────────────────────────────────────────────────── */}
+      <div className="flex-shrink-0 bg-white border-b border-gray-100 px-5 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <button onClick={() => navigate('/supervisor/pending')}
+            className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 transition">
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          <div>
+            <h1 className="text-sm font-bold text-gray-900">Supervisor Evaluation</h1>
+            <p className="text-xs text-gray-400 mt-0.5">
+              {assessment.competencyId?.name || 'Competency Assessment'}
+            </p>
           </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {hasExisting && (
+            <span className="flex items-center gap-1 text-[11px] font-semibold text-green-600 bg-green-50 px-2.5 py-1 rounded-full border border-green-100">
+              <CheckCircle2 className="w-3 h-3" /> Saved
+            </span>
+          )}
+          <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full ${isExpired ? 'bg-red-50 text-red-600 border border-red-100' : 'bg-green-50 text-green-600 border border-green-100'}`}>
+            {isExpired ? 'Expired' : 'Active'}
+          </span>
         </div>
       </div>
 
-      {/* Scrollable Content */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar">
-        <div className="max-w-4xl mx-auto p-4 space-y-4">
-          
-          {/* Employee & Assessment Info - Compact Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Employee Card */}
-            <div className="bg-white rounded-lg border border-gray-200 p-3">
-              <div className="flex items-start gap-3">
-                <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-bold flex-shrink-0 shadow-sm">
-                  {employee.name?.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()}
+      {/* ── Scrollable body ────────────────────────────────────────────────── */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-xl mx-auto px-4 py-5 space-y-4">
+
+          {/* Employee + Assessment info row */}
+          <div className="grid grid-cols-2 gap-3">
+            {/* Employee */}
+            <div className="bg-white rounded-xl border border-gray-100 p-3.5">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2.5">Employee</p>
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-brand-red to-red-700 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                  {avatar(employee.name)}
                 </div>
-                <div className="flex-1 min-w-0">
-                  <h3 className="text-sm font-bold text-brand-black truncate">{employee.name}</h3>
-                  <div className="flex items-center gap-1 text-xs text-gray-500 mt-0.5">
-                    <Briefcase className="w-3 h-3" />
-                    <span className="truncate">{employee.position || 'Employee'}</span>
-                  </div>
-                  <div className="flex items-center gap-1 text-xs text-gray-500">
-                    <Mail className="w-3 h-3" />
-                    <span className="truncate">{employee.email}</span>
-                  </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-gray-900 truncate">{employee.name}</p>
+                  <p className="text-[11px] text-gray-400 truncate">{employee.position || 'Employee'}</p>
                 </div>
               </div>
-              <div className="mt-2 pt-2 border-t border-gray-100 text-xs text-gray-500">
-                ID: {employee.employeeId || 'N/A'} · {employee.department || 'No Dept'}
+              <div className="mt-2.5 pt-2.5 border-t border-gray-50 space-y-1">
+                <p className="text-[11px] text-gray-400 truncate">{employee.email}</p>
+                <p className="text-[11px] text-gray-400 font-mono">{employee.employeeId || '—'}</p>
               </div>
             </div>
 
-            {/* Assessment Card */}
-            <div className="bg-white rounded-lg border border-gray-200 p-3">
-              <div className="flex items-start gap-3">
-                <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center text-white flex-shrink-0 shadow-sm">
-                  <Target className="w-5 h-5" />
+            {/* Assessment */}
+            <div className="bg-white rounded-xl border border-gray-100 p-3.5">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2.5">Assessment</p>
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-violet-500 to-violet-700 flex items-center justify-center text-white flex-shrink-0">
+                  <Target className="w-4 h-4" />
                 </div>
-                <div className="flex-1 min-w-0">
-                  <h3 className="text-sm font-bold text-brand-black truncate">{assessment.competencyId?.name || 'General Skills'}</h3>
-                  <p className="text-xs text-gray-500 mt-0.5">{assessment.type}</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <div className="flex items-center gap-1 text-xs text-gray-500">
-                      <Calendar className="w-3 h-3" />
-                      <span>Due {new Date(assessment.endDate).toLocaleDateString()}</span>
-                    </div>
-                  </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-gray-900 truncate">
+                    {assessment.competencyId?.name || '—'}
+                  </p>
+                  <p className="text-[11px] text-gray-400">{assessment.type}</p>
                 </div>
+              </div>
+              <div className="mt-2.5 pt-2.5 border-t border-gray-50 space-y-1">
+                <div className="flex items-center gap-1 text-[11px] text-gray-400">
+                  <Calendar className="w-3 h-3" />
+                  <span>Due {fmtDate(assessment.endDate)}</span>
+                </div>
+                {assessment.description && (
+                  <p className="text-[11px] text-gray-400 line-clamp-2">{assessment.description}</p>
+                )}
               </div>
             </div>
           </div>
 
-          {/* Score Section */}
-          <div className="bg-white rounded-lg border border-gray-200 p-4">
-            {/* Score Display */}
+          {/* Score card */}
+          <div className="bg-white rounded-xl border border-gray-100 p-4">
             <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <Star className="w-4 h-4 text-gray-400" />
-                <h2 className="text-sm font-bold text-brand-black">Overall Score</h2>
-              </div>
-              <div className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 ${getScoreColor(score)}`}>
-                <PerformanceIcon className="w-3 h-3" />
-                {performanceLevel.label}
-              </div>
-            </div>
-
-            {/* Score Value */}
-            <div className="flex items-center justify-center gap-2 mb-4">
-              <span className={`text-5xl font-bold ${getScoreColor(score).split(' ')[0]}`}>
-                {score}
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Score</p>
+              <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ring-1 ${sl.ring} ${sl.color} bg-white`}>
+                {sl.text}
               </span>
-              <span className="text-xl text-gray-400">/100</span>
             </div>
 
-            {/* Score Slider */}
-            <div className="mb-4">
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={score}
-                onChange={(e) => handleScoreChange(e.target.value)}
-                className="w-full h-2 bg-gradient-to-r from-red-500 via-yellow-500 to-green-500 rounded-lg appearance-none cursor-pointer"
+            {/* Big score display */}
+            <div className="flex items-center justify-center gap-1.5 mb-4">
+              <span className={`text-6xl font-black tabular-nums ${sl.color}`}>{score}</span>
+              <span className="text-lg text-gray-300 font-light self-end mb-2">/ 100</span>
+            </div>
+
+            {/* Progress bar */}
+            <div className="w-full bg-gray-100 rounded-full h-2 mb-4 overflow-hidden">
+              <div
+                className={`h-2 rounded-full transition-all duration-200 ${sl.bar}`}
+                style={{ width: `${score}%` }}
               />
-              
-              <div className="flex justify-between mt-1 text-[10px] text-gray-400">
-                <span>0</span>
-                <span>25</span>
-                <span>50</span>
-                <span>75</span>
-                <span>100</span>
-              </div>
             </div>
 
-            {/* Score Controls */}
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => handleScoreChange(score - 5)}
-                  className="px-3 py-1 bg-gray-100 text-gray-700 rounded text-xs font-semibold hover:bg-gray-200 disabled:opacity-50"
-                  disabled={score <= 0}
-                >
-                  -5
-                </button>
-                <button
-                  onClick={() => handleScoreChange(score + 5)}
-                  className="px-3 py-1 bg-gray-100 text-gray-700 rounded text-xs font-semibold hover:bg-gray-200 disabled:opacity-50"
-                  disabled={score >= 100}
-                >
-                  +5
-                </button>
-              </div>
-              
-              <div className="flex gap-1">
-                {[50, 70, 85, 100].map((quickScore) => (
-                  <button
-                    key={quickScore}
-                    onClick={() => handleScoreChange(quickScore)}
-                    className={`px-2 py-1 rounded text-xs font-medium ${
-                      score === quickScore
-                        ? 'bg-brand-red text-white'
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                    }`}
-                  >
-                    {quickScore}
+            {/* Slider */}
+            <input
+              type="range"
+              min="0" max="100" step="1"
+              value={score}
+              onChange={e => setScore(clamp(+e.target.value))}
+              className="w-full h-1.5 rounded-full appearance-none cursor-pointer bg-gray-200 accent-brand-red mb-4"
+            />
+
+            {/* Quick-score buttons */}
+            <div className="flex items-center gap-2">
+              <div className="flex gap-1.5 flex-1">
+                {[0, 25, 50, 75, 100].map(v => (
+                  <button key={v} onClick={() => setScore(v)}
+                    className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition ${score === v ? `${sl.bar} text-white` : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+                    {v}
                   </button>
                 ))}
               </div>
+              {/* Manual input */}
+              <input
+                type="number" min="0" max="100"
+                value={score}
+                onChange={e => setScore(clamp(+e.target.value))}
+                className="w-14 h-8 text-center border border-gray-200 rounded-lg text-sm font-bold text-gray-700 focus:outline-none focus:border-brand-red focus:ring-1 focus:ring-red-100 transition"
+              />
             </div>
           </div>
 
-          {/* Comments Section */}
-          <div className="bg-white rounded-lg border border-gray-200 p-4">
+          {/* Comments */}
+          <div className="bg-white rounded-xl border border-gray-100 p-4">
             <div className="flex items-center gap-2 mb-3">
-              <MessageSquare className="w-4 h-4 text-gray-400" />
-              <h2 className="text-sm font-bold text-brand-black">Evaluation Comments</h2>
+              <MessageSquare className="w-3.5 h-3.5 text-gray-400" />
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Comments</p>
+              <span className="text-[10px] text-gray-300 ml-auto font-normal">optional</span>
             </div>
-            
             <textarea
               value={comments}
-              onChange={(e) => setComments(e.target.value)}
-              placeholder="Provide feedback on performance, strengths, and areas for improvement..."
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm"
-              rows="4"
+              onChange={e => setComments(e.target.value)}
+              placeholder="Share feedback on strengths, performance, and areas for growth…"
+              rows={4}
+              className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm text-gray-700 placeholder:text-gray-300 focus:outline-none focus:border-brand-red focus:ring-1 focus:ring-red-100 transition resize-none"
             />
-            
-            <p className="text-[10px] text-gray-400 mt-1">
-              Comments will be shared with the employee for development planning.
-            </p>
           </div>
 
-          {/* Action Buttons */}
-          <div className="bg-white rounded-lg border border-gray-200 p-3">
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={saveDraft}
-                disabled={saving}
-                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-xs font-semibold hover:bg-gray-200 transition-colors disabled:opacity-50 flex items-center gap-1.5"
-              >
-                <Save className="w-3.5 h-3.5" />
-                {saving ? 'Saving...' : 'Save Draft'}
-              </button>
-              
-              <button
-                onClick={submitEvaluation}
-                disabled={submitting}
-                className="px-4 py-2 bg-brand-red text-white rounded-lg text-xs font-semibold hover:bg-brand-red-dark transition-colors disabled:opacity-50 flex items-center gap-1.5"
-              >
-                <Send className="w-3.5 h-3.5" />
-                {submitting ? 'Submitting...' : 'Submit Evaluation'}
-              </button>
-            </div>
+          {/* Actions */}
+          <div className="flex gap-2 pb-2">
+            <button
+              onClick={saveDraft}
+              disabled={saving}
+              className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg border border-gray-200 bg-white text-sm font-semibold text-gray-600 hover:bg-gray-50 transition disabled:opacity-50"
+            >
+              <Save className="w-3.5 h-3.5" />
+              {saving ? 'Saving…' : 'Save Draft'}
+            </button>
+            <button
+              onClick={() => setShowConfirm(true)}
+              disabled={submitting}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-brand-red text-white text-sm font-semibold hover:bg-red-700 transition disabled:opacity-50"
+            >
+              <Send className="w-3.5 h-3.5" />
+              {hasExisting ? 'Update Evaluation' : 'Submit Evaluation'}
+            </button>
           </div>
         </div>
       </div>
+
+      {/* ── Confirm modal ─────────────────────────────────────────────────── */}
+      <ConfirmModal
+        open={showConfirm}
+        onClose={() => !submitting && setShowConfirm(false)}
+        onConfirm={doSubmit}
+        loading={submitting}
+        employee={employee}
+        score={score}
+        hasExisting={hasExisting}
+      />
     </div>
   );
 }
