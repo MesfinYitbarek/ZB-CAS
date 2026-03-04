@@ -130,68 +130,79 @@ export const getSupervisorDashboardStats = asyncHandler(async (req, res) => {
 // ─── GET PENDING EVALUATIONS ─────────────────────────────────────────────────
 export const getPendingEvaluations = asyncHandler(async (req, res) => {
   const supervisorId = req.user.id;
-  
+  const now = new Date();
+
   // Get supervisor's team
-  const teamMembers = await User.find({ 
-    supervisorId,
-    status: 'ACTIVE'
-  }).select('_id name email position department').lean();
+  const teamMembers = await User.find({ supervisorId, status: 'ACTIVE' })
+    .select('_id name email position department').lean();
 
-  const teamMemberIds = teamMembers.map(m => m._id);
-
-  // Get active assessments with pending evaluations
-  const activeAssessments = await Assessment.find({
-    status: 'ACTIVE',
-    $or: [
-      { type: 'SupervisorOnly' },
-      { type: 'Combined' }
-    ],
-    'supervisorEvaluations': {
-      $elemMatch: {
-        supervisorId,
-        employeeId: { $in: teamMemberIds },
-        status: 'PENDING'
-      }
-    }
+  // Include ACTIVE and SCHEDULED supervisor/combined assessments
+  const assessments = await Assessment.find({
+    status: { $in: ['ACTIVE', 'SCHEDULED'] },
+    $or: [{ type: 'SupervisorOnly' }, { type: 'Combined' }],
   })
-  .populate('competencyId', 'name category')
-  .populate('supervisorEvaluations.employeeId', 'name email position')
-  .lean();
+    .populate('competencyId', 'name category')
+    .lean();
 
-  // Format the response - FIXED: changed 'eval' to 'evaluation'
   const pendingEvaluations = [];
-  
-  activeAssessments.forEach(assessment => {
-    assessment.supervisorEvaluations.forEach(evaluation => {
-      if (evaluation.supervisorId.toString() === supervisorId.toString() && 
-          evaluation.status === 'PENDING') {
-        
-        pendingEvaluations.push({
-          assessmentId: assessment._id,
-          assessmentDescription: assessment.description,
-          assessmentType: assessment.type,
-          competency: assessment.competencyId,
-          startDate: assessment.startDate,
-          endDate: assessment.endDate,
-          employee: evaluation.employeeId,
-          weight: assessment.weight,
-          priority: getPriority(assessment.endDate)
-        });
-      }
-    });
-  });
 
-  // Sort by priority and due date
-  pendingEvaluations.sort((a, b) => {
-    if (a.priority !== b.priority) {
-      return priorityOrder[a.priority] - priorityOrder[b.priority];
+  for (const assessment of assessments) {
+    const isScheduled =
+      assessment.status === 'SCHEDULED' ||
+      (assessment.startDate && new Date(assessment.startDate) > now);
+
+    for (const member of teamMembers) {
+      // Check supervisor response (may exist if they already submitted)
+      const supervisorResponse = await Response.findOne({
+        assessmentId: assessment._id,
+        employeeId: member._id,
+        respondentType: 'supervisor',
+      }).lean();
+
+      const supervisorSubmitted = !!(supervisorResponse?.submittedAt);
+
+      // For Combined: employee must have finished first (unless scheduled)
+      if (assessment.type === 'Combined' && !isScheduled) {
+        const selfDone = await Response.findOne({
+          assessmentId: assessment._id,
+          employeeId: member._id,
+          respondentType: 'self',
+          submittedAt: { $ne: null },
+        }).lean();
+        if (!selfDone) continue;
+      }
+
+      const daysLeft = assessment.endDate
+        ? Math.ceil((new Date(assessment.endDate) - now) / (1000 * 60 * 60 * 24))
+        : null;
+
+      pendingEvaluations.push({
+        assessmentId: assessment._id,
+        assessmentDescription: assessment.description,
+        assessmentType: assessment.type,
+        competency: assessment.competencyId,
+        startDate: assessment.startDate,
+        endDate: assessment.endDate,
+        employee: member,
+        weight: assessment.weight,
+        isScheduled,
+        supervisorSubmitted, // already evaluated — UI shows "Update" instead of "Evaluate"
+        priority: isScheduled ? 'SCHEDULED' : getPriority(assessment.endDate),
+        daysRemaining: daysLeft,
+      });
     }
+  }
+
+  const ORDER = { HIGH: 0, MEDIUM: 1, LOW: 2, SCHEDULED: 3 };
+  pendingEvaluations.sort((a, b) => {
+    const po = (ORDER[a.priority] ?? 9) - (ORDER[b.priority] ?? 9);
+    if (po !== 0) return po;
     return new Date(a.endDate) - new Date(b.endDate);
   });
 
   res.status(200).json({
     status: 'success',
-    data: { pendingEvaluations }
+    data: { pendingEvaluations },
   });
 });
 
@@ -228,13 +239,11 @@ export const getPendingEvaluations = asyncHandler(async (req, res) => {
 
 // Helper functions
 function getPriority(endDate) {
-  const now = new Date();
-  const end = new Date(endDate);
-  const daysLeft = Math.ceil((end - now) / (1000 * 60 * 60 * 24));
-  
+  if (!endDate) return 'LOW';
+  const daysLeft = Math.ceil((new Date(endDate) - new Date()) / (1000 * 60 * 60 * 24));
   if (daysLeft <= 1) return 'HIGH';
   if (daysLeft <= 3) return 'MEDIUM';
   return 'LOW';
 }
 
-const priorityOrder = { HIGH: 1, MEDIUM: 2, LOW: 3 };
+const priorityOrder = { HIGH: 0, MEDIUM: 1, LOW: 2, SCHEDULED: 3 };

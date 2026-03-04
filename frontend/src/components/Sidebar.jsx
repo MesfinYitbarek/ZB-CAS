@@ -31,7 +31,7 @@ const NAV_ITEMS = [
   { icon: FileText, label: 'My Results', path: '/results', roles: ['EMPLOYEE'] },
 
   // ── Shared ───────────────────────────────────────────
-  { icon: FileText, label: 'Results', path: '/results', roles: ['HR_ADMIN'] },
+  { icon: FileText, label: 'Competency Results', path: '/results', roles: ['HR_ADMIN'] },
   { icon: BarChart3, label: 'Reports', path: '/reports', roles: ['HR_ADMIN'] },
   { icon: MessageSquare, label: 'Feedback', path: '/feedback', roles: ['EMPLOYEE', 'HR_ADMIN'] },
 

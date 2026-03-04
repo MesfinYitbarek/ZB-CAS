@@ -1,199 +1,247 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../context/ToastContext';
-import { 
-  ClipboardCheck, Calendar, Clock, Target, AlertCircle, 
-  ChevronRight, AlertTriangle, Mail, Briefcase
+import {
+  ClipboardCheck, Calendar, Clock, Target,
+  ChevronRight, AlertTriangle, Briefcase, CalendarClock,
+  CheckCircle2, RefreshCw,
 } from 'lucide-react';
 import api from '../utils/api';
+
+const fmtDate = (d) => d ? new Date(d).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
+
+const fmtStartTime = (d) => d
+  ? new Date(d).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  : null;
+
+const avatar = (name = '') =>
+  name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+
+function DaysChip({ days, isScheduled }) {
+  if (isScheduled) return null; // shown separately
+  if (days === null || days === undefined) return null;
+  if (days < 0)  return <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-red-50 text-red-600">{Math.abs(days)}d overdue</span>;
+  if (days === 0) return <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-orange-50 text-orange-600">Due today</span>;
+  if (days <= 2)  return <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-600">{days}d left</span>;
+  return          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-50 text-gray-500">{days}d left</span>;
+}
+
+function PriorityDot({ priority, isScheduled }) {
+  if (isScheduled) return <span className="w-2 h-2 rounded-full bg-blue-400 flex-shrink-0" />;
+  const c = { HIGH: 'bg-red-500', MEDIUM: 'bg-amber-400', LOW: 'bg-gray-300' };
+  return <span className={`w-2 h-2 rounded-full flex-shrink-0 ${c[priority] || 'bg-gray-300'}`} />;
+}
 
 export default function PendingEvaluations() {
   const nav = useNavigate();
   const { show } = useToast();
-  const [pendingAssessments, setPendingAssessments] = useState([]);
+  const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    loadPending();
-  }, []);
-
-  const loadPending = async () => {
+  const load = async () => {
+    setLoading(true);
     try {
       const res = await api.get('/supervisors/pending');
-      const pendingEvaluations = res.data.data.pendingEvaluations || [];
-
-      // Transform data for display
-      const transformed = pendingEvaluations.map(item => {
-        const daysRemaining = calculateDaysRemaining(item.endDate);
-
-        return {
-          assessment: {
-            _id: item.assessmentId,
-            description: item.assessmentDescription,
-            competencyId: item.competency,
-            endDate: item.endDate,
-            startDate: item.startDate,
-            type: item.assessmentType,
-            weight: item.weight
-          },
-          employee: item.employee,
-          type: item.assessmentType,
-          priority: item.priority,
-          daysRemaining: daysRemaining,
-          isCombined: item.assessmentType === 'Combined'
-        };
-      });
-
-      setPendingAssessments(transformed);
-    } catch (err) {
-      show('Failed to load pending evaluations.', 'error');
-      console.error(err);
+      const raw = res.data.data.pendingEvaluations || [];
+      setItems(raw.map(item => ({
+        ...item,
+        daysRemaining: item.daysRemaining ?? calcDays(item.endDate),
+      })));
+    } catch {
+      show('Failed to load evaluations.', 'error');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
-  const calculateDaysRemaining = (endDate) => {
-    const end = new Date(endDate);
-    const now = new Date();
-    const diff = end - now;
-    return Math.ceil(diff / (1000 * 60 * 60 * 24));
+  const calcDays = (d) => d
+    ? Math.ceil((new Date(d) - new Date()) / (1000 * 60 * 60 * 24))
+    : null;
+
+  useEffect(() => { load(); }, []);
+
+  const navigate = (item) => {
+    const base = `/assessments/${item.assessmentId}/evaluate?employeeId=${item.employee._id}`;
+    nav(item.assessmentType === 'Combined' ? base + '&type=combined' : base);
   };
 
+  // Grouping: active (pending + update) vs scheduled
+  const active    = items.filter(i => !i.isScheduled);
+  const scheduled = items.filter(i => i.isScheduled);
+  const pendingCount = active.filter(i => !i.supervisorSubmitted).length;
 
-  const getDaysRemainingColor = (days) => {
-    if (days < 0) return 'text-red-600 bg-red-50';
-    if (days === 0) return 'text-orange-600 bg-orange-50';
-    if (days <= 2) return 'text-amber-600 bg-amber-50';
-    return 'text-gray-600 bg-gray-50';
-  };
-
-  if (loading) {
-    return (
-      <div className="h-[calc(100vh-4rem)] flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-10 h-10 border-4 border-brand-red border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-          <p className="text-sm text-gray-400">Loading pending evaluations…</p>
-        </div>
-      </div>
-    );
-  }
-
+  if (loading) return (
+    <div className="h-[calc(100vh-4rem)] flex items-center justify-center">
+      <div className="w-8 h-8 border-[3px] border-brand-red border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
 
   return (
-    <div className="h-[calc(100vh-4rem)] flex flex-col bg-[#f8f9fb] overflow-hidden">
-      {/* Scrollable Content Area */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar">
-        <div className="p-6 lg:p-8 space-y-5 max-w-screen-2xl mx-auto">
+    <div className="h-[calc(100vh-4rem)] flex flex-col overflow-hidden">
 
-          {/* Sticky Header */}
-          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 sticky top-0 bg-[#f8f9fb] z-10 pb-2">
-            <div>
-              <h1 className="text-2xl font-display font-bold text-brand-black">Pending Evaluations</h1>
-              <p className="text-gray-500 mt-1">Team members awaiting your supervisor evaluation</p>
-            </div>
+      {/* ── Sticky header ────────────────────────────────────────────────── */}
+      <div className="flex-shrink-0  px-6 py-4 flex items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-display font-bold text-brand-black ">Pending Evaluations</h1>
+          <p className="text-sm text-gray-400 mt-0.5">Supervisor assessments for your team</p>
+        </div>
+        <div className="flex items-center gap-2">
+          {pendingCount > 0 && (
+            <span className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 bg-orange-50 text-orange-600 rounded-lg border border-orange-100">
+              <AlertTriangle className="w-3.5 h-3.5" />
+              {pendingCount} pending
+            </span>
+          )}
+          <button onClick={load} className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 transition text-gray-500">
+            <RefreshCw className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
 
-            <div className="flex items-center gap-3">
-              
+      {/* ── Content ──────────────────────────────────────────────────────── */}
+      <div className="flex-1 overflow-y-auto p-6 space-y-6">
 
-              {/* Pending Count Badge */}
-              <div className="flex items-center gap-2 px-4 py-2.5 bg-orange-100 text-orange-700 rounded-lg border border-orange-200">
-                <AlertCircle className="w-5 h-5" />
-                <span className="text-sm font-semibold">{pendingAssessments.length} Pending</span>
-              </div>
-            </div>
+        {/* Empty state */}
+        {items.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-24 text-center">
+            <CheckCircle2 className="w-10 h-10 text-green-300 mb-3" />
+            <p className="text-base font-medium text-gray-400">All caught up!</p>
+            <p className="text-sm text-gray-300 mt-1">No evaluations pending right now.</p>
           </div>
+        )}
 
-          {/* Evaluations Grid */}
-          {pendingAssessments.length === 0 ? (
-            <div className="text-center py-16 bg-white rounded-xl shadow-card border border-gray-100">
-              <ClipboardCheck className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-              <h3 className="text-lg font-semibold text-gray-600 mb-2">No Pending Evaluations</h3>
-              <p className="text-gray-400 text-sm">
-                All team members have been evaluated
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-              {pendingAssessments.map((item, idx) => (
-                <div key={idx} className="bg-white rounded-xl shadow-card hover:shadow-lg transition-all border border-gray-100 overflow-hidden group">
-                  
+        {/* ── Active evaluations ─────────────────────────────────────────── */}
+        {active.length > 0 && (
+          <section>
+            <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">
+              Active Assessments
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {active.map((item, idx) => {
+                const alreadyDone = item.supervisorSubmitted;
+                return (
+                  <div
+                    key={`${item.assessmentId}-${item.employee._id}`}
+                    className={`bg-white rounded-xl border transition-all hover:shadow-md overflow-hidden ${alreadyDone ? 'border-green-100' : 'border-gray-100 hover:border-red-200'}`}
+                  >
+                    {/* Priority strip */}
+                    <div className={`h-1 ${
+                      alreadyDone ? 'bg-green-400' :
+                      item.priority === 'HIGH' ? 'bg-red-500' :
+                      item.priority === 'MEDIUM' ? 'bg-amber-400' : 'bg-gray-200'
+                    }`} />
 
-                  <div className="p-5">
-                    {/* Header with Avatar and Priority */}
-                    <div className="flex items-start gap-3 mb-3">
-                      <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-brand-red to-brand-red-dark flex items-center justify-center text-white text-xl font-bold flex-shrink-0 shadow-sm">
-                        {item.employee.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()}
-                      </div>
-
-                      <div className="flex-1 min-w-0">
-                        <h3 className="text-lg font-bold text-brand-black truncate group-hover:text-brand-red transition-colors">
-                          {item.employee.name}
-                        </h3>
-                        
-                        <div className="flex items-center gap-1 mt-0.5">
-                          <Briefcase className="w-3 h-3 text-gray-400" />
-                          <p className="text-xs text-gray-500 truncate">
-                            {item.employee.position || 'Employee'}
-                          </p>
+                    <div className="p-4">
+                      {/* Employee */}
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-brand-red to-red-700 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                          {avatar(item.employee.name)}
                         </div>
-
-                        <div className="flex items-center gap-1 mt-0.5">
-                          <Mail className="w-3 h-3 text-gray-400" />
-                          <p className="text-xs text-gray-500 truncate">
-                            {item.employee.email}
-                          </p>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-semibold text-gray-900 truncate">{item.employee.name}</p>
+                          <div className="flex items-center gap-1 mt-0.5">
+                            <Briefcase className="w-3 h-3 text-gray-300" />
+                            <p className="text-xs text-gray-400 truncate">{item.employee.position || 'Employee'}</p>
+                          </div>
                         </div>
-                      </div>
-                    </div>
-
-                    {/* Assessment Info */}
-                    <div className="bg-gray-50 rounded-lg p-3 mb-3">
-                      <div className="flex items-center gap-2 mb-2">
-                        <Target className="w-4 h-4 text-brand-red" />
-                        <span className="text-sm font-semibold text-brand-black truncate">
-                          {item.assessment.description}
-                        </span>
-                      </div>
-                      
-                      <div className="space-y-2 text-xs">
-                        <div className="flex items-center gap-2 text-gray-600">
-                          <Calendar className="w-3.5 h-3.5 text-gray-400" />
-                          <span>Due {new Date(item.assessment.endDate).toLocaleDateString()}</span>
-                        </div>
-                        
-                        <div className="flex items-center gap-2">
-                          <Clock className="w-3.5 h-3.5 text-gray-400" />
-                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getDaysRemainingColor(item.daysRemaining)}`}>
-                            {item.daysRemaining > 0
-                              ? `${item.daysRemaining} days left`
-                              : item.daysRemaining === 0
-                                ? 'Due today'
-                                : `${Math.abs(item.daysRemaining)} days overdue`}
+                        {alreadyDone && (
+                          <span className="flex-shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-green-50 text-green-600 border border-green-100">
+                            Evaluated ✓
                           </span>
+                        )}
+                      </div>
+
+                      {/* Assessment info */}
+                      <div className="bg-gray-50 rounded-lg p-3 mb-3 space-y-1.5 text-xs text-gray-500">
+                        <div className="flex items-start gap-1.5">
+                          <Target className="w-3.5 h-3.5 text-brand-red mt-0.5 flex-shrink-0" />
+                          <span className="font-medium text-gray-700 line-clamp-2">{item.assessmentDescription}</span>
                         </div>
+                        <div className="flex items-center gap-1.5">
+                          <Calendar className="w-3.5 h-3.5 text-gray-300 flex-shrink-0" />
+                          <span>Due {fmtDate(item.endDate)}</span>
+                          <DaysChip days={item.daysRemaining} />
+                        </div>
+                      </div>
+
+                      {/* CTA */}
+                      <button
+                        onClick={() => navigate(item)}
+                        className={`w-full py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors ${
+                          alreadyDone
+                            ? 'bg-green-50 text-green-700 hover:bg-green-100 border border-green-200'
+                            : 'bg-brand-red text-white hover:bg-red-700'
+                        }`}
+                      >
+                        {alreadyDone ? (
+                          <><RefreshCw className="w-3.5 h-3.5" /> Update Evaluation</>
+                        ) : (
+                          <>{item.assessmentType === 'Combined' ? 'Evaluate Employee' : 'Start Evaluation'} <ChevronRight className="w-3.5 h-3.5" /></>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {/* ── Scheduled (not yet open) ───────────────────────────────────── */}
+        {scheduled.length > 0 && (
+          <section>
+            <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">
+              Upcoming — Not Yet Open
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {scheduled.map((item) => (
+                <div
+                  key={`sched-${item.assessmentId}-${item.employee._id}`}
+                  className="bg-white rounded-xl border border-blue-100 overflow-hidden opacity-80"
+                >
+                  <div className="h-1 bg-blue-300" />
+                  <div className="p-4">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                        {avatar(item.employee.name)}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-gray-700 truncate">{item.employee.name}</p>
+                        <p className="text-xs text-gray-400 truncate">{item.employee.position || 'Employee'}</p>
+                      </div>
+                      <span className="flex-shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-100">
+                        Scheduled
+                      </span>
+                    </div>
+
+                    <div className="bg-blue-50 rounded-lg p-3 mb-3 space-y-1.5 text-xs text-gray-500">
+                      <div className="flex items-start gap-1.5">
+                        <Target className="w-3.5 h-3.5 text-blue-400 mt-0.5 flex-shrink-0" />
+                        <span className="font-medium text-gray-700 line-clamp-2">{item.assessmentDescription}</span>
+                      </div>
+                      {item.startDate && (
+                        <div className="flex items-center gap-1.5">
+                          <CalendarClock className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
+                          <span>Opens {fmtStartTime(item.startDate)}</span>
+                        </div>
+                      )}
+                      <div className="flex items-center gap-1.5">
+                        <Calendar className="w-3.5 h-3.5 text-gray-300 flex-shrink-0" />
+                        <span>Due {fmtDate(item.endDate)}</span>
                       </div>
                     </div>
 
-                    {/* Action Button */}
-                    <button
-                      onClick={() => {
-                        if (item.type === 'SupervisorOnly') {
-                          nav(`/assessments/${item.assessment._id}/evaluate?employeeId=${item.employee._id}`);
-                        } else if (item.type === 'Combined') {
-                          nav(`/assessments/${item.assessment._id}/evaluate?employeeId=${item.employee._id}&type=combined`);
-                        }
-                      }}
-                      className="w-full px-4 py-2.5 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors flex items-center justify-center gap-2 text-xs"
-                    >
-                      {item.type === 'Combined' ? 'Evaluate Employee' : 'Start Evaluation'}
-                      <ChevronRight className="w-4 h-4 ml-auto" />
-                    </button>
+                    {/* Disabled button */}
+                    <div className="w-full py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 bg-gray-50 text-gray-400 border border-gray-100 cursor-not-allowed select-none">
+                      <Clock className="w-3.5 h-3.5" />
+                      Available from {fmtStartTime(item.startDate) || fmtDate(item.startDate)}
+                    </div>
                   </div>
                 </div>
               ))}
             </div>
-          )}
-        </div>
+          </section>
+        )}
       </div>
     </div>
   );

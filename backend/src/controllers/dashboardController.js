@@ -199,7 +199,7 @@ export const getSupervisorDashboardStats = asyncHandler(async (req, res) => {
       period,
       stats: {
         teamSize: teamMembers.length,
-        pendingEvaluations: pendingEvals.length,
+        pendingEvaluations: pendingEvals.filter(e => !e.isScheduled && !e.supervisorSubmitted).length,
         completedEvaluations: allTeamResults.length,
         teamAvgScore: allTeamResults.length > 0 ? Math.round(allTeamResults.reduce((s, r) => s + r.finalScore, 0) / allTeamResults.length) : 0,
         periodAvgScore: periodResults.length > 0 ? Math.round(periodResults.reduce((s, r) => s + r.finalScore, 0) / periodResults.length) : 0,
@@ -349,26 +349,66 @@ const buildEmployeeTrend = async (employeeId, points) => {
 };
 
 const buildPendingEvaluations = async (teamMembers) => {
-  const pendingAssessments = await Assessment.find({ status: 'ACTIVE', $or: [{ type: 'SupervisorOnly' }, { type: 'Combined' }] }).lean();
+  const now = new Date();
+  // Include SCHEDULED (not started yet) and ACTIVE assessments
+  const assessments = await Assessment.find({
+    $or: [{ type: 'SupervisorOnly' }, { type: 'Combined' }],
+    status: { $in: ['ACTIVE', 'SCHEDULED'] },
+  }).lean();
+
   const evals = [];
-  for (const assessment of pendingAssessments) {
+  for (const assessment of assessments) {
+    const isScheduled = assessment.status === 'SCHEDULED' || (assessment.startDate && new Date(assessment.startDate) > now);
+
     for (const member of teamMembers) {
-      const supervisorDone = await Response.findOne({ assessmentId: assessment._id, employeeId: member._id, respondentType: 'supervisor', submittedAt: { $ne: null } }).lean();
-      if (supervisorDone) continue;
-      if (assessment.type === 'Combined') {
-        const selfDone = await Response.findOne({ assessmentId: assessment._id, employeeId: member._id, respondentType: 'self', submittedAt: { $ne: null } }).lean();
-        if (!selfDone) continue;
+      // Check if supervisor already has a response (submitted or in-progress)
+      const supervisorResponse = await Response.findOne({
+        assessmentId: assessment._id,
+        employeeId: member._id,
+        respondentType: 'supervisor',
+      }).lean();
+
+      const supervisorSubmitted = !!(supervisorResponse?.submittedAt);
+
+      // For dashboard "pending" count: only count ACTIVE + not yet submitted
+      // For the pending list page: include already-submitted (so supervisor can update) until COMPLETED
+      if (!isScheduled && supervisorSubmitted) continue; // fully done — skip for pending count
+
+      if (assessment.type === 'Combined' && !isScheduled) {
+        const selfDone = await Response.findOne({
+          assessmentId: assessment._id,
+          employeeId: member._id,
+          respondentType: 'self',
+          submittedAt: { $ne: null },
+        }).lean();
+        if (!selfDone) continue; // employee hasn't finished yet
       }
-      const daysLeft = assessment.endDate ? Math.ceil((new Date(assessment.endDate) - new Date()) / (1000 * 60 * 60 * 24)) : null;
+
+      const daysLeft = assessment.endDate
+        ? Math.ceil((new Date(assessment.endDate) - now) / (1000 * 60 * 60 * 24))
+        : null;
+
       evals.push({
-        assessmentId: assessment._id, assessmentDescription: assessment.description, assessmentType: assessment.type,
-        employeeId: member._id, employeeName: member.name, employeeDepartment: member.department, employeePosition: member.position,
-        dueDate: assessment.endDate, daysLeft,
-        priority: daysLeft !== null ? (daysLeft <= 2 ? 'HIGH' : daysLeft <= 7 ? 'MEDIUM' : 'LOW') : 'LOW'
+        assessmentId: assessment._id,
+        assessmentDescription: assessment.description,
+        assessmentType: assessment.type,
+        startDate: assessment.startDate,
+        endDate: assessment.endDate,
+        employeeId: member._id,
+        employeeName: member.name,
+        employeeDepartment: member.department,
+        employeePosition: member.position,
+        dueDate: assessment.endDate,
+        daysLeft,
+        isScheduled,
+        supervisorSubmitted, // true = supervisor already evaluated → show "Update" UI
+        priority: isScheduled ? 'SCHEDULED' : (daysLeft !== null ? (daysLeft <= 2 ? 'HIGH' : daysLeft <= 7 ? 'MEDIUM' : 'LOW') : 'LOW'),
       });
     }
   }
-  return evals.sort((a, b) => ({ HIGH: 0, MEDIUM: 1, LOW: 2 }[a.priority] - { HIGH: 0, MEDIUM: 1, LOW: 2 }[b.priority]));
+
+  const ORDER = { HIGH: 0, MEDIUM: 1, LOW: 2, SCHEDULED: 3 };
+  return evals.sort((a, b) => (ORDER[a.priority] ?? 9) - (ORDER[b.priority] ?? 9));
 };
 
 const formatTimeAgo = (date) => {

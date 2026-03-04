@@ -532,7 +532,7 @@ export default function Assessments() {
       {/* Sticky Header */}
       <div className="flex justify-between items-start mb-6 flex-shrink-0">
         <div>
-          <h1 className="text-2xl font-display font-bold text-brand-black">Assessments</h1>
+          <h1 className="text-2xl font-display font-bold text-brand-black">Competency Assessments</h1>
           <p className="text-gray-500 mt-1">
             {isAdmin
               ? 'Create, schedule, and manage assessments.'
