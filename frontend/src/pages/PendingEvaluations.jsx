@@ -77,12 +77,12 @@ export default function PendingEvaluations() {
   );
 
   return (
-    <div className="h-[calc(100vh-4rem)] flex flex-col overflow-hidden">
+    <div className="h-[calc(100vh-4rem)] flex flex-col bg-gray-50 overflow-hidden">
 
       {/* ── Sticky header ────────────────────────────────────────────────── */}
-      <div className="flex-shrink-0  px-6 py-4 flex items-center justify-between gap-4">
+      <div className="flex-shrink-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-display font-bold text-brand-black ">Pending Evaluations</h1>
+          <h1 className="text-xl font-bold text-gray-900">Pending Evaluations</h1>
           <p className="text-sm text-gray-400 mt-0.5">Supervisor assessments for your team</p>
         </div>
         <div className="flex items-center gap-2">
@@ -153,11 +153,20 @@ export default function PendingEvaluations() {
 
                       {/* Assessment info */}
                       <div className="bg-gray-50 rounded-lg p-3 mb-3 space-y-1.5 text-xs text-gray-500">
+                        {/* Competency */}
                         <div className="flex items-start gap-1.5">
                           <Target className="w-3.5 h-3.5 text-brand-red mt-0.5 flex-shrink-0" />
-                          <span className="font-medium text-gray-700 line-clamp-2">{item.assessmentDescription}</span>
+                          <span className="font-semibold text-gray-800 line-clamp-1">
+                            {item.competency?.name || 'Unknown Competency'}
+                          </span>
                         </div>
-                        <div className="flex items-center gap-1.5">
+                        {/* Description */}
+                        {item.assessmentDescription && (
+                          <div className="pl-5 text-gray-500 line-clamp-2 leading-snug">
+                            {item.assessmentDescription}
+                          </div>
+                        )}
+                        <div className="flex items-center gap-1.5 pt-0.5">
                           <Calendar className="w-3.5 h-3.5 text-gray-300 flex-shrink-0" />
                           <span>Due {fmtDate(item.endDate)}</span>
                           <DaysChip days={item.daysRemaining} />
@@ -217,10 +226,17 @@ export default function PendingEvaluations() {
                     <div className="bg-blue-50 rounded-lg p-3 mb-3 space-y-1.5 text-xs text-gray-500">
                       <div className="flex items-start gap-1.5">
                         <Target className="w-3.5 h-3.5 text-blue-400 mt-0.5 flex-shrink-0" />
-                        <span className="font-medium text-gray-700 line-clamp-2">{item.assessmentDescription}</span>
+                        <span className="font-semibold text-gray-800 line-clamp-1">
+                          {item.competency?.name || 'Unknown Competency'}
+                        </span>
                       </div>
+                      {item.assessmentDescription && (
+                        <div className="pl-5 text-gray-500 line-clamp-2 leading-snug">
+                          {item.assessmentDescription}
+                        </div>
+                      )}
                       {item.startDate && (
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1.5 pt-0.5">
                           <CalendarClock className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
                           <span>Opens {fmtStartTime(item.startDate)}</span>
                         </div>

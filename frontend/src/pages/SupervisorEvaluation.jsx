@@ -140,7 +140,7 @@ export default function SupervisorEvaluation() {
       
       show('Evaluation submitted successfully!', 'success');
       
-      setTimeout(() => navigate('/supervisor/pending'), 1500);
+      setTimeout(() => navigate('/evaluations'), 1500);
     } catch (err) {
       console.error('Error submitting evaluation:', err);
       if (err.response?.status === 403) {
@@ -168,7 +168,7 @@ export default function SupervisorEvaluation() {
             You do not have permission to access this evaluation page.
           </p>
           <button
-            onClick={() => navigate('/supervisor/pending')}
+            onClick={() => navigate('/evaluations')}
             className="w-full px-4 py-2 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors text-sm"
           >
             Return to Pending Evaluations
@@ -197,7 +197,7 @@ export default function SupervisorEvaluation() {
           <h2 className="text-lg font-semibold text-gray-700 mb-2">Evaluation Not Found</h2>
           <p className="text-gray-500 text-sm mb-4">The requested evaluation could not be loaded.</p>
           <button
-            onClick={() => navigate('/supervisor/pending')}
+            onClick={() => navigate('/evaluations')}
             className="w-full px-4 py-2 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors text-sm"
           >
             Return to Pending Evaluations

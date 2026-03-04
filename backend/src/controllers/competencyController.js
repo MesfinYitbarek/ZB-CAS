@@ -8,10 +8,14 @@ const TARGET_GROUPS = ['managerial', 'non-managerial', 'common'];
 
 // ─── LIST ─────────────────────────────────────────────────────────────────────
 export const getCompetencies = asyncHandler(async (req, res) => {
-  const { category, page = 1, limit = 50 } = req.query;
+  const { category, search, page = 1, limit = 50 } = req.query;
 
   const filter = {};
   if (category) filter.category = category;
+  if (search && search.trim()) {
+    const regex = new RegExp(search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    filter.$or = [{ name: regex }, { category: regex }];
+  }
 
   const skip = (parseInt(page, 10) - 1) * parseInt(limit, 10);
 

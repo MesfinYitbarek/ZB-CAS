@@ -532,7 +532,7 @@ export default function Assessments() {
       {/* Sticky Header */}
       <div className="flex justify-between items-start mb-6 flex-shrink-0">
         <div>
-          <h1 className="text-2xl font-display font-bold text-brand-black">Competency Assessments</h1>
+          <h1 className="text-2xl font-display font-bold text-brand-black">Assessments</h1>
           <p className="text-gray-500 mt-1">
             {isAdmin
               ? 'Create, schedule, and manage assessments.'
@@ -617,7 +617,9 @@ export default function Assessments() {
       {!isAdmin && (
         <div className="mb-6 flex-shrink-0">
           <p className="text-sm text-gray-500">
-            Showing {isEmployee ? 'assessments assigned to you' : 'assessments requiring your evaluation'}
+            {isEmployee
+              ? 'Showing all assessments assigned to you — supervisor-only assessments are visible but cannot be taken.'
+              : 'Showing assessments requiring your evaluation'}
           </p>
         </div>
       )}
@@ -728,28 +730,37 @@ export default function Assessments() {
                           Auto-activates {new Date(a.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                         </span>
                       )}
-                      {!isAdmin && isActive && !requiresSupervisor && (
+                      {/* SelfAssessment — employee can take */}
+                      {!isAdmin && isActive && a.type === 'SelfAssessment' && (
                         <button onClick={() => nav(`/assessments/${a._id}/take`)}
                           className="px-3 py-1.5 text-xs font-semibold bg-brand-red text-white rounded-lg hover:bg-brand-red-dark transition-colors">
                           Start Assessment
                         </button>
                       )}
-                      {!isAdmin && isScheduled && (
-                        <button onClick={() => nav(`/assessments/${a._id}/take`)}
-                          className="px-3 py-1.5 text-xs font-semibold bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors flex items-center gap-1">
-                          <Eye className="w-3 h-3" /> View Details
-                        </button>
-                      )}
-                      {isSupervisor && isActive && requiresSupervisor && (
-                        <button onClick={() => nav(`/assessments/${a._id}/evaluate`)}
-                          className="px-3 py-1.5 text-xs font-semibold bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
-                          Evaluate Team
-                        </button>
-                      )}
+                      {/* Combined — employee does the self part */}
                       {isEmployee && isActive && a.type === 'Combined' && (
                         <button onClick={() => nav(`/assessments/${a._id}/take`)}
                           className="px-3 py-1.5 text-xs font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
                           Start Self-Assessment
+                        </button>
+                      )}
+                      {/* SupervisorOnly — employee can only view, not take */}
+                      {isEmployee && a.type === 'SupervisorOnly' && (
+                        <span className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-gray-100 text-gray-500 border border-gray-200 cursor-default select-none">
+                          <Eye className="w-3 h-3" /> View Only
+                        </span>
+                      )}
+                      {/* Scheduled — non-admin sees upcoming info */}
+                      {!isAdmin && isScheduled && a.type !== 'SupervisorOnly' && (
+                        <span className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-50 text-blue-600 border border-blue-100 cursor-default select-none">
+                          <Clock className="w-3 h-3" /> Upcoming
+                        </span>
+                      )}
+                      {/* Supervisor — evaluate team */}
+                      {isSupervisor && isActive && requiresSupervisor && (
+                        <button onClick={() => nav(`/assessments/${a._id}/evaluate`)}
+                          className="px-3 py-1.5 text-xs font-semibold bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
+                          Evaluate Team
                         </button>
                       )}
                       {isAdmin && a.status === 'COMPLETED' && a.type === 'Combined' && (

@@ -5,6 +5,7 @@ import {
   Trash2,
   Eye,
   X,
+  Search,
 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import Modal from '../components/Modal';
@@ -41,6 +42,7 @@ export default function Competencies() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [catFilter, setCatFilter] = useState('All');
+  const [search, setSearch] = useState('');
 
   const [modal, setModal] = useState(null); // 'create' | 'edit'
   const [selected, setSelected] = useState(null);
@@ -66,6 +68,7 @@ export default function Competencies() {
     try {
       const params = { page: pagination.page, limit: pagination.limit };
       if (catFilter !== 'All') params.category = catFilter;
+      if (search.trim()) params.search = search.trim();
 
       const { data } = await api.get('/competencies', { params });
 
@@ -82,7 +85,7 @@ export default function Competencies() {
       show('Failed to load competencies.', 'error');
     }
     setLoading(false);
-  }, [catFilter, pagination.page, pagination.limit, show]);
+  }, [catFilter, search, pagination.page, pagination.limit, show]);
 
   useEffect(() => {
     fetch();
@@ -202,7 +205,25 @@ export default function Competencies() {
       </div>
 
       {/* FILTERS */}
-      <div className="flex justify-between items-center gap-4 mb-6 flex-shrink-0">
+      <div className="flex flex-col gap-3 mb-6 flex-shrink-0">
+        {/* Search bar */}
+        <div className="relative max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => { setSearch(e.target.value); setPagination(p => ({ ...p, page: 1 })); }}
+            placeholder="Search competencies…"
+            className="w-full h-9 pl-9 pr-8 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 placeholder:text-gray-400 focus:outline-none focus:border-red-400 focus:ring-1 focus:ring-red-100 transition"
+          />
+          {search && (
+            <button onClick={() => { setSearch(''); setPagination(p => ({ ...p, page: 1 })); }} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+
+        <div className="flex justify-between items-center gap-4">
         <div className="flex gap-2 flex-wrap">
           {CATEGORIES.map((c) => (
             <button
@@ -229,6 +250,7 @@ export default function Competencies() {
           <option value="24">24</option>
           <option value="48">48</option>
         </select>
+      </div>
       </div>
 
       {/* CONTENT - Scrollable */}
