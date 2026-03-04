@@ -206,217 +206,214 @@ const ResultDetailModal = ({ result, isOpen, onClose, isAdmin, questionDetails, 
     return styles[type] || { bg: 'bg-gray-100', text: 'text-gray-700', icon: '⚠️' };
   };
 
+  const scoreColor = result.finalScore >= 75 ? 'text-green-600' : result.finalScore >= 50 ? 'text-amber-600' : 'text-red-600';
+  const scoreBarColor = result.assessmentType === 'Combined' ? 'bg-purple-500' : result.assessmentType === 'SupervisorOnly' ? 'bg-orange-500' : 'bg-brand-red';
+
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto">
-      <div className="flex items-center justify-center min-h-screen px-4 py-8">
-        <div className="fixed inset-0 bg-gray-900/60" onClick={onClose} />
-        <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-4xl">
-          <div className="bg-gradient-to-r from-brand-red to-brand-red-dark px-6 py-4 flex items-center justify-between rounded-t-2xl">
-            <div className="flex items-center gap-3">
-              <FileText className="w-5 h-5 text-white" />
-              <h3 className="text-lg font-semibold text-white">Result Details</h3>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="fixed inset-0 bg-black/40 backdrop-blur-[2px]" onClick={onClose} />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh]">
+
+        {/* ── Header ── */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 flex-shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-brand-red/10 flex items-center justify-center">
+              <FileText className="w-4 h-4 text-brand-red" />
             </div>
-            <button onClick={onClose} className="text-white/80 hover:text-white"><XCircle className="w-5 h-5" /></button>
+            <div>
+              <h3 className="text-sm font-bold text-gray-900">Result Details</h3>
+              {result.completedAt && (
+                <p className="text-[11px] text-gray-400">
+                  {new Date(result.completedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                </p>
+              )}
+            </div>
           </div>
-          <div className="p-6 max-h-[80vh] overflow-y-auto space-y-5">
-            
-            {/* Employee info (admin only) */}
-            {isAdmin && (
-              <div className="bg-gray-50 rounded-xl p-4">
-                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Employee Information</h4>
-                <div className="grid grid-cols-2 gap-3">
-                  {[['Name', result.userName], ['Employee ID', result.employeeId], ['Department', result.userDepartment], ['Position', result.userPosition], ['Email', result.userEmail]].map(([label, value]) => (
-                    <div key={label}><p className="text-xs text-gray-500">{label}</p><p className="text-sm font-medium text-gray-900">{value || '—'}</p></div>
-                  ))}
-                </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition">
+            <XCircle className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* ── Scrollable body ── */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+
+          {/* ── Employee (admin only) ── */}
+          {isAdmin && (
+            <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-brand-red to-red-700 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                {(result.userName || '?').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()}
               </div>
-            )}
-            {/* Competency */}
-            <div className="bg-gray-50 rounded-xl p-4">
-              <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Competency</h4>
-              <p className="font-medium text-gray-900">{result.competencyName}</p>
-              <p className="text-xs text-gray-500 mt-0.5">{result.competencyCategory}</p>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-gray-900 truncate">{result.userName || '—'}</p>
+                <p className="text-xs text-gray-400 truncate">{result.userEmail || '—'}</p>
+              </div>
+              <div className="text-right flex-shrink-0">
+                <p className="text-xs text-gray-500">{result.userDepartment || '—'}</p>
+                <p className="text-xs text-gray-400 font-mono">{result.employeeId || '—'}</p>
+              </div>
             </div>
-            {/* Assessment info */}
-            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 border border-blue-100">
-              <div className="flex gap-2 mt-2 flex-wrap">
-                <TypeBadge type={result.assessmentType} />
-                {result.targetGroup && result.targetGroup !== 'N/A' && (
-                  <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full capitalize">{result.targetGroup.replace('-', ' ')}</span>
-                )}
-                {result.purpose && result.purpose !== 'N/A' && (
-                  <span className="text-xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full">{result.purpose}</span>
-                )}
+          )}
+
+          {/* ── Competency + Assessment meta ── */}
+          <div className="rounded-xl border border-gray-100 overflow-hidden">
+            {/* Competency row */}
+            <div className="px-4 py-3 bg-gray-50 flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-0.5">Competency</p>
+                <p className="text-sm font-bold text-gray-900 truncate">{result.competencyName || '—'}</p>
+                <p className="text-[11px] text-gray-400 mt-0.5">{result.competencyCategory || ''}</p>
               </div>
-              <p className="font-semibold text-blue-900">{result.assessmentDescription}</p>
+              <TypeBadge type={result.assessmentType} />
             </div>
-            {/* Scores */}
-            <div className="bg-gray-50 rounded-xl p-4">
-              <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Score Breakdown</h4>
-              <div className="grid grid-cols-3 gap-3 mb-3">
-                <div className="bg-white rounded-lg p-3 border border-gray-200 text-center">
-                  <User className="w-4 h-4 text-blue-600 mx-auto mb-1" />
-                  <p className="text-xs text-gray-500">Self Score</p>
-                  <p className="text-xl font-bold text-gray-900">{result.selfScore !== null ? `${result.selfScore.toFixed(1)}%` : '—'}</p>
+
+            {/* Meta rows */}
+            <div className="divide-y divide-gray-50">
+              {result.assessmentDescription && (
+                <div className="px-4 py-2.5 flex items-baseline gap-2">
+                  <span className="text-[11px] font-semibold text-gray-400 w-24 flex-shrink-0">Description</span>
+                  <span className="text-sm text-gray-700">{result.assessmentDescription}</span>
                 </div>
-                <div className="bg-white rounded-lg p-3 border border-gray-200 text-center">
-                  <Users className="w-4 h-4 text-purple-600 mx-auto mb-1" />
-                  <p className="text-xs text-gray-500">Supervisor</p>
-                  <p className="text-xl font-bold text-gray-900">{result.supervisorScore !== null ? `${result.supervisorScore.toFixed(1)}%` : '—'}</p>
+              )}
+              {result.purpose && result.purpose !== 'N/A' && (
+                <div className="px-4 py-2.5 flex items-baseline gap-2">
+                  <span className="text-[11px] font-semibold text-gray-400 w-24 flex-shrink-0">Purpose</span>
+                  <span className="text-sm text-gray-700">{result.purpose}</span>
                 </div>
-                <div className="bg-white rounded-lg p-3 border-2 border-brand-red/20 bg-brand-red/5 text-center">
-                  <Award className="w-4 h-4 text-brand-red mx-auto mb-1" />
-                  <p className="text-xs text-gray-500">Final</p>
-                  <p className="text-xl font-bold text-brand-red">{result.finalScore.toFixed(1)}%</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3 mt-2">
-                <LevelBadge level={result.level} />
-                <div className="flex-1 bg-gray-200 rounded-full h-2">
-                  <div className={`h-2 rounded-full ${result.assessmentType === 'Combined' ? 'bg-purple-600' : 'bg-brand-red'}`} style={{ width: `${result.finalScore}%` }} />
-                </div>
-              </div>
-              {result.isCombined && result.weightUsed && (
-                <div className="mt-3 pt-3 border-t border-gray-200 flex items-center gap-4">
-                  <Scale className="w-4 h-4 text-orange-500" />
-                  <span className="text-xs text-gray-600">Self <strong>{result.weightUsed.selfAssessment}%</strong></span>
-                  <span className="text-xs text-gray-600">Supervisor <strong>{result.weightUsed.supervisor}%</strong></span>
+              )}
+              {result.targetGroup && result.targetGroup !== 'N/A' && (
+                <div className="px-4 py-2.5 flex items-baseline gap-2">
+                  <span className="text-[11px] font-semibold text-gray-400 w-24 flex-shrink-0">Target Group</span>
+                  <span className="text-sm text-gray-700 capitalize">{result.targetGroup.replace('-', ' ')}</span>
                 </div>
               )}
             </div>
-            {/* Recommendation */}
-            {result.recommendation && (
-              <div className="bg-blue-50 rounded-xl p-4 border border-blue-100 flex gap-3">
-                <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-                <div>
-                  <h4 className="text-xs font-semibold text-blue-800 uppercase tracking-wider mb-1">Development Recommendation</h4>
-                  <p className="text-sm text-blue-900">{result.recommendation}</p>
-                </div>
+          </div>
+
+          {/* ── Score block ── */}
+          <div className="rounded-xl border border-gray-100 overflow-hidden">
+            {/* Score header with final score prominent */}
+            <div className="px-4 py-3 bg-gray-50 flex items-center justify-between">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Score</p>
+              <div className="flex items-center gap-2">
+                <LevelBadge level={result.level} />
+                <span className={`text-lg font-black ${scoreColor}`}>{result.finalScore.toFixed(1)}%</span>
               </div>
-            )}
-            {/* Questions — admin only */}
-            {isAdmin && (
-              <QuestionDetailsSection
-                questionDetails={questionDetails}
-                summary={questionSummary}
-                loading={loadingQuestions}
-              />
-            )}
-            {/* Security — admin only - Updated to show detailed violations */}
-            {isAdmin && securityData && (
-              <div className="bg-gray-50 rounded-xl p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-2">
-                    <Shield className="w-4 h-4 text-orange-500" /> Security Violations
-                  </h4>
+            </div>
+
+            {/* Score bar */}
+            <div className="px-4 pt-2.5 pb-1">
+              <div className="w-full bg-gray-100 rounded-full h-2">
+                <div className={`h-2 rounded-full transition-all ${scoreBarColor}`} style={{ width: `${Math.min(result.finalScore, 100)}%` }} />
+              </div>
+            </div>
+
+            {/* Score breakdown rows */}
+            <div className="divide-y divide-gray-50 pb-1">
+              {result.selfScore !== null && result.selfScore !== undefined && (
+                <div className="px-4 py-2.5 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <User className="w-3.5 h-3.5 text-blue-400" />
+                    <span className="text-[11px] font-semibold text-gray-400">Self Score</span>
+                  </div>
+                  <span className="text-sm font-bold text-gray-800">{result.selfScore.toFixed(1)}%</span>
+                </div>
+              )}
+              {result.supervisorScore !== null && result.supervisorScore !== undefined && (
+                <div className="px-4 py-2.5 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Users className="w-3.5 h-3.5 text-purple-400" />
+                    <span className="text-[11px] font-semibold text-gray-400">Supervisor Score</span>
+                  </div>
+                  <span className="text-sm font-bold text-gray-800">{result.supervisorScore.toFixed(1)}%</span>
+                </div>
+              )}
+              {result.isCombined && result.weightUsed && (
+                <div className="px-4 py-2.5 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Scale className="w-3.5 h-3.5 text-orange-400" />
+                    <span className="text-[11px] font-semibold text-gray-400">Weighting</span>
+                  </div>
+                  <span className="text-xs text-gray-500">
+                    Self&nbsp;<strong>{result.weightUsed.selfAssessment}%</strong>
+                    &nbsp;·&nbsp;
+                    Supervisor&nbsp;<strong>{result.weightUsed.supervisor}%</strong>
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* ── Recommendation ── */}
+          {result.recommendation && (
+            <div className="rounded-xl border border-blue-100 bg-blue-50 overflow-hidden">
+              <div className="px-4 py-2.5 border-b border-blue-100 flex items-center gap-2">
+                <Info className="w-3.5 h-3.5 text-blue-500" />
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-blue-600">Development Recommendation</p>
+              </div>
+              <p className="px-4 py-3 text-sm text-blue-900 leading-relaxed">{result.recommendation}</p>
+            </div>
+          )}
+
+          {/* ── Question details (admin) ── */}
+          {isAdmin && (
+            <QuestionDetailsSection
+              questionDetails={questionDetails}
+              summary={questionSummary}
+              loading={loadingQuestions}
+            />
+          )}
+
+          {/* ── Security (admin) ── */}
+          {isAdmin && securityData && (
+            <div className="rounded-xl border border-gray-100 overflow-hidden">
+              <div className="px-4 py-2.5 bg-gray-50 flex items-center justify-between border-b border-gray-100">
+                <div className="flex items-center gap-2">
+                  <Shield className="w-3.5 h-3.5 text-orange-400" />
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Security</p>
+                </div>
+                <div className="flex items-center gap-2">
                   {securityData.summary?.isHighRisk && (
-                    <span className="bg-red-100 text-red-700 text-xs px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-600 flex items-center gap-1">
                       <AlertCircle className="w-3 h-3" /> HIGH RISK
                     </span>
                   )}
+                  <span className="text-xs font-bold text-gray-600">{securityData.summary?.totalViolations || 0} violations</span>
                 </div>
-                
-                {/* Summary stats */}
-                <div className="grid grid-cols-4 gap-2 mb-4">
-                  <div className="bg-white rounded-lg p-2 text-center border border-gray-200">
-                    <p className="text-lg font-bold text-gray-900">{securityData.summary?.totalViolations || 0}</p>
-                    <p className="text-xs text-gray-500">Total</p>
-                  </div>
-                  <div className="bg-white rounded-lg p-2 text-center border border-gray-200">
-                    <p className="text-lg font-bold text-orange-600">{securityData.summary?.fullscreenExits || 0}</p>
-                    <p className="text-xs text-gray-500">Fullscreen Exits</p>
-                  </div>
-                  <div className="bg-white rounded-lg p-2 text-center border border-gray-200">
-                    <p className="text-lg font-bold text-yellow-600">{securityData.summary?.tabSwitches || 0}</p>
-                    <p className="text-xs text-gray-500">Tab Switches</p>
-                  </div>
-                  <div className="bg-white rounded-lg p-2 text-center border border-gray-200">
-                    <p className="text-lg font-bold text-blue-600">{securityData.summary?.windowBlurs || 0}</p>
-                    <p className="text-xs text-gray-500">Window Blurs</p>
-                  </div>
-                </div>
-
-                {/* Detailed violations list */}
-                {securityData.violations && securityData.violations.length > 0 ? (
-                  <div>
-                    <h5 className="text-sm font-semibold text-gray-700 mb-2">Violation Details</h5>
-                    <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-                      {securityData.violations.map((violation, index) => {
-                        const style = getViolationStyle(violation.type);
-                        return (
-                          <div key={index} className="bg-white rounded-lg border border-gray-200 p-3 hover:shadow-sm transition-shadow">
-                            <div className="flex items-start gap-3">
-                              <div className={`w-8 h-8 rounded-full ${style.bg} flex items-center justify-center flex-shrink-0`}>
-                                <span className="text-sm">{style.icon}</span>
-                              </div>
-                              <div className="flex-1">
-                                <div className="flex items-center justify-between">
-                                  <span className={`text-sm font-semibold ${style.text}`}>
-                                    {formatViolationType(violation.type)}
-                                  </span>
-                                  <span className="text-xs text-gray-400">
-                                    {new Date(violation.timestamp).toLocaleString()}
-                                  </span>
-                                </div>
-                                {violation.details && (
-                                  <p className="text-xs text-gray-600 mt-1">{violation.details}</p>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="bg-green-50 rounded-lg p-4 text-center border border-green-200">
-                    <CheckCircle2 className="w-8 h-8 text-green-500 mx-auto mb-2" />
-                    <p className="text-sm text-green-700 font-medium">No security violations detected</p>
-                    <p className="text-xs text-green-600 mt-1">This assessment was completed without any security concerns.</p>
-                  </div>
-                )}
-
-                {/* Additional stats in a compact grid */}
-                {(securityData.summary?.rightClickAttempts > 0 || 
-                  securityData.summary?.copyAttempts > 0 || 
-                  securityData.summary?.printAttempts > 0 || 
-                  securityData.summary?.devToolsAttempts > 0) && (
-                  <div className="mt-4 pt-3 border-t border-gray-200">
-                    <p className="text-xs font-semibold text-gray-500 mb-2">Other Violations</p>
-                    <div className="grid grid-cols-4 gap-2">
-                      {securityData.summary?.rightClickAttempts > 0 && (
-                        <div className="bg-red-50 rounded p-1.5 text-center">
-                          <p className="text-xs font-bold text-red-700">{securityData.summary.rightClickAttempts}</p>
-                          <p className="text-[10px] text-red-600">Right Clicks</p>
-                        </div>
-                      )}
-                      {securityData.summary?.copyAttempts > 0 && (
-                        <div className="bg-purple-50 rounded p-1.5 text-center">
-                          <p className="text-xs font-bold text-purple-700">{securityData.summary.copyAttempts}</p>
-                          <p className="text-[10px] text-purple-600">Copy Attempts</p>
-                        </div>
-                      )}
-                      {securityData.summary?.printAttempts > 0 && (
-                        <div className="bg-indigo-50 rounded p-1.5 text-center">
-                          <p className="text-xs font-bold text-indigo-700">{securityData.summary.printAttempts}</p>
-                          <p className="text-[10px] text-indigo-600">Print Attempts</p>
-                        </div>
-                      )}
-                      {securityData.summary?.devToolsAttempts > 0 && (
-                        <div className="bg-pink-50 rounded p-1.5 text-center">
-                          <p className="text-xs font-bold text-pink-700">{securityData.summary.devToolsAttempts}</p>
-                          <p className="text-[10px] text-pink-600">Dev Tools</p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
               </div>
-            )}
-          </div>
-          <div className="bg-gray-50 px-6 py-4 rounded-b-2xl flex justify-end">
-            <button onClick={onClose} className="px-5 py-2 bg-brand-red text-white rounded-lg font-semibold text-sm hover:bg-brand-red-dark transition-colors">Close</button>
-          </div>
+
+              {securityData.violations && securityData.violations.length > 0 ? (
+                <div className="divide-y divide-gray-50 max-h-52 overflow-y-auto">
+                  {securityData.violations.map((v, i) => {
+                    const style = getViolationStyle(v.type);
+                    return (
+                      <div key={i} className="px-4 py-2.5 flex items-center gap-3">
+                        <span className={`w-6 h-6 rounded-full ${style.bg} flex items-center justify-center text-xs flex-shrink-0`}>{style.icon}</span>
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-xs font-semibold ${style.text}`}>{formatViolationType(v.type)}</p>
+                          {v.details && <p className="text-[11px] text-gray-400 truncate">{v.details}</p>}
+                        </div>
+                        <span className="text-[11px] text-gray-400 flex-shrink-0 tabular-nums">
+                          {new Date(v.timestamp).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="px-4 py-3 flex items-center gap-2 text-green-600">
+                  <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                  <p className="text-xs font-medium">No violations detected</p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* ── Footer ── */}
+        <div className="flex-shrink-0 px-5 py-3 border-t border-gray-100 flex justify-end">
+          <button onClick={onClose} className="px-5 py-2 bg-brand-red text-white rounded-lg text-sm font-semibold hover:bg-red-700 transition-colors">
+            Close
+          </button>
         </div>
       </div>
     </div>
@@ -563,8 +560,8 @@ export default function Results() {
     /* Full-height fixed container — fills whatever space the app shell gives */
     <div className="flex flex-col h-full overflow-hidden">
 
-      {/* ── Fixed top section (header + filters + stats + count bar) ── */}
-      <div className="flex-shrink-0 px-7 pt-7 pb-0  z-20 shadow-sm">
+      {/* ── Sticky top section (header + filters + stats + count bar) ── */}
+      <div className="flex-shrink-0 px-7 pt-7 pb-0 bg-white z-20 shadow-sm sticky top-0">
 
         {/* Page header */}
         <div className="flex justify-between items-start mb-4 flex-wrap gap-4">
@@ -610,7 +607,14 @@ export default function Results() {
                     className="w-full h-9 pl-9 pr-3 rounded-lg border border-gray-300 text-sm focus:ring-2 focus:ring-brand-red focus:border-transparent" />
                 </div>
               </div>
-              
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5">Assessment</label>
+                <select value={pendingFilters.assessmentId} onChange={e => setPendingFilters(p => ({ ...p, assessmentId: e.target.value }))}
+                  className="w-full h-9 px-3 rounded-lg border border-gray-300 text-sm focus:ring-2 focus:ring-brand-red">
+                  <option value="">All Assessments</option>
+                  {filterOptions.assessments.map(a => <option key={a._id} value={a._id}>{a.description || 'Assessment'}</option>)}
+                </select>
+              </div>
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Competency</label>
                 <select value={pendingFilters.competencyId} onChange={e => setPendingFilters(p => ({ ...p, competencyId: e.target.value }))}
