@@ -167,7 +167,6 @@ const computeRawScore = (questions, responses) => {
 
         const type = (q.type || '').toLowerCase();
 
-        // Build the question detail object
         const detail = {
             questionId: q._id,
             questionNumber: idx + 1,
@@ -185,27 +184,38 @@ const computeRawScore = (questions, responses) => {
         };
 
         if (!resp || resp.selectedAnswer === null || resp.selectedAnswer === undefined) {
-            // detail stays with defaults (unanswered)
+            // unanswered
         } else {
             const scoreEarned = scoreSingleResponse(q, resp);
             rawScore += scoreEarned;
 
             detail.userAnswer = resp.selectedAnswer;
             detail.scoreAwarded = Number(scoreEarned.toFixed(2));
-            detail.scorePercentage = points > 0 ? Number(((scoreEarned / points) * 100).toFixed(1)) : 0;
-            detail.isCorrect = scoreEarned >= points;          // Full marks
-            detail.isPartial = scoreEarned > 0 && scoreEarned < points; // Partial credit
+            detail.scorePercentage = points > 0
+                ? Number(((scoreEarned / points) * 100).toFixed(2))
+                : 0;
+
+            detail.isCorrect = scoreEarned >= points;
+            detail.isPartial = scoreEarned > 0 && scoreEarned < points;
             detail.isUnanswered = false;
         }
 
         questionDetails.push(detail);
     });
 
-    const percentage = totalPossible === 0 ? 0 : (rawScore / totalPossible) * 100;
+    const percentage = totalPossible === 0
+        ? 0
+        : (rawScore / totalPossible) * 100;
 
+    // ✅ Round final values to 2 decimals
+    const roundedRawScore = Number(rawScore.toFixed(2));
+    const roundedPercentage = Number(percentage.toFixed(2));
 
-
-    return { rawScore, percentage, questionDetails };
+    return {
+        rawScore: roundedRawScore,
+        percentage: roundedPercentage,
+        questionDetails
+    };
 };
 
 const computeWeightedScore = (selfPerc, supPerc, weights) => {
