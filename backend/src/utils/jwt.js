@@ -1,15 +1,14 @@
 /* utils/jwt.js
- * Sign access & refresh tokens, verify them, and build the token-pair response.
- *
- * Change: access token now carries `activeRole` (the role the user is currently
- * operating under) in addition to `id`.  This lets the auth middleware enforce
- * per-request role checks without a DB hit, even for multi-role users.
+ * SECURITY FIX (A02, A07):
+ *  - Access token lifetime reduced from 7d → 15m
+ *  - Refresh token lifetime kept at 30d but now rotated on every use AND on role switch
+ *  - Tokens stored in httpOnly cookies on the response (see authController)
  */
 import jwt from 'jsonwebtoken';
 
 const ACCESS_SECRET  = process.env.JWT_SECRET;
 const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
-const ACCESS_EXP     = process.env.JWT_EXPIRES_IN         || '7d';
+const ACCESS_EXP     = process.env.JWT_EXPIRES_IN         || '15m';   // FIX: was '7d'
 const REFRESH_EXP    = process.env.JWT_REFRESH_EXPIRES_IN || '30d';
 
 /**
@@ -31,7 +30,7 @@ export const signRefreshToken = (userId) => {
 };
 
 /** Verify an access token.  Throws on failure. */
-export const verifyAccessToken = (token) => jwt.verify(token, ACCESS_SECRET);
+export const verifyAccessToken  = (token) => jwt.verify(token, ACCESS_SECRET);
 
 /** Verify a refresh token.  Throws on failure. */
 export const verifyRefreshToken = (token) => jwt.verify(token, REFRESH_SECRET);
@@ -44,4 +43,16 @@ export const verifyRefreshToken = (token) => jwt.verify(token, REFRESH_SECRET);
 export const buildTokenPair = (userId, activeRole) => ({
   accessToken:  signAccessToken(userId, activeRole),
   refreshToken: signRefreshToken(userId),
+});
+
+/**
+ * Cookie options for the refresh token (httpOnly, Secure, SameSite=Strict).
+ * SECURITY FIX (A02): Refresh token must be sent as httpOnly cookie – not in body.
+ */
+export const refreshCookieOptions = () => ({
+  httpOnly: true,
+  secure:   process.env.NODE_ENV === 'production',
+  sameSite: 'strict',
+  maxAge:   30 * 24 * 60 * 60 * 1000, // 30 days in ms
+  path:     '/api/auth',               // scope cookie to auth routes only
 });

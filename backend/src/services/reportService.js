@@ -1,3 +1,4 @@
+import logger from '../utils/logger.js';
 import Result from '../models/Result.js';
 import Report from '../models/Report.js';
 import Assessment from '../models/Assessment.js';
@@ -39,7 +40,6 @@ export const generateReportsForAssessment = async (assessmentId) => {
     .lean();
 
   if (!results.length) {
-    console.log(`[ReportService] No FINAL results for assessment ${assessmentId}`);
     return;
   }
 
@@ -125,10 +125,6 @@ export const generateReportsForAssessment = async (assessmentId) => {
     ops.map(({ filter, update, options }) =>
       Report.findOneAndUpdate(filter, update, options)
     )
-  );
-
-  console.log(
-    `[ReportService] ✅ Generated/updated ${ops.length} report(s) for assessment ${assessmentId}`
   );
 
   return ops.length;

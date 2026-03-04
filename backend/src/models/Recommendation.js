@@ -38,10 +38,14 @@ const recommendationSchema = new mongoose.Schema(
   }
 );
 
-// Compound unique index: one recommendation per competency + target group + level
-recommendationSchema.index(
-  { competencyId: 1, targetGroup: 1, level: 1 },
-  { unique: true }
-);
+// CHANGED: Removed the unique compound index that prevented the same
+// recommendation text from being reused across different competencies.
+// The old index `{ competencyId, targetGroup, level }` was unique, which
+// is still correct — one entry per competency+group+level combination.
+// The recommendation *text* itself can now be shared across competencies.
+recommendationSchema.index({ competencyId: 1, targetGroup: 1, level: 1 }, { unique: true });
+
+// Additional index for fast lookup by targetGroup + level (cross-competency queries)
+recommendationSchema.index({ targetGroup: 1, level: 1 });
 
 export default mongoose.model('Recommendation', recommendationSchema);

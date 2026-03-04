@@ -610,14 +610,7 @@ export default function Results() {
                     className="w-full h-9 pl-9 pr-3 rounded-lg border border-gray-300 text-sm focus:ring-2 focus:ring-brand-red focus:border-transparent" />
                 </div>
               </div>
-              <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1.5">Assessment</label>
-                <select value={pendingFilters.assessmentId} onChange={e => setPendingFilters(p => ({ ...p, assessmentId: e.target.value }))}
-                  className="w-full h-9 px-3 rounded-lg border border-gray-300 text-sm focus:ring-2 focus:ring-brand-red">
-                  <option value="">All Assessments</option>
-                  {filterOptions.assessments.map(a => <option key={a._id} value={a._id}>{a.description || 'Assessment'}</option>)}
-                </select>
-              </div>
+              
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Competency</label>
                 <select value={pendingFilters.competencyId} onChange={e => setPendingFilters(p => ({ ...p, competencyId: e.target.value }))}

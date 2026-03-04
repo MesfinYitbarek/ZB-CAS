@@ -1,3 +1,4 @@
+import logger from '../utils/logger.js';
 /* utils/scoring.js */
 
 /**
@@ -43,14 +44,12 @@ const scoreSingleResponse = (question, response) => {
         case 'scenariomcq':
         case 'truefalse':
             awarded = response.selectedAnswer === question.correctAnswer ? maxScore : 0;
-            console.log(`      [Q-LOG] ${type.toUpperCase()}: User='${response.selectedAnswer}' | Correct='${question.correctAnswer}' -> Score: ${awarded}/${maxScore}`);
             return awarded;
 
         // --- Proportional Types ---
         case 'rating':
             const rating = Number(response.selectedAnswer) || 0;
             awarded = (Math.min(Math.max(rating, 1), 5) / 5) * maxScore;
-            console.log(`      [Q-LOG] RATING: User='${rating}/5' -> Score: ${awarded.toFixed(2)}/${maxScore}`);
             return awarded;
 
         // --- Partial Credit: Hits minus Misses ---
@@ -73,8 +72,6 @@ const scoreSingleResponse = (question, response) => {
             // Avoid negative scores
             const netCorrect = Math.max(0, hits - misses);
             awarded = correctSet.size > 0 ? (netCorrect / correctSet.size) * maxScore : 0;
-
-            console.log(`      [Q-LOG] MULTI: Hits:${hits} Misses:${misses} | TotalCorrect:${correctSet.size} -> Score: ${awarded.toFixed(2)}/${maxScore}`);
             return awarded;
         }
 
@@ -91,7 +88,6 @@ const scoreSingleResponse = (question, response) => {
             });
 
             awarded = (correctCount / pairs.length) * maxScore;
-            console.log(`      [Q-LOG] MATCHING: ${correctCount}/${pairs.length} pairs correct -> Score: ${awarded.toFixed(2)}/${maxScore}`);
             return awarded;
         }
 
@@ -114,7 +110,6 @@ const scoreSingleResponse = (question, response) => {
             }
 
             awarded = (correctPos / correctOrder.length) * maxScore;
-            console.log(`      [Q-LOG] ORDERING: ${correctPos}/${correctOrder.length} in correct sequence -> Score: ${awarded.toFixed(2)}/${maxScore}`);
             return awarded;
         }
 
@@ -144,17 +139,14 @@ const scoreSingleResponse = (question, response) => {
             });
 
             awarded = totalItems > 0 ? (classificationHits / totalItems) * maxScore : 0;
-            console.log(`[Q-LOG] DRAGDROP: ${classificationHits}/${totalItems} items correct -> Score: ${awarded.toFixed(2)}/${maxScore}`);
             return awarded;
         }
 
         case 'shortanswer':
             awarded = Math.min(Math.max(Number(response.manualScore) || 0, 0), maxScore);
-            console.log(`      [Q-LOG] SHORT-ANSWER: Manual Score assigned: ${awarded}/${maxScore}`);
             return awarded;
 
         default:
-            console.log(`      [Q-LOG] ⚠️ UNKNOWN TYPE: ${type}`);
             return 0;
     }
 };
@@ -167,8 +159,6 @@ const scoreSingleResponse = (question, response) => {
 const computeRawScore = (questions, responses) => {
     let rawScore = 0, totalPossible = 0;
     const questionDetails = [];
-
-    console.log(`\n   ╔═══ Question-by-Question Breakdown ═══╗`);
 
     questions.forEach((q, idx) => {
         const resp = responses.find(r => r.questionId?.toString() === q._id.toString());
@@ -195,7 +185,6 @@ const computeRawScore = (questions, responses) => {
         };
 
         if (!resp || resp.selectedAnswer === null || resp.selectedAnswer === undefined) {
-            console.log(`   ║ [Q${idx + 1}] ⊘ UNANSWERED | Possible: ${points} | Awarded: 0`);
             // detail stays with defaults (unanswered)
         } else {
             const scoreEarned = scoreSingleResponse(q, resp);
@@ -214,9 +203,7 @@ const computeRawScore = (questions, responses) => {
 
     const percentage = totalPossible === 0 ? 0 : (rawScore / totalPossible) * 100;
 
-    console.log(`   ╠═══════════════════════════════════════╣`);
-    console.log(`   ║ TOTALS: ${rawScore.toFixed(2)} / ${totalPossible} (${percentage.toFixed(2)}%)`);
-    console.log(`   ╚═══════════════════════════════════════╝\n`);
+
 
     return { rawScore, percentage, questionDetails };
 };
@@ -235,9 +222,7 @@ const computeWeightedScore = (selfPerc, supPerc, weights) => {
 
     const final = (selfPerc * sW / 100) + (supPerc * vW / 100);
 
-    console.log(`   [WEIGHT] Self: ${selfPerc.toFixed(2)}% × ${sW.toFixed(0)}% = ${(selfPerc * sW / 100).toFixed(2)}`);
-    console.log(`   [WEIGHT] Supervisor: ${supPerc.toFixed(2)}% × ${vW.toFixed(0)}% = ${(supPerc * vW / 100).toFixed(2)}`);
-    console.log(`   [WEIGHT] Final Weighted Score: ${final.toFixed(2)}%`);
+
 
     return Number(final.toFixed(2));
 };

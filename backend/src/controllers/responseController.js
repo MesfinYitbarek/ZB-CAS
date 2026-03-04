@@ -1,3 +1,4 @@
+import logger from '../utils/logger.js';
 /* controllers/responseController.js */
 import Assessment from '../models/Assessment.js';
 import Question from '../models/Question.js';
@@ -123,7 +124,7 @@ export const submitAssessment = asyncHandler(async (req, res, next) => {
       { upsert: true }
     );
   } catch (secErr) {
-    console.error('[SECURITY] Failed to persist security log:', secErr.message);
+    logger.error({ event: 'security_log_fail', message: secErr.message });
   }
 
   // ─── TRIGGER AUTO-SCORING for SelfAssessment ───────────────────────────
@@ -294,7 +295,7 @@ export const submitSupervisorEvaluation = asyncHandler(async (req, res, next) =>
   let result = null;
   if (assessment.type === 'SupervisorOnly') {
     result = await scoreIndividual(assessmentId, employeeId);
-    console.log(`[AUTO-SCORE] SupervisorOnly Assessment finalized for ${employeeId}`);
+    logger.info({ event: 'auto_score_supervisor_only', employeeId });
   }
 
   res.status(200).json({

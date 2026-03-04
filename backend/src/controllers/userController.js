@@ -2,25 +2,22 @@
 import User from '../models/User.js';
 import AppError from '../utils/AppError.js';
 import asyncHandler from '../utils/asyncHandler.js';
+import { escapeRegex } from '../middleware/security.js';
 
 // ─── GET ALL USERS ────────────────────────────────────────────────────────────
 export const getUsers = asyncHandler(async (req, res) => {
   const { department, role, status, page = 1, limit = 20, search } = req.query;
 
   const filter = {};
-
-  // `role` query param now filters on the roles array
   if (department) filter.department = department;
-  if (role)       filter.roles      = role;           // array field: {roles: 'SUPERVISOR'} matches docs where roles contains 'SUPERVISOR'
+  if (role)       filter.roles      = role;
   if (status)     filter.status     = status;
 
-  // Full-text–style search on name / email / employeeId
   if (search) {
-    const re = new RegExp(search, 'i');
-    filter.$or = [{ name: re }, { email: re }, { employeeId: re }];
+    const re = new RegExp(escapeRegex(search), 'i');
+    filter.$or = [{ name: re }, { email: re }, { employeeId: re }, { username: re }];
   }
 
-  // SUPERVISOR sees only their own employees
   if (req.user.role === 'SUPERVISOR') {
     filter.supervisorId = req.user.id;
   }
@@ -44,6 +41,7 @@ export const getUsers = asyncHandler(async (req, res) => {
         _id:          u._id,
         employeeId:   u.employeeId,
         name:         u.name,
+        username:     u.username,
         email:        u.email,
         roles:        u.roles,
         gender:       u.gender,
@@ -66,6 +64,15 @@ export const getUser = asyncHandler(async (req, res, next) => {
 
   if (!user) return next(new AppError('User not found.', 404));
 
+  if (req.user.role === 'SUPERVISOR') {
+    const isSelf = req.params.id === req.user.id;
+    const isReport = user.supervisorId?._id?.toString() === req.user.id ||
+                     user.supervisorId?.toString() === req.user.id;
+    if (!isSelf && !isReport) {
+      return next(new AppError('You do not have permission to view this user.', 403));
+    }
+  }
+
   res.status(200).json({ status: 'success', data: { user } });
 });
 
@@ -76,50 +83,38 @@ export const getMe = asyncHandler(async (req, res, next) => {
     .lean();
 
   if (!user) return next(new AppError('User not found.', 404));
-
   res.status(200).json({ status: 'success', data: { user } });
 });
 
 // ─── GET SUPERVISOR EMPLOYEES ─────────────────────────────────────────────────
 export const getSupervisorEmployees = asyncHandler(async (req, res, next) => {
+  if (req.user.role === 'SUPERVISOR' && req.params.id !== req.user.id) {
+    return next(new AppError('You can only view your own team members.', 403));
+  }
+
   const employees = await User.find({ supervisorId: req.params.id, status: 'ACTIVE' })
     .populate('supervisorId', 'name email')
     .lean();
 
-  res.status(200).json({
-    status: 'success',
-    data: { employees },
-  });
+  res.status(200).json({ status: 'success', data: { employees } });
 });
 
 // ─── UPDATE USER ──────────────────────────────────────────────────────────────
 export const updateUser = asyncHandler(async (req, res, next) => {
   const allowedFields = [
-    'name',
-    'position',
-    'department',
-    'supervisorId',
-    'roles',
-    'gender',
-    'status',
+    'name', 'username', 'position', 'department',
+    'supervisorId', 'roles', 'gender', 'status',
   ];
 
   const updates = {};
 
   allowedFields.forEach((field) => {
     const value = req.body[field];
-
     if (field === 'supervisorId') {
-      if (value === '' || value === null) {
-        updates.supervisorId = null;
-      } else if (value !== undefined) {
-        updates.supervisorId = value;
-      }
+      if (value === '' || value === null) updates.supervisorId = null;
+      else if (value !== undefined)       updates.supervisorId = value;
     } else if (field === 'roles') {
-      if (value !== undefined) {
-        // Accept array or single string
-        updates.roles = Array.isArray(value) ? value : [value];
-      }
+      if (value !== undefined) updates.roles = Array.isArray(value) ? value : [value];
     } else {
       if (value !== undefined) updates[field] = value;
     }
@@ -136,10 +131,7 @@ export const updateUser = asyncHandler(async (req, res, next) => {
 
   if (!user) return next(new AppError('User not found.', 404));
 
-  res.status(200).json({
-    status: 'success',
-    data: { user: user.toPublic() },
-  });
+  res.status(200).json({ status: 'success', data: { user: user.toPublic() } });
 });
 
 // ─── SOFT DELETE ─────────────────────────────────────────────────────────────
@@ -150,6 +142,5 @@ export const deleteUser = asyncHandler(async (req, res, next) => {
     { new: true, runValidators: true }
   );
   if (!user) return next(new AppError('User not found.', 404));
-
   res.status(200).json({ status: 'success', message: 'User deactivated.' });
 });

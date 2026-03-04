@@ -1,3 +1,4 @@
+import logger from '../utils/logger.js';
 import Result from '../models/Result.js';
 import Assessment from '../models/Assessment.js';
 import Question from '../models/Question.js';
@@ -13,9 +14,9 @@ const calculateAndSaveResult = async (assessment, employeeId) => {
   const emp = await User.findById(employeeId).lean();
   if (!emp) return null;
 
-  console.log(`\n╔══════════════════════════════════════════════════════════════╗`);
-  console.log(`║ PROCESSING RESULT: ${emp.name.toUpperCase().padEnd(31)} ║`);
-  console.log(`╚══════════════════════════════════════════════════════════════╝`);
+  logger.debug({ event: 'scoring_start', employee: emp.name });
+  // removed
+  // removed
 
   const responses = await Response.find({ assessmentId: assessment._id, employeeId }).lean();
   const questions = assessment.questionIds?.length > 0
@@ -62,8 +63,8 @@ const calculateAndSaveResult = async (assessment, employeeId) => {
   const level = assignLevel(finalScore);
   const rec = await Recommendation.findOne({ competencyId: assessment.competencyId, level }).lean();
 
-  console.log(`[STAGE] Logic: ${assessment.type} | Final Score: ${finalScore}% | Level: ${level}`);
-  console.log(`[STAGE] Question Details Stored: ${selfQuestionDetails.length} questions`);
+  logger.debug({ event: 'scoring_stage', type: assessment.type, finalScore, level });
+  logger.debug({ event: 'scoring_stage', type: assessment.type, finalScore, level });
 
   // 3. Persist Result (now includes questionDetails in scoreDetails)
   const result = await Result.findOneAndUpdate(
@@ -84,7 +85,7 @@ const calculateAndSaveResult = async (assessment, employeeId) => {
 //       { upsert: true }
 //   );
 
-  console.log(`✅ Success: Result for ${emp.name} finalized with ${selfQuestionDetails.length} question details.\n`);
+  logger.info({ event: 'score_saved', employeeId: emp._id, finalScore, level });
   return result;
 };
 
@@ -97,7 +98,7 @@ export const scoreFullAssessment = async (assessmentId) => {
   if (assessment.target?.position) filter.position = assessment.target.position;
 
   const employees = await User.find(filter).select('_id').lean();
-  console.log(`🚀 Bulk Scoring triggered for ${employees.length} employees...`);
+  logger.info({ event: 'bulk_score_start', count: employees.length });
 
   const results = [];
   for (const emp of employees) {

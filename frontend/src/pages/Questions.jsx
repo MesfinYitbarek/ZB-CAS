@@ -237,26 +237,46 @@ export default function Questions() {
     setModal('view');
   };
 
-  // ─── Document Upload and Parsing ────────────────────────────────────────
+  // ─── Document Upload and Parsing ─────────────────────────────────────────
+  // Best-practice extraction:
+  //  • PDF  – pdf.js with per-page progress + TextItem x/y sorting to preserve
+  //           reading order (columns, multi-paragraph layouts)
+  //  • DOCX – mammoth extractRawText (full fidelity, no style noise)
+  //  • TXT/MD – FileReader with UTF-8 BOM stripping
+
+  const MAX_FILE_SIZE_MB = 10;
+
   const handleFileUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const isTextFile = file.name.endsWith('.txt') || file.name.endsWith('.md') || file.type.includes('text');
-    const isDocx = file.name.endsWith('.docx') || file.type.includes('wordprocessingml');
-    const isDoc = file.name.endsWith('.doc') || file.type === 'application/msword';
-    const isPdf = file.name.endsWith('.pdf') || file.type === 'application/pdf';
+    // ── Size guard ──
+    if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
+      show(`File is too large. Maximum size is ${MAX_FILE_SIZE_MB} MB.`, 'error');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
 
-    if (!isTextFile && !isDocx && !isDoc && !isPdf) {
-      show('Please upload a PDF, DOCX, or TXT file.', 'error');
+    const name  = file.name.toLowerCase();
+    const mime  = file.type;
+
+    const isPdf   = name.endsWith('.pdf') || mime === 'application/pdf';
+    const isDocx  = name.endsWith('.docx') || mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    const isDoc   = name.endsWith('.doc')  || mime === 'application/msword';
+    const isTxt   = name.endsWith('.txt')  || name.endsWith('.md') || mime.startsWith('text/');
+
+    if (!isPdf && !isDocx && !isDoc && !isTxt) {
+      show('Unsupported file type. Please upload a PDF, DOCX, or TXT file.', 'error');
+      if (fileInputRef.current) fileInputRef.current.value = '';
       return;
     }
 
     setUploadLoading(true);
-    setUploadProgress(10);
+    setUploadProgress(5);
 
     try {
       let text = '';
+
       if (isPdf) {
         text = await extractTextFromPDF(file);
       } else if (isDocx) {
@@ -265,85 +285,84 @@ export default function Questions() {
         text = await extractTextFromPlain(file);
       }
 
-      setUploadProgress(70);
+      setUploadProgress(75);
+
       const parsed = parseQuestionsFromText(text);
       setUploadProgress(100);
 
       if (parsed.length === 0) {
-        show('No questions found in the document.', 'error');
+        show('No questions found. Make sure the document follows the required format.', 'error');
         setUploadLoading(false);
+        if (fileInputRef.current) fileInputRef.current.value = '';
         return;
       }
 
       const grouped = groupQuestionsByType(parsed);
-      setUploadedQuestions({
-        competencyId: '',
-        questionGroups: grouped,
-      });
-
+      setUploadedQuestions({ competencyId: '', questionGroups: grouped });
       show(`Successfully extracted ${parsed.length} question(s).`, 'success');
     } catch (err) {
-      show('Failed to parse document. Error: ' + err.message, 'error');
+      show('Failed to parse document: ' + (err.message || 'Unknown error'), 'error');
+    } finally {
+      setUploadLoading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  // PDF: use pdf.js with sorted TextItems to handle multi-column layouts
+  const extractTextFromPDF = async (file) => {
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    const pageTexts = [];
+
+    for (let i = 1; i <= pdf.numPages; i++) {
+      setUploadProgress(5 + Math.floor((i / pdf.numPages) * 60));
+      const page = await pdf.getPage(i);
+      const { items } = await page.getTextContent({ normalizeWhitespace: true });
+
+      // Sort items top-to-bottom, then left-to-right within the same line
+      const LINE_TOLERANCE = 5;
+      const sorted = [...items].sort((a, b) => {
+        const yDiff = Math.round(b.transform[5] / LINE_TOLERANCE) - Math.round(a.transform[5] / LINE_TOLERANCE);
+        return yDiff !== 0 ? yDiff : a.transform[4] - b.transform[4];
+      });
+
+      let pageText = '';
+      let lastY = null;
+      for (const item of sorted) {
+        const y = Math.round(item.transform[5] / LINE_TOLERANCE);
+        if (lastY !== null && y !== lastY) pageText += '\n';
+        pageText += (item.str || '') + ' ';
+        lastY = y;
+      }
+      pageTexts.push(pageText.trim());
     }
 
-    setUploadLoading(false);
-    if (fileInputRef.current) fileInputRef.current.value = '';
+    return pageTexts.join('\n\n');
   };
 
-  const extractTextFromPDF = async (file) => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        try {
-          const arrayBuffer = e.target.result;
-          const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-          let fullText = '';
-          for (let i = 1; i <= pdf.numPages; i++) {
-            setUploadProgress(10 + Math.floor((i / pdf.numPages) * 50));
-            const page = await pdf.getPage(i);
-            const textContent = await page.getTextContent();
-            const pageText = textContent.items.map(item => item.str).join(' ');
-            fullText += pageText + '\n';
-          }
-          resolve(fullText);
-        } catch (error) {
-          reject(error);
-        }
-      };
-      reader.onerror = reject;
-      reader.readAsArrayBuffer(file);
-    });
-  };
-
+  // DOCX: mammoth extractRawText — preserves paragraph structure cleanly
   const extractTextFromDOCX = async (file) => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        try {
-          const arrayBuffer = e.target.result;
-          const result = await mammoth.extractRawText({ arrayBuffer });
-          let text = result.value;
-          text = text
-            .replace(/\r\n/g, '\n')
-            .replace(/\r/g, '\n')
-            .replace(/\n\s+/g, '\n')
-            .trim();
-          resolve(text);
-        } catch (error) {
-          reject(error);
-        }
-      };
-      reader.onerror = reject;
-      reader.readAsArrayBuffer(file);
-    });
+    const arrayBuffer = await file.arrayBuffer();
+    const { value } = await mammoth.extractRawText({ arrayBuffer });
+    return value
+      .replace(/\r\n|\r/g, '\n')   // normalise line endings
+      .replace(/[^\S\n]+/g, ' ')      // collapse horizontal whitespace
+      .replace(/\n{3,}/g, '\n\n')    // max two consecutive blank lines
+      .trim();
   };
 
+  // TXT / MD: FileReader with UTF-8 BOM stripping
   const extractTextFromPlain = (file) => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
-      reader.onload = (e) => resolve(e.target.result);
-      reader.onerror = reject;
-      reader.readAsText(file);
+      reader.onload = (e) => {
+        let text = e.target.result || '';
+        // Strip UTF-8 BOM if present
+        if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+        resolve(text.replace(/\r\n|\r/g, '\n').trim());
+      };
+      reader.onerror = () => reject(new Error('Could not read file'));
+      reader.readAsText(file, 'UTF-8');
     });
   };
 
@@ -1623,59 +1642,140 @@ export default function Questions() {
       </Modal>
 
       {/* Upload Modal */}
-      <Modal open={modal === 'upload'} onClose={() => setModal(null)} title="Upload Questions">
-        <div className="space-y-3">
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-            <p className="text-xs text-blue-800">Support: PDF, DOCX, TXT</p>
+      <Modal open={modal === 'upload'} onClose={() => setModal(null)} title="Upload Questions from File">
+        <div className="space-y-4">
+
+          {/* ── Supported formats ──────────────────────────────────────────── */}
+          <div className="rounded-lg border border-blue-100 bg-blue-50 p-4 space-y-3">
+            <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Supported File Formats</p>
+
+            <div className="grid grid-cols-3 gap-2">
+              {/* PDF */}
+              <div className="bg-white rounded-md border border-blue-100 p-2.5 text-center">
+                <div className="w-8 h-8 mx-auto mb-1.5 rounded bg-red-100 flex items-center justify-center">
+                  <FileText className="w-4 h-4 text-red-500" />
+                </div>
+                <p className="text-xs font-semibold text-gray-700">.PDF</p>
+                <p className="text-[10px] text-gray-400 mt-0.5">Text-based PDFs<br/>(not scanned images)</p>
+              </div>
+              {/* DOCX */}
+              <div className="bg-white rounded-md border border-blue-100 p-2.5 text-center">
+                <div className="w-8 h-8 mx-auto mb-1.5 rounded bg-blue-100 flex items-center justify-center">
+                  <FileText className="w-4 h-4 text-blue-500" />
+                </div>
+                <p className="text-xs font-semibold text-gray-700">.DOCX</p>
+                <p className="text-[10px] text-gray-400 mt-0.5">Word 2007+<br/>documents</p>
+              </div>
+              {/* TXT */}
+              <div className="bg-white rounded-md border border-blue-100 p-2.5 text-center">
+                <div className="w-8 h-8 mx-auto mb-1.5 rounded bg-gray-100 flex items-center justify-center">
+                  <FileText className="w-4 h-4 text-gray-500" />
+                </div>
+                <p className="text-xs font-semibold text-gray-700">.TXT / .MD</p>
+                <p className="text-[10px] text-gray-400 mt-0.5">Plain text or<br/>Markdown files</p>
+              </div>
+            </div>
+
+            {/* Format guide */}
+            <details className="group">
+              <summary className="cursor-pointer text-xs font-medium text-blue-600 hover:text-blue-800 list-none flex items-center gap-1 select-none">
+                <span className="group-open:rotate-90 transition-transform inline-block">▶</span>
+                Required document format
+              </summary>
+              <div className="mt-2 rounded-md bg-white border border-blue-100 p-3 text-[11px] text-gray-600 font-mono leading-relaxed overflow-auto max-h-52">
+                <p className="font-semibold text-gray-500 mb-1 not-italic font-sans text-[10px] uppercase">MCQ example:</p>
+                <pre className="whitespace-pre-wrap">{`Type: MCQ
+Question 1: What does RAM stand for?
+a) Read Access Memory
+b) Random Access Memory *
+c) Rapid Access Module
+d) Read Anywhere Memory
+Score: 2`}</pre>
+                <p className="font-semibold text-gray-500 mb-1 mt-3 not-italic font-sans text-[10px] uppercase">True/False example:</p>
+                <pre className="whitespace-pre-wrap">{`Type: TrueFalse
+Question 2: The CPU is the brain of the computer.
+Answer: True`}</pre>
+                <p className="font-semibold text-gray-500 mb-1 mt-3 not-italic font-sans text-[10px] uppercase">MultiSelect example:</p>
+                <pre className="whitespace-pre-wrap">{`Type: MultiSelect
+Question 3: Which are programming languages?
+a) Python *
+b) HTML *
+c) Photoshop
+d) JavaScript *`}</pre>
+                <p className="font-semibold text-gray-500 mb-1 mt-3 not-italic font-sans text-[10px] uppercase">Matching example:</p>
+                <pre className="whitespace-pre-wrap">{`Type: Matching
+Question 4: Match the term to its definition.
+CPU -> Processes instructions
+RAM -> Temporary memory
+HDD -> Permanent storage`}</pre>
+                <p className="font-semibold text-gray-500 mb-1 mt-3 not-italic font-sans text-[10px] uppercase">Ordering example:</p>
+                <pre className="whitespace-pre-wrap">{`Type: Ordering
+Question 5: Order the OSI model layers (bottom up).
+1. Physical
+2. Data Link
+3. Network
+4. Transport`}</pre>
+                <p className="mt-2 text-[10px] text-gray-400 not-italic font-sans">Mark the correct MCQ option with * or (correct) after the text. Multiple types can exist in the same file.</p>
+              </div>
+            </details>
           </div>
-          <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-red-500 transition-colors">
+
+          {/* ── Drop zone ──────────────────────────────────────────────────── */}
+          <div className="border-2 border-dashed border-gray-200 rounded-lg p-6 text-center hover:border-red-400 hover:bg-red-50/30 transition-colors cursor-pointer group">
             <input
               ref={fileInputRef}
               type="file"
-              accept=".pdf,.docx,.doc,.txt"
+              accept=".pdf,.docx,.doc,.txt,.md"
               onChange={handleFileUpload}
               className="hidden"
               id="file-upload"
             />
-            <label htmlFor="file-upload" className="cursor-pointer">
-              <FileText className="w-8 h-8 mx-auto text-gray-400 mb-2" />
-              <p className="text-xs font-medium text-gray-700">Click to upload</p>
+            <label htmlFor="file-upload" className="cursor-pointer block">
+              <Upload className="w-9 h-9 mx-auto text-gray-300 group-hover:text-red-400 transition-colors mb-2" />
+              <p className="text-sm font-medium text-gray-600">Click to choose a file</p>
+              <p className="text-xs text-gray-400 mt-0.5">PDF, DOCX, TXT or MD · max 10 MB</p>
             </label>
           </div>
+
+          {/* ── Progress ───────────────────────────────────────────────────── */}
           {uploadLoading && (
-            <div className="space-y-1">
-              <div className="flex items-center justify-center gap-2">
-                <div className="w-5 h-5 border-3 border-red-500 border-t-transparent rounded-full animate-spin" />
-                <span className="text-xs text-gray-600">Parsing...</span>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs text-gray-500">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-3.5 h-3.5 border-2 border-red-400 border-t-transparent rounded-full animate-spin inline-block" />
+                  Extracting text…
+                </span>
+                <span className="tabular-nums">{uploadProgress}%</span>
               </div>
-              <div className="w-full bg-gray-200 rounded-full h-1">
+              <div className="w-full bg-gray-100 rounded-full h-1.5">
                 <div
-                  className="bg-red-500 h-1 rounded-full transition-all duration-300"
+                  className="bg-brand-red h-1.5 rounded-full transition-all duration-300"
                   style={{ width: `${uploadProgress}%` }}
                 />
               </div>
             </div>
           )}
+
+          {/* ── Success / Review ───────────────────────────────────────────── */}
           {uploadedQuestions && (
-            <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-              <div className="flex items-start gap-2">
-                <Check className="w-4 h-4 text-green-600 flex-shrink-0 mt-0.5" />
-                <div className="flex-1">
-                  <p className="text-xs text-green-800 mb-2">
-                    {uploadedQuestions.questionGroups.reduce((sum, g) => sum + g.questions.length, 0)} questions extracted
-                  </p>
-                  <button
-                    onClick={useUploadedQuestions}
-                    className="px-3 py-1 bg-green-600 text-white rounded-lg hover:bg-green-700 text-xs"
-                  >
-                    Review
-                  </button>
-                </div>
+            <div className="flex items-center justify-between bg-green-50 border border-green-200 rounded-lg px-4 py-3">
+              <div className="flex items-center gap-2">
+                <Check className="w-4 h-4 text-green-600 flex-shrink-0" />
+                <span className="text-sm text-green-800 font-medium">
+                  {uploadedQuestions.questionGroups.reduce((sum, g) => sum + g.questions.length, 0)} question(s) extracted
+                </span>
               </div>
+              <button
+                onClick={useUploadedQuestions}
+                className="px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 text-xs font-medium transition"
+              >
+                Review &amp; Save →
+              </button>
             </div>
           )}
         </div>
-        <div className="flex justify-end gap-3 mt-4">
+
+        <div className="flex justify-end mt-4">
           <button
             onClick={() => setModal(null)}
             className="px-4 py-1.5 border border-gray-300 rounded-lg font-medium text-gray-700 hover:bg-gray-50 text-sm"

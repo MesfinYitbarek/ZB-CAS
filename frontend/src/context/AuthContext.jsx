@@ -1,15 +1,6 @@
-/* context/AuthContext.jsx
- *
- * Changes:
- *  - `activeRole`  – the role the user is currently operating as (persisted in
- *                    localStorage so it survives a page refresh).
- *  - `switchRole(role)` – calls POST /auth/switch-role, swaps the access token,
- *                          updates activeRole, then navigates to the correct dashboard.
- *  - `isAdmin`, `isSupervisor`, `isEmployee` now reflect `activeRole` so
- *    route guards work correctly after a switch.
- */
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import api from '../utils/api';
+/* context/AuthContext.jsx */
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import api, { registerTokenGetter } from '../utils/api';
 
 const AuthContext = createContext(null);
 
@@ -19,7 +10,6 @@ export const useAuth = () => {
   return ctx;
 };
 
-// Role priority used to pick the default when logging in
 const ROLE_PRIORITY = { HR_ADMIN: 0, SUPERVISOR: 1, EMPLOYEE: 2 };
 
 function pickDefaultRole(roles = []) {
@@ -30,83 +20,72 @@ function pickDefaultRole(roles = []) {
 }
 
 export default function AuthProvider({ children }) {
+  const accessTokenRef = useRef(null);
   const [user,       setUser]       = useState(null);
   const [activeRole, setActiveRole] = useState(
-    () => localStorage.getItem('activeRole') || null
+    () => sessionStorage.getItem('activeRole') || null
   );
   const [loading, setLoading] = useState(true);
 
-  // ── Restore session on mount ────────────────────────────────────────────────
+  const getAccessToken = useCallback(() => accessTokenRef.current, []);
+
+  // Register in-memory token getter with api.js
   useEffect(() => {
-    const token = localStorage.getItem('accessToken');
-    if (token) {
-      api
-        .get('/users/me')
-        .then(({ data }) => {
-          const u = data.data.user;
-          setUser(u);
-
-          // Restore persisted activeRole only if the user still owns that role
-          const stored = localStorage.getItem('activeRole');
-          const resolved =
-            stored && u.roles?.includes(stored)
-              ? stored
-              : pickDefaultRole(u.roles);
-
-          setActiveRole(resolved);
-          localStorage.setItem('activeRole', resolved);
-        })
-        .catch(() => {
-          localStorage.clear();
-          setActiveRole(null);
-        })
-        .finally(() => setLoading(false));
-    } else {
-      setLoading(false);
-    }
+    registerTokenGetter(() => accessTokenRef.current);
   }, []);
 
-  // ── Login ───────────────────────────────────────────────────────────────────
-  const login = useCallback(async (email, password) => {
-    const { data } = await api.post('/auth/login', { email, password });
-    const { user: u, accessToken, refreshToken, activeRole: ar } = data.data;
+  // Restore session on mount via httpOnly cookie refresh
+  useEffect(() => {
+    api.post('/auth/refresh')
+      .then(({ data }) => {
+        accessTokenRef.current = data.data.accessToken;
+        return api.get('/users/me');
+      })
+      .then(({ data }) => {
+        const u = data.data.user;
+        setUser(u);
+        const stored = sessionStorage.getItem('activeRole');
+        const resolved = stored && u.roles?.includes(stored) ? stored : pickDefaultRole(u.roles);
+        setActiveRole(resolved);
+        sessionStorage.setItem('activeRole', resolved);
+      })
+      .catch(() => {
+        accessTokenRef.current = null;
+        setUser(null);
+        setActiveRole(null);
+        sessionStorage.removeItem('activeRole');
+      })
+      .finally(() => setLoading(false));
+  }, []);
 
-    localStorage.setItem('accessToken',  accessToken);
-    localStorage.setItem('refreshToken', refreshToken);
-    localStorage.setItem('activeRole',   ar);
-
+  // Login with username + password
+  const login = useCallback(async (username, password) => {
+    const { data } = await api.post('/auth/login', { username, password });
+    const { user: u, accessToken, activeRole: ar } = data.data;
+    accessTokenRef.current = accessToken;
     setUser(u);
     setActiveRole(ar);
-
+    sessionStorage.setItem('activeRole', ar);
     return u;
   }, []);
 
-  // ── Logout ──────────────────────────────────────────────────────────────────
   const logout = useCallback(async () => {
-    try {
-      await api.post('/auth/logout');
-    } catch {
-      // silent
-    }
-    localStorage.clear();
+    try { await api.post('/auth/logout'); } catch { /* silent */ }
+    accessTokenRef.current = null;
     setUser(null);
     setActiveRole(null);
+    sessionStorage.clear();
   }, []);
 
-  // ── Switch Role (no logout) ─────────────────────────────────────────────────
   const switchRole = useCallback(async (role) => {
     const { data } = await api.post('/auth/switch-role', { role });
     const { accessToken: newToken, activeRole: newRole } = data.data;
-
-    localStorage.setItem('accessToken', newToken);
-    localStorage.setItem('activeRole',  newRole);
-
+    accessTokenRef.current = newToken;
     setActiveRole(newRole);
-
+    sessionStorage.setItem('activeRole', newRole);
     return newRole;
   }, []);
 
-  // ── Convenience booleans (based on ACTIVE role) ─────────────────────────────
   const isAdmin      = activeRole === 'HR_ADMIN';
   const isSupervisor = activeRole === 'SUPERVISOR';
   const isEmployee   = activeRole === 'EMPLOYEE';
@@ -114,18 +93,7 @@ export default function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider
-      value={{
-        user,
-        loading,
-        activeRole,
-        login,
-        logout,
-        switchRole,
-        isAdmin,
-        isSupervisor,
-        isEmployee,
-        isMultiRole,
-      }}
+      value={{ user, loading, activeRole, getAccessToken, login, logout, switchRole, isAdmin, isSupervisor, isEmployee, isMultiRole }}
     >
       {children}
     </AuthContext.Provider>

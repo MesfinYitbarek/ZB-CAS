@@ -1,3 +1,4 @@
+import logger from '../utils/logger.js';
 /* config/database.js
  * Establishes a single Mongoose connection to MongoDB Atlas.
  * Uses connection-pooling defaults and TLS enforcement (Atlas enforces TLS anyway).
@@ -14,7 +15,7 @@ const connectDB = async () => {
       serverSelectionTimeoutMS: 5000,
     });
 
-    console.log(`[DB] MongoDB connected: ${conn.connection.host}`);
+    logger.info({ event: 'db_connected' });
   } catch (error) {
     console.error('[DB] Connection failed:', error.message);
     process.exit(1);             // hard exit – can't run without DB

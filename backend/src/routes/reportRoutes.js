@@ -1,7 +1,6 @@
-
 /* routes/reportRoutes.js
- * All routes for the consolidated report system.
- * One report = one (user × assessment) pair with all competency results embedded.
+ * SECURITY FIX A01: Export endpoints now require explicit role authorization.
+ * Previously, export routes had protect but no authorize() guard.
  */
 import express from 'express';
 import { protect, authorize } from '../middleware/auth.js';
@@ -9,86 +8,37 @@ import * as repCtrl from '../controllers/reportController.js';
 
 const router = express.Router();
 
-// All report routes require authentication
 router.use(protect);
 
 // ── Analytics & stats ─────────────────────────────────────────────────────────
-// GET /reports/stats?department=&assessmentId=&competencyId=&level=&assessmentType=&targetGroup=&purpose=&dateFrom=&dateTo=
-router.get('/stats',
-  authorize('HR_ADMIN'),
-  repCtrl.getReportStats
-);
+router.get('/stats',          authorize('HR_ADMIN'),              repCtrl.getReportStats);
+router.get('/filter-options', authorize('HR_ADMIN', 'SUPERVISOR'), repCtrl.getReportFilterOptions);
+router.get('/heatmap',        authorize('HR_ADMIN'),              repCtrl.getHeatmap);
+router.get('/department/:department', authorize('HR_ADMIN', 'SUPERVISOR'), repCtrl.getDepartmentReports);
 
-// GET /reports/filter-options  — dropdowns for department, competency, assessment, level …
-router.get('/filter-options',
-  authorize('HR_ADMIN', 'SUPERVISOR'),
-  repCtrl.getReportFilterOptions
-);
+// ── Employee selector ─────────────────────────────────────────────────────────
+router.get('/employees', authorize('HR_ADMIN', 'SUPERVISOR'), repCtrl.getEmployees);
 
-// GET /reports/heatmap  — competency × department average scores
-router.get('/heatmap',
-  authorize('HR_ADMIN'),
-  repCtrl.getHeatmap
-);
+// ── Filtered bulk exports — FIX A01: added authorize ─────────────────────────
+router.get('/export/pdf',   authorize('HR_ADMIN', 'SUPERVISOR'), repCtrl.exportFilteredPDF);
+router.get('/export/excel', authorize('HR_ADMIN', 'SUPERVISOR'), repCtrl.exportFilteredExcel);
 
-// GET /reports/department/:department  — competency breakdown for one department
-router.get('/department/:department',
-  authorize('HR_ADMIN', 'SUPERVISOR'),
-  repCtrl.getDepartmentReports
-);
+// ── Per-employee exports — FIX A01: added authorize ──────────────────────────
+// Note: authorization also checked inside controller (employee can only export own data)
+router.get('/export/individual/:userId/pdf',   authorize('HR_ADMIN', 'SUPERVISOR'), repCtrl.exportIndividualPDF);
+router.get('/export/individual/:userId/excel', authorize('HR_ADMIN', 'SUPERVISOR'), repCtrl.exportIndividualExcel);
 
-// ── Employee selector (must be before /:reportId to avoid route collision) ────
-// GET /reports/employees?search=&department=
-router.get('/employees',
-  authorize('HR_ADMIN', 'SUPERVISOR'),
-  repCtrl.getEmployees
-);
-
-// ── Filtered bulk exports (must be before /:reportId) ────────────────────────
-// GET /reports/export/pdf?<filters>
-router.get('/export/pdf',
-  repCtrl.exportFilteredPDF
-);
-
-// GET /reports/export/excel?<filters>
-router.get('/export/excel',
-  repCtrl.exportFilteredExcel
-);
-
-// ── Per-employee exports ──────────────────────────────────────────────────────
-// GET /reports/export/individual/:userId/pdf
-router.get('/export/individual/:userId/pdf',
-  repCtrl.exportIndividualPDF
-);
-
-// GET /reports/export/individual/:userId/excel
-router.get('/export/individual/:userId/excel',
-  repCtrl.exportIndividualExcel
-);
-
-// ── Legacy JSON export (kept for backward compatibility) ─────────────────────
-// GET /reports/export/:userId
-router.get('/export/:userId',
-  repCtrl.exportReports
-);
+// ── Legacy JSON export ────────────────────────────────────────────────────────
+router.get('/export/:userId', authorize('HR_ADMIN', 'SUPERVISOR'), repCtrl.exportReports);
 
 // ── Individual reports for a specific user ────────────────────────────────────
-// GET /reports/individual/:userId  — access-checked inside controller
-router.get('/individual/:userId',
-  repCtrl.getIndividualReports
-);
+// Access-checked inside controller (employee can only see own reports)
+router.get('/individual/:userId', repCtrl.getIndividualReports);
 
 // ── Full paginated list ───────────────────────────────────────────────────────
-// GET /reports?page=1&limit=20&sortBy=generatedAt&sortDir=desc&<filters>
-router.get('/',
-  authorize('HR_ADMIN'),
-  repCtrl.getReports
-);
+router.get('/', authorize('HR_ADMIN'), repCtrl.getReports);
 
-// ── Single report by ID (last — catch-all :reportId must come after static paths) ──
-// GET /reports/:reportId
-router.get('/:reportId',
-  repCtrl.getReportById
-);
+// ── Single report by ID ───────────────────────────────────────────────────────
+router.get('/:reportId', repCtrl.getReportById);
 
 export default router;

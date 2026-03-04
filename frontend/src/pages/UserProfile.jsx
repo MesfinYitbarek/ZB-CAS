@@ -120,6 +120,17 @@ export default function UserProfile() {
             </h3>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {/* Username */}
+              {user.username && (
+                <div className="flex items-start gap-2 p-2 rounded-lg hover:bg-gray-50">
+                  <User className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                  <div className="min-w-0">
+                    <div className="text-[10px] text-gray-400 font-medium uppercase">Username</div>
+                    <div className="text-sm text-gray-700 font-mono">{user.username}</div>
+                  </div>
+                </div>
+              )}
+
               {/* Email */}
               <div className="flex items-start gap-2 p-2 rounded-lg hover:bg-gray-50">
                 <Mail className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />

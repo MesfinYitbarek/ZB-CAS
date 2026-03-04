@@ -1,15 +1,11 @@
 /* middleware/errorHandler.js
- * Catch-all error handler – must be registered LAST in app.js.
- *
- * Behaviour:
- *   – Operational errors (AppError)   → return the status + message.
- *   – Mongoose validation errors      → map to 400 with field-level messages.
- *   – Duplicate-key (11000)           → 400 with a readable message.
- *   – JWT errors                      → 401.
- *   – Everything else                 → 500, and in production the message
- *                                       is hidden to avoid leaking internals.
+ * SECURITY FIX A05: Stack traces are now hidden by default (fail-safe).
+ * Previously relied on NODE_ENV === 'production'; now only shows stack in
+ * explicit development mode to prevent accidental exposure.
+ * SECURITY FIX A09: Uses structured logger instead of console.error
  */
 import AppError from '../utils/AppError.js';
+import logger from '../utils/logger.js';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 const handleValidationError = (err) => {
@@ -18,48 +14,43 @@ const handleValidationError = (err) => {
 };
 
 const handleDuplicateKeyError = (err) => {
-  // err.keyValue is an object like { email: 'x@y.com' }
   const field = Object.keys(err.keyValue || {})[0] || 'field';
   return new AppError(`Duplicate value for "${field}". Please use a different value.`, 400);
 };
 
-const handleJWTError = () =>
-  new AppError('Invalid token. Please log in again.', 401);
-
-const handleJWTExpiredError = () =>
-  new AppError('Token has expired. Please log in again.', 401);
+const handleJWTError       = () => new AppError('Invalid token. Please log in again.', 401);
+const handleJWTExpiredError = () => new AppError('Token has expired. Please log in again.', 401);
 
 // ─── main handler ────────────────────────────────────────────────────────────
 const errorHandler = (err, req, res, next) => { // eslint-disable-line no-unused-vars
   let error = err;
 
-  // Map known error types
-  if (error.name === 'ValidationError')          error = handleValidationError(error);
-  if (error.code === 11000)                      error = handleDuplicateKeyError(error);
-  if (error.name === 'JsonWebTokenError')        error = handleJWTError();
-  if (error.name === 'TokenExpiredError')        error = handleJWTExpiredError();
+  if (error.name === 'ValidationError')   error = handleValidationError(error);
+  if (error.code === 11000)               error = handleDuplicateKeyError(error);
+  if (error.name === 'JsonWebTokenError') error = handleJWTError();
+  if (error.name === 'TokenExpiredError') error = handleJWTExpiredError();
 
-  // Default to 500 if no status was set
   const statusCode = error.statusCode || 500;
   const status     = error.status     || 'error';
 
-  // In production, never expose internal error messages for 500s
-  const message =
-    process.env.NODE_ENV === 'production' && statusCode === 500
-      ? 'Something went wrong on our side.'
-      : error.message || 'An unexpected error occurred.';
+  // FIX A05: Fail-safe — only show details in explicit development mode
+  // Previously: process.env.NODE_ENV === 'production' ? hide : show
+  // Now: process.env.NODE_ENV === 'development' ? show : hide  (safe default)
+  const isDev = process.env.NODE_ENV === 'development';
 
-  // Log for debugging (in production you'd send to a log aggregator)
+  const message = (!isDev && statusCode === 500)
+    ? 'Something went wrong on our side.'
+    : error.message || 'An unexpected error occurred.';
+
+  // FIX A09: Structured logging instead of console.error
   if (statusCode === 500) {
-    console.error('[ERROR]', error);
+    logger.error({ event: 'internal_server_error', message: error.message, path: req.path, method: req.method });
   }
 
   res.status(statusCode).json({
     status,
     message,
-    ...(process.env.NODE_ENV !== 'production' && statusCode === 500
-      ? { stack: error.stack }   // only in dev
-      : {}),
+    ...(isDev && statusCode === 500 ? { stack: error.stack } : {}),
   });
 };
 

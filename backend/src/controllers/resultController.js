@@ -1,3 +1,12 @@
+/* controllers/resultController.js
+ * SECURITY FIXES:
+ *  A01 – getResult: Added ownership/role check (was completely missing)
+ *  A01 – getPDP: Added ownership check (any user could view any user's PDP)
+ *  A01 – autoScoreEmployee: Now validates ownership — employee can only score themselves,
+ *         supervisor can only score their reports, HR_ADMIN can score anyone.
+ *         (The route itself is open to all authenticated users so the assessment
+ *          submission flow still works, but we enforce who can trigger scoring for whom.)
+ */
 import mongoose from 'mongoose';
 import Result from '../models/Result.js';
 import User from '../models/User.js';
@@ -7,59 +16,85 @@ import asyncHandler from '../utils/asyncHandler.js';
 import AppError from '../utils/AppError.js';
 import { scoreFullAssessment, scoreIndividual } from '../services/scoringService.js';
 import { sendResultsEmail } from '../services/emailService.js';
+import logger from '../utils/logger.js';
 
-// Admin manually scores Combined Assessment
+// ─── OWNERSHIP HELPER ─────────────────────────────────────────────────────────
+// Returns true if the requester is allowed to act on behalf of targetUserId
+async function canActForUser(requester, targetUserId) {
+  if (requester.role === 'HR_ADMIN') return true;
+  if (requester.id === targetUserId.toString()) return true;
+  if (requester.role === 'SUPERVISOR') {
+    const target = await User.findById(targetUserId).select('supervisorId').lean();
+    return target?.supervisorId?.toString() === requester.id;
+  }
+  return false;
+}
+
+// ─── ADMIN SCORE ──────────────────────────────────────────────────────────────
 export const scoreAssessment = asyncHandler(async (req, res, next) => {
   const results = await scoreFullAssessment(req.params.assessmentId);
 
-  // Async email notifications
   results.forEach(async (r) => {
     const employee = await User.findById(r.userId).lean();
     if (employee?.email) {
       sendResultsEmail({ name: employee.name, email: employee.email }, [{
-        competencyName: 'Competency', // Can be populated if needed
+        competencyName: 'Competency',
         finalScore: r.finalScore,
         level: r.level,
         assessmentType: 'Combined'
-      }]).catch(e => console.error('Email Fail:', e.message));
+      }]).catch(e => logger.error({ event: 'email_fail', message: e.message }));
     }
   });
 
   res.status(200).json({ status: 'success', message: `Processed ${results.length} results.`, data: { results } });
 });
 
-// Auto-score (SelfAssessment/SupervisorOnly)
+// ─── AUTO-SCORE ───────────────────────────────────────────────────────────────
+// FIX A01: Ownership check — employee can only trigger scoring for themselves;
+//           supervisor only for their direct reports; HR_ADMIN for anyone.
+// NOTE: This endpoint is intentionally left without authorize() at the route level
+//       because it is called automatically when an employee submits an assessment.
+//       Ownership is enforced here in the controller.
 export const autoScoreEmployee = asyncHandler(async (req, res, next) => {
   const { assessmentId, employeeId } = req.body;
+
+  if (!assessmentId || !employeeId) {
+    return next(new AppError('assessmentId and employeeId are required.', 400));
+  }
+
+  // FIX A01: Verify the requester is allowed to trigger scoring for this employee
+  const allowed = await canActForUser(req.user, employeeId);
+  if (!allowed) {
+    return next(new AppError('You are not authorised to trigger scoring for this employee.', 403));
+  }
+
   const assessment = await Assessment.findById(assessmentId).lean();
+  if (!assessment) return next(new AppError('Assessment not found.', 404));
 
   if (assessment.type === 'Combined') {
     return next(new AppError('Combined assessments must be scored by Admin.', 400));
   }
 
   const result = await scoreIndividual(assessmentId, employeeId);
+  logger.info({ event: 'auto_score', assessmentId, employeeId, triggeredBy: req.user.id });
   res.status(200).json({ status: 'success', data: { result } });
 });
 
-// Get available assessments for filtering
+// ─── GET AVAILABLE ASSESSMENTS ────────────────────────────────────────────────
 export const getAvailableAssessments = asyncHandler(async (req, res) => {
   let filter = {};
 
-  // For employees, only show assessments they have results for
   if (req.user.role === 'EMPLOYEE') {
     const userResults = await Result.find({ userId: req.user.id })
-      .distinct('assessmentId')
-      .lean();
+      .distinct('assessmentId').lean();
     filter._id = { $in: userResults };
   }
 
-  // For supervisors, show assessments from their subordinates' results
   if (req.user.role === 'SUPERVISOR') {
     const subordinates = await User.find({ supervisorId: req.user.id }).select('_id').lean();
     const subordinateIds = subordinates.map(s => s._id);
     const assessmentIds = await Result.find({ userId: { $in: subordinateIds } })
-      .distinct('assessmentId')
-      .lean();
+      .distinct('assessmentId').lean();
     filter._id = { $in: assessmentIds };
   }
 
@@ -68,17 +103,10 @@ export const getAvailableAssessments = asyncHandler(async (req, res) => {
     .sort({ createdAt: -1 })
     .lean();
 
-  res.status(200).json({
-    status: 'success',
-    data: { assessments }
-  });
+  res.status(200).json({ status: 'success', data: { assessments } });
 });
 
-// ═══════════════════════════════════════════════════════════════
-// NEW: Get per-question details for a specific result
-// This is fetched on-demand when the detail modal is opened
-// to avoid bloating the list API response
-// ═══════════════════════════════════════════════════════════════
+// ─── GET RESULT QUESTION DETAILS ─────────────────────────────────────────────
 export const getResultQuestionDetails = asyncHandler(async (req, res, next) => {
   const { id } = req.params;
 
@@ -86,27 +114,21 @@ export const getResultQuestionDetails = asyncHandler(async (req, res, next) => {
     .select('scoreDetails.questionDetails userId assessmentId')
     .lean();
 
-  if (!result) {
-    return next(new AppError('Result not found.', 404));
-  }
+  if (!result) return next(new AppError('Result not found.', 404));
 
-  // Authorization: employees can only see their own results
+  // Authorization
   if (req.user.role === 'EMPLOYEE' && result.userId.toString() !== req.user.id) {
     return next(new AppError('Not authorized to view this result.', 403));
   }
 
-  // For supervisors, verify the result belongs to one of their subordinates
   if (req.user.role === 'SUPERVISOR') {
     const subordinates = await User.find({ supervisorId: req.user.id }).select('_id').lean();
-    const subordinateIds = subordinates.map(s => s._id.toString());
-    if (!subordinateIds.includes(result.userId.toString())) {
+    if (!subordinates.map(s => s._id.toString()).includes(result.userId.toString())) {
       return next(new AppError('Not authorized to view this result.', 403));
     }
   }
 
   const questionDetails = result.scoreDetails?.questionDetails || [];
-
-  // Compute summary statistics
   const summary = {
     totalQuestions: questionDetails.length,
     answered: questionDetails.filter(q => !q.isUnanswered).length,
@@ -118,35 +140,23 @@ export const getResultQuestionDetails = asyncHandler(async (req, res, next) => {
     totalPossible: questionDetails.reduce((sum, q) => sum + q.maxScore, 0)
   };
 
-  res.status(200).json({
-    status: 'success',
-    data: {
-      questionDetails,
-      summary
-    }
-  });
+  res.status(200).json({ status: 'success', data: { questionDetails, summary } });
 });
 
-// Get results by assessment - FIXED for admin view
+// ─── GET RESULTS BY ASSESSMENT ────────────────────────────────────────────────
 export const getResultsByAssessment = asyncHandler(async (req, res, next) => {
   const { assessmentId } = req.params;
   const { page = 1, limit = 20 } = req.query;
 
-  if (!assessmentId) {
-    return next(new AppError('Assessment ID is required', 400));
-  }
+  if (!assessmentId) return next(new AppError('Assessment ID is required', 400));
 
   let filter = { assessmentId };
 
-  // Apply role-based filtering
-  if (req.user.role === 'EMPLOYEE') {
-    filter.userId = req.user.id;
-  }
+  if (req.user.role === 'EMPLOYEE') filter.userId = req.user.id;
   if (req.user.role === 'SUPERVISOR') {
     const subordinates = await User.find({ supervisorId: req.user.id }).select('_id').lean();
     filter.userId = { $in: subordinates.map(s => s._id) };
   }
-  // ADMIN - no additional filter, see all users
 
   const skip = (parseInt(page) - 1) * parseInt(limit);
 
@@ -155,8 +165,6 @@ export const getResultsByAssessment = asyncHandler(async (req, res, next) => {
       .populate('userId', 'name email department position employeeId')
       .populate('competencyId', 'name category')
       .populate('assessmentId', 'description type title weight')
-      // NOTE: We exclude questionDetails from the list view for performance
-      // Question details are fetched on-demand via getResultQuestionDetails
       .select('-scoreDetails.questionDetails')
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -166,12 +174,9 @@ export const getResultsByAssessment = asyncHandler(async (req, res, next) => {
     Assessment.findById(assessmentId).select('title description type').lean()
   ]);
 
-  // Process results differently based on role
   let processedResults;
 
   if (req.user.role === 'ADMIN' || req.user.role === 'HR_ADMIN') {
-    // For admin: DON'T group by competency - show each result individually
-    // This ensures all employees and all competencies appear
     processedResults = results.map(result => ({
       _id: result._id,
       competencyId: result.competencyId,
@@ -194,49 +199,29 @@ export const getResultsByAssessment = asyncHandler(async (req, res, next) => {
       status: result.status || 'FINAL',
       weightUsed: result.scoreDetails?.weightUsed || null,
       calculation: result.scoreDetails?.calculation || null,
-      // NEW: Flag indicating whether question details are available
-      hasQuestionDetails: !!(result.scoreDetails?.questionDetails?.length > 0 ||
-        // If we excluded questionDetails via .select(), check if scoreDetails exists
-        result.scoreDetails),
+      hasQuestionDetails: !!(result.scoreDetails?.questionDetails?.length > 0 || result.scoreDetails),
       date: result.createdAt,
       formattedDate: new Date(result.createdAt).toLocaleDateString(),
       hasBoth: result.scoreDetails?.selfScore !== null && result.scoreDetails?.supervisorScore !== null,
       isCombined: result.assessmentId?.type === 'Combined'
     }));
   } else {
-    // For employees and supervisors: group by competency to avoid duplicates
     processedResults = processResults(results);
   }
 
   res.status(200).json({
     status: 'success',
-    data: {
-      results: processedResults,
-      assessment,
-      pagination: {
-        total,
-        page: parseInt(page),
-        limit: parseInt(limit),
-        totalPages: Math.ceil(total / parseInt(limit))
-      }
-    }
+    data: { results: processedResults, assessment, pagination: { total, page: parseInt(page), limit: parseInt(limit), totalPages: Math.ceil(total / parseInt(limit)) } }
   });
 });
 
-// Helper function for non-admin users (group by competency)
+// ─── HELPER: group results for non-admin ─────────────────────────────────────
 const processResults = (results) => {
   const grouped = results.reduce((acc, result) => {
-    // Handle missing/null competencyId or assessmentId
     const competencyId = result.competencyId?._id || result.competencyId;
     const assessmentId = result.assessmentId?._id || result.assessmentId;
-    
-    if (!competencyId || !assessmentId) {
-      // Skip results with missing references
-      return acc;
-    }
-    
+    if (!competencyId || !assessmentId) return acc;
     const key = `${competencyId}-${assessmentId}`;
-
     if (!acc[key]) {
       acc[key] = {
         _id: result._id,
@@ -260,21 +245,19 @@ const processResults = (results) => {
         status: result.status || 'FINAL',
         weightUsed: result.scoreDetails?.weightUsed || null,
         calculation: result.scoreDetails?.calculation || null,
-        hasQuestionDetails: true, // NEW
+        hasQuestionDetails: true,
         date: result.createdAt,
         formattedDate: new Date(result.createdAt).toLocaleDateString(),
         hasBoth: result.scoreDetails?.selfScore !== null && result.scoreDetails?.supervisorScore !== null,
         isCombined: result.assessmentId?.type === 'Combined'
       };
     }
-
     return acc;
   }, {});
-
   return Object.values(grouped);
 };
 
-// Paginated and Filtered Reads (keep original for backward compatibility)
+// ─── GET RESULTS (paginated list) ─────────────────────────────────────────────
 export const getResults = asyncHandler(async (req, res) => {
   const { userId, competencyId, assessmentId, status, page = 1, limit = 20 } = req.query;
   const filter = {};
@@ -295,22 +278,19 @@ export const getResults = asyncHandler(async (req, res) => {
       .populate('userId', 'name email department position')
       .populate('competencyId', 'name category')
       .populate('assessmentId', 'description type')
-      .select('-scoreDetails.questionDetails') // Exclude question details from list
+      .select('-scoreDetails.questionDetails')
       .sort({ createdAt: -1 }).skip(skip).limit(parseInt(limit)).lean(),
     Result.countDocuments(filter)
   ]);
 
-  const processedResults = processResults(results);
-
   res.status(200).json({
     status: 'success',
-    data: {
-      results: processedResults,
-      pagination: { total, page: parseInt(page), limit: parseInt(limit) }
-    }
+    data: { results: processResults(results), pagination: { total, page: parseInt(page), limit: parseInt(limit) } }
   });
 });
 
+// ─── GET SINGLE RESULT ────────────────────────────────────────────────────────
+// FIX A01: Added ownership check — previously returned any result to any authenticated user
 export const getResult = asyncHandler(async (req, res, next) => {
   const result = await Result.findById(req.params.id)
     .populate('userId', 'name email department position')
@@ -320,12 +300,23 @@ export const getResult = asyncHandler(async (req, res, next) => {
 
   if (!result) return next(new AppError('Result not found.', 404));
 
-  // Include question details in single result fetch
+  // FIX A01: Ownership / IDOR check
+  if (req.user.role === 'EMPLOYEE' && result.userId?._id?.toString() !== req.user.id) {
+    return next(new AppError('Not authorized to view this result.', 403));
+  }
+
+  if (req.user.role === 'SUPERVISOR') {
+    const subordinates = await User.find({ supervisorId: req.user.id }).select('_id').lean();
+    const subIds = subordinates.map(s => s._id.toString());
+    if (!subIds.includes(result.userId?._id?.toString())) {
+      return next(new AppError('Not authorized to view this result.', 403));
+    }
+  }
+
   res.status(200).json({
     status: 'success',
     data: {
       result,
-      // NEW: Include question details summary
       questionDetails: result.scoreDetails?.questionDetails || [],
       questionSummary: {
         totalQuestions: (result.scoreDetails?.questionDetails || []).length,
@@ -337,25 +328,34 @@ export const getResult = asyncHandler(async (req, res, next) => {
   });
 });
 
-// Finalise a result
+// ─── FINALISE RESULT ──────────────────────────────────────────────────────────
 export const finaliseResult = asyncHandler(async (req, res, next) => {
   const result = await Result.findById(req.params.id);
   if (!result) return next(new AppError('Result not found.', 404));
-
   result.status = 'FINAL';
   await result.save();
-
   res.status(200).json({ status: 'success', data: { result } });
 });
 
-export const getPDP = asyncHandler(async (req, res) => {
+// ─── GET PDP ──────────────────────────────────────────────────────────────────
+// FIX A01: IDOR — added ownership/supervisor check
+export const getPDP = asyncHandler(async (req, res, next) => {
+  const { userId } = req.params;
+
+  // FIX A01: employees can only see their own PDP; supervisors only their reports'
+  if (req.user.role === 'EMPLOYEE' && req.user.id !== userId) {
+    return next(new AppError('You can only view your own development plan.', 403));
+  }
+
+  if (req.user.role === 'SUPERVISOR') {
+    const target = await User.findById(userId).select('supervisorId').lean();
+    if (!target || target.supervisorId?.toString() !== req.user.id) {
+      return next(new AppError('You can only view development plans for your direct reports.', 403));
+    }
+  }
+
   const pdp = await Result.aggregate([
-    {
-      $match: {
-        userId: new mongoose.Types.ObjectId(req.params.userId),
-        status: 'FINAL'
-      }
-    },
+    { $match: { userId: new mongoose.Types.ObjectId(userId), status: 'FINAL' } },
     { $sort: { createdAt: -1 } },
     { $group: { _id: '$competencyId', latestResult: { $first: '$$ROOT' } } },
     { $replaceRoot: { newRoot: '$latestResult' } }
@@ -371,21 +371,11 @@ export const getPDP = asyncHandler(async (req, res) => {
 
 export const getSupervisorEvaluationScores = asyncHandler(async (req, res) => {
   const { assessmentId, employeeId } = req.params;
-  const resp = await Response.findOne({
-    assessmentId,
-    employeeId,
-    respondentType: 'supervisor'
-  }).lean();
-
-  res.status(200).json({
-    status: 'success',
-    data: { supervisorScore: resp?.score || null, comments: resp?.comments || '' }
-  });
+  const resp = await Response.findOne({ assessmentId, employeeId, respondentType: 'supervisor' }).lean();
+  res.status(200).json({ status: 'success', data: { supervisorScore: resp?.score || null, comments: resp?.comments || '' } });
 });
 
-// ─── RICH FILTERED RESULTS (for the new Results page) ────────────────────────
-// Supports filtering by: assessment, competency, department, position,
-// targetGroup, purpose, level, status, assessmentType, dateFrom, dateTo, search
+// ─── RICH FILTERED RESULTS ────────────────────────────────────────────────────
 export const getFilteredResults = asyncHandler(async (req, res) => {
   const {
     assessmentId, competencyId, department, position,
@@ -396,24 +386,17 @@ export const getFilteredResults = asyncHandler(async (req, res) => {
 
   let filter = {};
 
-  // Assessment filter
   if (assessmentId) filter.assessmentId = assessmentId;
   if (competencyId) filter.competencyId = competencyId;
   if (level) filter.level = level;
   if (status) filter.status = status;
 
-  // Date range
   if (dateFrom || dateTo) {
     filter.createdAt = {};
     if (dateFrom) filter.createdAt.$gte = new Date(dateFrom);
-    if (dateTo) {
-      const end = new Date(dateTo);
-      end.setHours(23, 59, 59, 999);
-      filter.createdAt.$lte = end;
-    }
+    if (dateTo) { const end = new Date(dateTo); end.setHours(23, 59, 59, 999); filter.createdAt.$lte = end; }
   }
 
-  // Role-based scoping
   if (req.user.role === 'EMPLOYEE') {
     filter.userId = req.user.id;
   } else if (req.user.role === 'SUPERVISOR') {
@@ -424,46 +407,23 @@ export const getFilteredResults = asyncHandler(async (req, res) => {
   const skip = (parseInt(page) - 1) * parseInt(limit);
   const sortObj = { [sortBy === 'score' ? 'finalScore' : sortBy]: sortDir === 'asc' ? 1 : -1 };
 
-  let query = Result.find(filter)
-    .populate('userId', 'name email department position employeeId gender')
-    .populate('competencyId', 'name category targetGroups')
-    .populate({
-      path: 'assessmentId',
-      select: 'description type title weight targetGroup purpose targetAudience status',
-    })
-    .select('-scoreDetails.questionDetails')
-    .sort(sortObj)
-    .skip(skip)
-    .limit(parseInt(limit));
-
   const [results, total] = await Promise.all([
-    query.lean(),
+    Result.find(filter)
+      .populate('userId', 'name email department position employeeId gender')
+      .populate('competencyId', 'name category targetGroups')
+      .populate({ path: 'assessmentId', select: 'description type title weight targetGroup purpose targetAudience status' })
+      .select('-scoreDetails.questionDetails')
+      .sort(sortObj).skip(skip).limit(parseInt(limit)).lean(),
     Result.countDocuments(filter),
   ]);
 
-  // Post-populate filters (for fields on joined docs)
   let filtered = results;
-
-  if (department) {
-    filtered = filtered.filter(r => r.userId?.department === department);
-  }
-  if (position) {
-    filtered = filtered.filter(r =>
-      r.userId?.position?.toLowerCase().includes(position.toLowerCase())
-    );
-  }
-  if (gender) {
-    filtered = filtered.filter(r => r.userId?.gender === gender);
-  }
-  if (targetGroup) {
-    filtered = filtered.filter(r => r.assessmentId?.targetGroup === targetGroup);
-  }
-  if (purpose) {
-    filtered = filtered.filter(r => r.assessmentId?.purpose === purpose);
-  }
-  if (assessmentType) {
-    filtered = filtered.filter(r => r.assessmentId?.type === assessmentType);
-  }
+  if (department)     filtered = filtered.filter(r => r.userId?.department === department);
+  if (position)       filtered = filtered.filter(r => r.userId?.position?.toLowerCase().includes(position.toLowerCase()));
+  if (gender)         filtered = filtered.filter(r => r.userId?.gender === gender);
+  if (targetGroup)    filtered = filtered.filter(r => r.assessmentId?.targetGroup === targetGroup);
+  if (purpose)        filtered = filtered.filter(r => r.assessmentId?.purpose === purpose);
+  if (assessmentType) filtered = filtered.filter(r => r.assessmentId?.type === assessmentType);
   if (search) {
     const s = search.toLowerCase();
     filtered = filtered.filter(r =>
@@ -475,39 +435,23 @@ export const getFilteredResults = asyncHandler(async (req, res) => {
     );
   }
 
-  // Map to rich response shape
   const mapped = filtered.map(r => ({
-    _id: r._id,
-    userId: r.userId,
-    userName: r.userId?.name || 'N/A',
-    userEmail: r.userId?.email || 'N/A',
-    userDepartment: r.userId?.department || 'N/A',
-    userPosition: r.userId?.position || 'N/A',
-    userGender: r.userId?.gender || 'N/A',
-    employeeId: r.userId?.employeeId || 'N/A',
-    competencyId: r.competencyId,
-    competencyName: r.competencyId?.name || 'N/A',
-    competencyCategory: r.competencyId?.category || 'N/A',
-    assessmentId: r.assessmentId,
-    assessmentDescription: r.assessmentId?.description || 'N/A',
-    assessmentType: r.assessmentId?.type || 'N/A',
-    targetGroup: r.assessmentId?.targetGroup || 'N/A',
-    purpose: r.assessmentId?.purpose || 'N/A',
-    selfScore: r.scoreDetails?.selfScore ?? null,
-    supervisorScore: r.scoreDetails?.supervisorScore ?? null,
-    finalScore: r.finalScore,
-    level: r.level,
-    recommendation: r.recommendation,
-    status: r.status || 'FINAL',
-    weightUsed: r.scoreDetails?.weightUsed || null,
-    calculation: r.scoreDetails?.calculation || null,
+    _id: r._id, userId: r.userId, userName: r.userId?.name || 'N/A',
+    userEmail: r.userId?.email || 'N/A', userDepartment: r.userId?.department || 'N/A',
+    userPosition: r.userId?.position || 'N/A', userGender: r.userId?.gender || 'N/A',
+    employeeId: r.userId?.employeeId || 'N/A', competencyId: r.competencyId,
+    competencyName: r.competencyId?.name || 'N/A', competencyCategory: r.competencyId?.category || 'N/A',
+    assessmentId: r.assessmentId, assessmentDescription: r.assessmentId?.description || 'N/A',
+    assessmentType: r.assessmentId?.type || 'N/A', targetGroup: r.assessmentId?.targetGroup || 'N/A',
+    purpose: r.assessmentId?.purpose || 'N/A', selfScore: r.scoreDetails?.selfScore ?? null,
+    supervisorScore: r.scoreDetails?.supervisorScore ?? null, finalScore: r.finalScore,
+    level: r.level, recommendation: r.recommendation, status: r.status || 'FINAL',
+    weightUsed: r.scoreDetails?.weightUsed || null, calculation: r.scoreDetails?.calculation || null,
     isCombined: r.assessmentId?.type === 'Combined',
     hasBoth: r.scoreDetails?.selfScore !== null && r.scoreDetails?.supervisorScore !== null,
-    date: r.createdAt,
-    formattedDate: new Date(r.createdAt).toLocaleDateString(),
+    date: r.createdAt, formattedDate: new Date(r.createdAt).toLocaleDateString(),
   }));
 
-  // Aggregate stats over full filtered set (for summary cards)
   const stats = {
     total: mapped.length,
     avgScore: mapped.length ? parseFloat((mapped.reduce((s, r) => s + r.finalScore, 0) / mapped.length).toFixed(1)) : 0,
@@ -516,39 +460,22 @@ export const getFilteredResults = asyncHandler(async (req, res) => {
   };
   mapped.forEach(r => {
     if (stats.levelDist[r.level] !== undefined) stats.levelDist[r.level]++;
-    if (r.userDepartment) {
-      if (!stats.byDept[r.userDepartment]) stats.byDept[r.userDepartment] = 0;
-      stats.byDept[r.userDepartment]++;
-    }
+    if (r.userDepartment) { if (!stats.byDept[r.userDepartment]) stats.byDept[r.userDepartment] = 0; stats.byDept[r.userDepartment]++; }
   });
 
   res.status(200).json({
     status: 'success',
-    data: {
-      results: mapped,
-      stats,
-      pagination: {
-        total,
-        filteredTotal: filtered.length,
-        page: parseInt(page),
-        limit: parseInt(limit),
-        totalPages: Math.ceil(total / parseInt(limit)),
-      },
-    },
+    data: { results: mapped, stats, pagination: { total, filteredTotal: filtered.length, page: parseInt(page), limit: parseInt(limit), totalPages: Math.ceil(total / parseInt(limit)) } },
   });
 });
 
-// ─── GET FILTER OPTIONS (distinct values for dropdown population) ─────────────
+// ─── FILTER OPTIONS ───────────────────────────────────────────────────────────
 export const getResultFilterOptions = asyncHandler(async (req, res) => {
   const [departments, positions, competencies, assessments] = await Promise.all([
     User.distinct('department', { status: 'ACTIVE', department: { $ne: null } }),
     User.distinct('position', { status: 'ACTIVE', position: { $ne: null } }),
-    Result.distinct('competencyId').then(ids =>
-      mongoose.model('Competency').find({ _id: { $in: ids } }).select('name category').lean()
-    ),
-    Result.distinct('assessmentId').then(ids =>
-      Assessment.find({ _id: { $in: ids } }).select('description type status targetGroup purpose').lean()
-    ),
+    Result.distinct('competencyId').then(ids => mongoose.model('Competency').find({ _id: { $in: ids } }).select('name category').lean()),
+    Result.distinct('assessmentId').then(ids => Assessment.find({ _id: { $in: ids } }).select('description type status targetGroup purpose').lean()),
   ]);
 
   res.status(200).json({
@@ -556,8 +483,7 @@ export const getResultFilterOptions = asyncHandler(async (req, res) => {
     data: {
       departments: departments.filter(Boolean).sort(),
       positions: positions.filter(Boolean).sort(),
-      competencies,
-      assessments,
+      competencies, assessments,
       levels: ['Basic', 'Intermediate', 'Advanced', 'Expert'],
       assessmentTypes: ['SelfAssessment', 'SupervisorOnly', 'Combined'],
       targetGroups: ['managerial', 'non-managerial', 'common'],

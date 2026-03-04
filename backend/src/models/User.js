@@ -1,15 +1,9 @@
-/* models/User.js
- * Mongoose schema for the User collection.
- * - `roles` is now an array (1–3 values) replacing the single `role` field.
- * - `gender` attribute added.
- * - `toPublic()` updated accordingly.
- */
-
+/* models/User.js */
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 
-export const ROLES  = ['HR_ADMIN', 'SUPERVISOR', 'EMPLOYEE'];
-export const STATUS = ['ACTIVE', 'INACTIVE'];
+export const ROLES   = ['HR_ADMIN', 'SUPERVISOR', 'EMPLOYEE'];
+export const STATUS  = ['ACTIVE', 'INACTIVE'];
 export const GENDERS = ['Male', 'Female'];
 
 const userSchema = new mongoose.Schema(
@@ -25,6 +19,17 @@ const userSchema = new mongoose.Schema(
       required: [true, 'Name is required.'],
       trim: true,
       maxlength: 100,
+    },
+    // ── Username (new) ────────────────────────────────────────────────────────
+    username: {
+      type: String,
+      required: [true, 'Username is required.'],
+      unique: true,
+      trim: true,
+      lowercase: true,
+      minlength: [3, 'Username must be at least 3 characters.'],
+      maxlength: [30, 'Username cannot exceed 30 characters.'],
+      match: [/^[a-z0-9._-]+$/, 'Username may only contain letters, numbers, dots, hyphens, and underscores.'],
     },
     email: {
       type: String,
@@ -50,23 +55,14 @@ const userSchema = new mongoose.Schema(
       },
     },
 
-    // ── Gender ───────────────────────────────────────────────────────────────
     gender: {
       type: String,
       enum: GENDERS,
       default: null,
     },
 
-    position: {
-      type: String,
-      trim: true,
-      maxlength: 100,
-    },
-    department: {
-      type: String,
-      trim: true,
-      maxlength: 100,
-    },
+    position:   { type: String, trim: true, maxlength: 100 },
+    department: { type: String, trim: true, maxlength: 100 },
     supervisorId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
@@ -79,23 +75,15 @@ const userSchema = new mongoose.Schema(
     },
 
     // Token rotation
-    refreshToken: {
-      type: String,
-      select: false,
-      default: null,
-    },
+    refreshToken: { type: String, select: false, default: null },
 
     // Password reset
-    passwordResetToken: {
-      type: String,
-      select: false,
-      default: null,
-    },
-    passwordResetExpires: {
-      type: Date,
-      select: false,
-      default: null,
-    },
+    passwordResetToken:   { type: String, select: false, default: null },
+    passwordResetExpires: { type: Date,   select: false, default: null },
+
+    // Account lockout
+    failedLoginAttempts: { type: Number, select: false, default: 0 },
+    lockUntil:           { type: Date,   select: false, default: null },
   },
   {
     timestamps: true,
@@ -107,9 +95,9 @@ const userSchema = new mongoose.Schema(
 userSchema.index({ supervisorId: 1 });
 userSchema.index({ department: 1, status: 1 });
 userSchema.index({ roles: 1 });
+userSchema.index({ username: 1 });   // fast login lookup
 
-// ─── Virtual: primary / default role (first in array, priority order) ────────
-// Priority: HR_ADMIN > SUPERVISOR > EMPLOYEE
+// ─── Virtual: primary / default role ─────────────────────────────────────────
 const ROLE_PRIORITY = { HR_ADMIN: 0, SUPERVISOR: 1, EMPLOYEE: 2 };
 
 userSchema.virtual('defaultRole').get(function () {
@@ -137,9 +125,10 @@ userSchema.methods.toPublic = function () {
     _id:          this._id,
     employeeId:   this.employeeId,
     name:         this.name,
+    username:     this.username,
     email:        this.email,
     roles:        this.roles,
-    defaultRole:  this.defaultRole,   // virtual
+    defaultRole:  this.defaultRole,
     gender:       this.gender,
     position:     this.position,
     department:   this.department,

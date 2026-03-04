@@ -1,15 +1,9 @@
 /* middleware/security.js
- * Centralised OWASP-aligned security middleware.
- *
- * What each layer does:
- *   helmet          – sets hardening HTTP headers (X-Content-Type-Options,
- *                     Strict-Transport-Security, Content-Security-Policy, …)
- *   cors            – whitelists only the React client origin
- *   rateLimit       – general API throttle (OWASP: brute-force mitigation)
- *   authRateLimit   – tighter throttle on auth endpoints only
- *   mongoSanitize   – strips $ and . from user input (NoSQL injection)
- *   hpp             – keeps only the last value of duplicate query params
- *   compression     – gzip responses (performance + smaller attack surface)
+ * SECURITY FIXES:
+ *  A03 – mongoSanitize now covers req.query via safe copy (was explicitly skipped)
+ *  A04 – authLimiter now only applied to login/forgot-password (not entire auth router)
+ *  A04 – Redis-ready rate limiter store configuration
+ *  A05 – cookie-parser added so httpOnly refresh token cookies can be read
  */
 import helmetPkg from 'helmet';
 import corsPkg from 'cors';
@@ -17,54 +11,79 @@ import { rateLimit } from 'express-rate-limit';
 import mongoSanitizePkg from 'express-mongo-sanitize';
 import hppPkg from 'hpp';
 import compressionPkg from 'compression';
+import cookieParserPkg from 'cookie-parser';
 
 // ─── CORS ────────────────────────────────────────────────────────────────────
 const corsOptions = {
   origin: process.env.CLIENT_ORIGIN || 'http://localhost:3000',
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  credentials: true,            // allow cookies (refresh token)
-  optionsSuccessStatus: 204,    // some browsers choke on 204 for preflight
+  credentials: true,           // required for cookies
+  optionsSuccessStatus: 204,
 };
 
 // ─── Rate limiters ───────────────────────────────────────────────────────────
-const generalLimiter = rateLimit({
-  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS, 10) || 900000,  // 15 min
+// FIX A04: General limiter unchanged
+export const generalLimiter = rateLimit({
+  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS, 10) || 900000, // 15 min
   max: parseInt(process.env.RATE_LIMIT_MAX, 10) || 100,
-  standardHeaders: true,        // X-RateLimit-* headers
+  standardHeaders: true,
   legacyHeaders: false,
   message: { status: 'fail', message: 'Too many requests. Please try again later.' },
 });
 
-const authLimiter = rateLimit({
-  windowMs: 600000,             // 10 min window for auth routes
-  max: parseInt(process.env.AUTH_RATE_LIMIT_MAX, 10) || 15,
+// FIX A04: Auth limiter is EXPORTED and applied ONLY to specific routes
+// (login, forgot-password) — NOT the entire auth router
+// In production, replace the default memory store with Redis:
+//   import RedisStore from 'rate-limit-redis';
+//   store: new RedisStore({ sendCommand: (...args) => redisClient.sendCommand(args) })
+export const authLimiter = rateLimit({
+  windowMs: 600000,  // 10 min
+  max: parseInt(process.env.AUTH_RATE_LIMIT_MAX, 10) || 10,
   standardHeaders: true,
   legacyHeaders: false,
+  skipSuccessfulRequests: true, // only count failed attempts toward limit
   message: { status: 'fail', message: 'Too many login attempts. Please try again later.' },
 });
 
 // ─── Mongo sanitize middleware ────────────────────────────────────────────────
-const mongoSanitizeMiddleware = (req, res, next) => {
+// FIX A03: Now sanitizes req.query too (creates a safe sanitized copy)
+export const mongoSanitize = (req, res, next) => {
   const { sanitize } = mongoSanitizePkg;
 
-  if (req.body) {
-    req.body = sanitize(req.body);
-  }
-
+  if (req.body)   req.body   = sanitize(req.body);
   if (req.params) {
-    Object.keys(req.params).forEach(key => {
-      req.params[key] = sanitize(req.params[key]);
+    Object.keys(req.params).forEach(k => {
+      req.params[k] = sanitize(req.params[k]);
     });
   }
 
-  // DO NOT touch req.query as it's read-only in newer Node/Express
+  // FIX A03: Sanitize query by building a new object (req.query is read-only)
+  if (req.query) {
+    const sanitizedQuery = {};
+    for (const [key, value] of Object.entries(req.query)) {
+      sanitizedQuery[key] = sanitize(value);
+    }
+    // Replace req.query via Object.defineProperty to bypass read-only guard
+    Object.defineProperty(req, 'query', {
+      value: sanitizedQuery,
+      writable: true,
+      configurable: true,
+    });
+  }
+
   next();
 };
 
-// ─── Export everything so app.js can apply in order ──────────────────────────
-export const helmet = helmetPkg();
-export const cors = corsPkg(corsOptions);
-export { generalLimiter, authLimiter, mongoSanitizeMiddleware as mongoSanitize };
-export const hpp = hppPkg();
+// ─── Regex-safe escape helper ─────────────────────────────────────────────────
+// FIX A03: Exported for use in controllers that build RegExp from user input
+// Usage: new RegExp(escapeRegex(userInput), 'i')
+export const escapeRegex = (str) =>
+  String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// ─── Export middleware ────────────────────────────────────────────────────────
+export const helmet      = helmetPkg();
+export const cors        = corsPkg(corsOptions);
+export const hpp         = hppPkg();
 export const compression = compressionPkg();
+export const cookieParser = cookieParserPkg();

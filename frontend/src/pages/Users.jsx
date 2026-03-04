@@ -39,6 +39,7 @@ export default function Users() {
   const initForm = () => ({
     employeeId:  '',
     name:        '',
+    username:    '',
     email:       '',
     roles:       ['EMPLOYEE'],   // array
     gender:      '',
@@ -94,6 +95,7 @@ export default function Users() {
     setForm({
       employeeId:   u.employeeId,
       name:         u.name,
+      username:     u.username || '',
       email:        u.email,
       roles:        u.roles || ['EMPLOYEE'],
       gender:       u.gender || '',
@@ -122,6 +124,7 @@ export default function Users() {
   const handleSave = async () => {
     try {
       if (modal === 'create') {
+        if (!form.username) { show('Username is required.', 'error'); return; }
         await api.post('/auth/register', { ...form, role: undefined });
         show('User created successfully.', 'success');
       } else {
@@ -242,7 +245,7 @@ export default function Users() {
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-100 sticky top-0 z-10">
                 <tr>
-                  {['Employee ID','Name','Roles','Status','Actions'].map((h) => (
+                  {['Employee ID','Name','Username','Position','Roles','Status','Actions'].map((h) => (
                     <th key={h} className="text-left px-6 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider bg-gray-50">
                       {h}
                     </th>
@@ -252,7 +255,7 @@ export default function Users() {
               <tbody className="divide-y divide-gray-100">
                 {users.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="px-6 py-8 text-center text-gray-400">No users found.</td>
+                    <td colSpan={7} className="px-6 py-8 text-center text-gray-400">No users found.</td>
                   </tr>
                 )}
                 {users.map((u) => (
@@ -260,6 +263,8 @@ export default function Users() {
                     <tr key={u._id} className="hover:bg-brand-red-muted transition-colors">
                       <td className="px-6 py-3 font-mono text-sm text-gray-600">{u.employeeId}</td>
                       <td className="px-6 py-3 font-semibold text-sm text-brand-black-soft">{u.name}</td>
+                      <td className="px-6 py-3 text-sm text-gray-600 font-mono">{u.username || '—'}</td>
+                      <td className="px-6 py-3 text-sm text-gray-600">{u.position || '—'}</td>
 
                       {/* Roles – show with attractive separator */}
                       <td className="px-6 py-3">
@@ -307,8 +312,12 @@ export default function Users() {
                     {/* Expanded Details Row */}
                     {expandedUser === u._id && (
                       <tr className="bg-gray-50/50">
-                        <td colSpan={5} className="px-6 py-4">
+                        <td colSpan={7} className="px-6 py-4">
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                            <div>
+                              <span className="text-gray-500 text-xs uppercase font-semibold">Username</span>
+                              <p className="text-gray-700 mt-0.5 font-mono">{u.username || '—'}</p>
+                            </div>
                             <div>
                               <span className="text-gray-500 text-xs uppercase font-semibold">Email</span>
                               <p className="text-gray-700 mt-0.5">{u.email}</p>
@@ -424,6 +433,24 @@ export default function Users() {
               placeholder="John Doe"
               className="w-full h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm"
             />
+          </div>
+
+          {/* Username */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+              Username <span className="text-gray-400 font-normal text-xs">(used to log in)</span>
+            </label>
+            <input
+              type="text"
+              value={form.username}
+              onChange={(e) => setForm({ ...form, username: e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, '') })}
+              placeholder="john.doe"
+              disabled={modal === 'edit'}
+              className="w-full h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm disabled:bg-gray-100 font-mono"
+            />
+            {modal === 'create' && (
+              <p className="text-xs text-gray-400 mt-1">Letters, numbers, dots, hyphens, underscores only.</p>
+            )}
           </div>
 
           {/* Email */}
