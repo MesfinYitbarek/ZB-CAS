@@ -4,239 +4,509 @@ import { useToast } from '../context/ToastContext';
 import {
   Plus, Star, ChevronLeft, ChevronRight, Filter,
   MessageSquare, BarChart3, X, Eye, ArrowLeft,
-  RefreshCw, AlertCircle, Calendar, Search
+  Users, RefreshCw, AlertCircle, Calendar, Search
 } from 'lucide-react';
 import Modal from '../components/Modal';
 import api from '../utils/api';
 
-// ─── Compact UI Components ──────────────────────────────────────────────────
-
-const StarRating = ({ value, onChange, size = 'sm' }) => (
-  <div className="flex gap-0.5">
-    {[1, 2, 3, 4, 5].map(v => (
-      <button key={v} type="button" onClick={() => onChange?.(value === v ? 0 : v)} className={onChange ? 'cursor-pointer' : ''}>
-        <Star className={size === 'sm' ? 'w-3 h-3' : 'w-4 h-4'} fill={value >= v ? '#f59e0b' : 'none'} color={value >= v ? '#f59e0b' : '#cbd5e1'} strokeWidth={2.5} />
-      </button>
-    ))}
-  </div>
-);
-
-const RatingBar = ({ label, count, pct }) => (
-  <div className="flex items-center gap-2 text-[10px] font-medium text-slate-500 leading-none">
-    <span className="w-1 tabular-nums">{label}</span>
-    <div className="flex-1 bg-slate-100 rounded-full h-1 overflow-hidden">
-      <div className="bg-amber-400 h-full transition-all" style={{ width: `${pct}%` }} />
-    </div>
-    <span className="w-4 text-right text-slate-400">{count}</span>
-  </div>
-);
-
-const Paginator = ({ pagination, goToPage }) => {
-  if (!pagination || pagination.total <= pagination.limit) return null;
-  const { total, limit, page: cp } = pagination;
+// ─── StarRating ───────────────────────────────────────────────────────────────
+function StarRating({ value, onChange, size = 'md' }) {
+  const sz = size === 'sm' ? 'w-3.5 h-3.5' : 'w-4 h-4';
   return (
-    <div className="flex items-center justify-between py-3 mt-2 border-t border-slate-100">
-      <span className="text-[11px] text-slate-400 font-medium">
-        {Math.min(total, (cp - 1) * limit + 1)}-{Math.min(cp * limit, total)} of {total}
-      </span>
-      <div className="flex gap-1">
-        <button onClick={() => goToPage(cp - 1)} disabled={cp === 1} className="p-1 rounded border border-slate-200 disabled:opacity-30 hover:bg-slate-50"><ChevronLeft className="w-3.5 h-3.5" /></button>
-        <button onClick={() => goToPage(cp + 1)} disabled={cp * limit >= total} className="p-1 rounded border border-slate-200 disabled:opacity-30 hover:bg-slate-50"><ChevronRight className="w-3.5 h-3.5" /></button>
+    <div className="flex gap-0.5">
+      {[1, 2, 3, 4, 5].map(v => (
+        <button key={v} type="button"
+          onClick={() => onChange && onChange(value === v ? 0 : v)}
+          className={onChange ? 'cursor-pointer' : 'cursor-default'}>
+          <Star
+            className={sz}
+            fill={value >= v ? '#EA580C' : 'none'}
+            color={value >= v ? '#EA580C' : '#CBD5E1'}
+          />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ─── RatingBar ────────────────────────────────────────────────────────────────
+function RatingDistribution({ summary }) {
+  const { ratedCount } = summary;
+  return (
+    <div className="space-y-1">
+      {[5, 4, 3, 2, 1].map(star => {
+        const count = summary[`rating${star}`] || 0;
+        const pct = ratedCount > 0 ? (count / ratedCount) * 100 : 0;
+        return (
+          <div key={star} className="flex items-center gap-1.5 text-xs">
+            <span className="w-2.5 text-right text-slate-400 tabular-nums">{star}</span>
+            <Star className="w-2.5 h-2.5 text-orange-400 flex-shrink-0" fill="#FB923C" color="#FB923C" />
+            <div className="flex-1 bg-slate-100 rounded-full h-1">
+              <div className="bg-orange-400 h-1 rounded-full transition-all duration-300" style={{ width: `${pct}%` }} />
+            </div>
+            <span className="w-4 text-slate-400 tabular-nums text-right">{count}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Paginator ────────────────────────────────────────────────────────────────
+function Paginator({ pagination, goToPage }) {
+  if (!pagination || pagination.total <= pagination.limit) return null;
+  const tp = pagination.totalPages, cp = pagination.page;
+  const start = Math.max(1, Math.min(cp - 2, tp - 4));
+  const pages = Array.from({ length: Math.min(5, tp) }, (_, i) => start + i);
+  return (
+    <div className="flex justify-between items-center pt-3 border-t border-slate-100 mt-3">
+      <p className="text-gray-500">
+        {(cp - 1) * pagination.limit + 1}–{Math.min(cp * pagination.limit, pagination.total)} of {pagination.total}
+      </p>
+      <div className="flex items-center gap-1">
+        <button onClick={() => goToPage(cp - 1)} disabled={cp === 1}
+          className="p-1.5 rounded-md border border-slate-200 text-slate-400 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed">
+          <ChevronLeft className="w-3.5 h-3.5" />
+        </button>
+        {pages.map(p => (
+          <button key={p} onClick={() => goToPage(p)}
+            className={`w-7 h-7 rounded-md text-xlfont-semibold transition-colors ${cp === p ? 'bg-brand-red text-white' : 'border border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+            {p}
+          </button>
+        ))}
+        <button onClick={() => goToPage(cp + 1)} disabled={cp === tp}
+          className="p-1.5 rounded-md border border-slate-200 text-slate-400 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed">
+          <ChevronRight className="w-3.5 h-3.5" />
+        </button>
       </div>
     </div>
   );
-};
+}
 
-// ─── Main Page ───────────────────────────────────────────────────────────────
+// ─── Avatar initials ──────────────────────────────────────────────────────────
+function Avatar({ name, size = 'sm' }) {
+  const initials = name?.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase() || '?';
+  const sz = size === 'sm' ? 'w-7 h-7 text-xs' : 'w-8 h-8 text-sm';
+  return (
+    <div className={`${sz} rounded-full bg-brand-red/10 text-brand-red font-bold flex items-center justify-center flex-shrink-0`}>
+      {initials}
+    </div>
+  );
+}
 
+// ─── Chip ─────────────────────────────────────────────────────────────────────
+function Chip({ children, color = 'slate' }) {
+  const styles = {
+    slate:  'bg-slate-100 text-slate-600',
+    indigo: 'bg-indigo-50 text-indigo-600',
+    teal:   'bg-teal-50 text-teal-600',
+    orange: 'bg-orange-50 text-orange-600',
+  };
+  return (
+    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${styles[color]}`}>
+      {children}
+    </span>
+  );
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
 export default function Feedback() {
-  const { isAdmin } = useAuth();
+  const { user, isAdmin } = useAuth();
   const { show } = useToast();
-  const [adminView, setAdminView] = useState('summary'); // summary | detail
+
+  const [adminView, setAdminView] = useState('summary');
   const [selectedSummary, setSelectedSummary] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  // modal
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState({ assessmentId: '', content: '', rating: 0 });
 
-  // Data states
+  // admin summary
   const [summaries, setSummaries] = useState([]);
   const [summaryFilters, setSummaryFilters] = useState({ competencyId: '', dateFrom: '', dateTo: '' });
   const [competencies, setCompetencies] = useState([]);
+
+  // admin detail
   const [detailFeedbacks, setDetailFeedbacks] = useState([]);
-  const [detailPagination, setDetailPagination] = useState({ page: 1, limit: 10, total: 0 });
+  const [detailPagination, setDetailPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 0 });
+
+  // employee
   const [myFeedbacks, setMyFeedbacks] = useState([]);
-  const [myPagination, setMyPagination] = useState({ page: 1, limit: 10, total: 0 });
+  const [myPagination, setMyPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 0 });
   const [eligibleAssessments, setEligibleAssessments] = useState([]);
 
-  // Fetch Logic (Simplified)
   useEffect(() => {
-    api.get('/competencies').then(r => setCompetencies(r.data.data.competencies));
+    api.get('/competencies').then(({ data }) => setCompetencies(data.data?.competencies || [])).catch(() => {});
   }, []);
 
-  const loadData = useCallback(async () => {
+  useEffect(() => {
+    if (!isAdmin) {
+      api.get('/feedback/eligible-assessments')
+        .then(({ data }) => setEligibleAssessments(data.data?.assessments || []))
+        .catch(() => {});
+    }
+  }, [isAdmin]);
+
+  const loadSummaries = useCallback(async () => {
     setLoading(true);
     try {
-      if (isAdmin) {
-        if (adminView === 'summary') {
-          const { data } = await api.get('/feedback/admin/summary', { params: summaryFilters });
-          setSummaries(data.data.summaries);
-        } else {
-          const { data } = await api.get(`/feedback/admin/by-assessment/${selectedSummary.assessmentId}`, { params: detailPagination });
-          setDetailFeedbacks(data.data.feedbacks);
-          setDetailPagination(p => ({ ...p, total: data.data.pagination.total }));
-        }
-      } else {
-        const { data } = await api.get('/feedback', { params: myPagination });
-        setMyFeedbacks(data.data.feedbacks);
-        setMyPagination(p => ({ ...p, total: data.data.pagination.total }));
-        api.get('/feedback/eligible-assessments').then(r => setEligibleAssessments(r.data.data.assessments));
-      }
-    } catch { show('Failed to fetch data', 'error'); }
+      const params = {};
+      if (summaryFilters.competencyId) params.competencyId = summaryFilters.competencyId;
+      if (summaryFilters.dateFrom) params.dateFrom = summaryFilters.dateFrom;
+      if (summaryFilters.dateTo) params.dateTo = summaryFilters.dateTo;
+      const { data } = await api.get('/feedback/admin/summary', { params });
+      setSummaries(data.data?.summaries || []);
+    } catch { show('Failed to load feedback summaries.', 'error'); }
     setLoading(false);
-  }, [isAdmin, adminView, summaryFilters, detailPagination.page, myPagination.page, selectedSummary, show]);
+  }, [summaryFilters]);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  const loadDetail = useCallback(async () => {
+    if (!selectedSummary) return;
+    setLoading(true);
+    try {
+      const params = { page: detailPagination.page, limit: detailPagination.limit };
+      const { data } = await api.get(`/feedback/admin/by-assessment/${selectedSummary.assessmentId}`, { params });
+      setDetailFeedbacks(data.data?.feedbacks || []);
+      const pg = data.data?.pagination;
+      if (pg) setDetailPagination(prev => ({ ...prev, total: pg.total, totalPages: Math.ceil(pg.total / prev.limit) }));
+    } catch { show('Failed to load feedback details.', 'error'); }
+    setLoading(false);
+  }, [selectedSummary, detailPagination.page, detailPagination.limit]);
 
-  // Employee Layout
+  const loadMyFeedbacks = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data } = await api.get('/feedback', { params: { page: myPagination.page, limit: myPagination.limit } });
+      setMyFeedbacks(data.data?.feedbacks || []);
+      const pg = data.data?.pagination;
+      if (pg) setMyPagination(prev => ({ ...prev, total: pg.total, totalPages: Math.ceil(pg.total / prev.limit) }));
+    } catch { show('Failed to load feedback.', 'error'); }
+    setLoading(false);
+  }, [myPagination.page, myPagination.limit]);
+
+  useEffect(() => {
+    if (isAdmin) {
+      if (adminView === 'summary') loadSummaries();
+      else if (adminView === 'detail') loadDetail();
+    } else {
+      loadMyFeedbacks();
+    }
+  }, [isAdmin, adminView, loadSummaries, loadDetail, loadMyFeedbacks]);
+
+  const handleSubmit = async () => {
+    if (!form.assessmentId || !form.content.trim()) return show('Please select an assessment and write feedback.', 'error');
+    try {
+      await api.post('/feedback', form);
+      show('Feedback submitted!', 'success');
+      setModal(false);
+      setForm({ assessmentId: '', content: '', rating: 0 });
+      api.get('/feedback/eligible-assessments').then(({ data }) => setEligibleAssessments(data.data?.assessments || [])).catch(() => {});
+      loadMyFeedbacks();
+    } catch (err) { show(err.response?.data?.message || 'Failed to submit feedback.', 'error'); }
+  };
+
+  const Spinner = () => (
+    <div className="flex items-center justify-center py-16">
+      <div className="w-7 h-7 border-2 border-brand-red border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+
+  // ─── EMPLOYEE VIEW ──────────────────────────────────────────────────────────
   if (!isAdmin) {
     const pending = eligibleAssessments.filter(a => !a.alreadySubmitted);
     return (
-      <div className="p-5 max-w-3xl mx-auto">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-xl font-bold text-slate-800">My Feedback</h1>
-          <button onClick={() => setModal(true)} disabled={pending.length === 0} 
-            className="h-8 px-3 bg-brand-red text-white rounded-md text-xm font-bold flex items-center gap-1.5 hover:bg-brand-red-dark disabled:opacity-40">
+      <div className="p-6 max-w-3xl">
+        {/* Header */}
+        <div className="flex justify-between items-center mb-5">
+          <div>
+            <h1 className="text-2xl font-display font-bold text-brand-black">My Feedback</h1>
+            <p className="text-gray-500 mt-0.5">Submit feedback for completed assessments</p>
+          </div>
+          <button
+            onClick={() => { setForm({ assessmentId: '', content: '', rating: 0 }); setModal(true); }}
+            disabled={pending.length === 0}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-brand-red text-white rounded-lg text-sm font-semibold hover:bg-brand-red-dark transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
             <Plus className="w-3.5 h-3.5" /> New Feedback
           </button>
         </div>
 
-        {loading ? <div className="animate-pulse space-y-3"><div className="h-20 bg-slate-100 rounded-lg" /></div> : (
-          <div className="space-y-2">
-            {myFeedbacks.map(f => (
-              <div key={f._id} className="p-3 bg-white border border-slate-200 rounded-lg hover:border-slate-300">
-                <div className="flex justify-between mb-1">
-                  <span className="text-xm font-bold text-slate-700">{f.assessmentId?.competencyId?.name}</span>
-                  <StarRating value={f.rating} />
-                </div>
-                <p className="text-xm text-slate-500 mb-2">{new Date(f.createdAt).toLocaleDateString()}</p>
-                <div className="text-xm text-slate-600 bg-slate-50 p-2 rounded border border-slate-100">{f.content}</div>
-              </div>
-            ))}
-            <Paginator pagination={myPagination} goToPage={p => setMyPagination(prev => ({ ...prev, page: p }))} />
+        {/* Notice banners */}
+        {eligibleAssessments.length === 0 && (
+          <div className="flex items-center gap-2.5 bg-slate-50 border border-slate-200 rounded-lg px-3.5 py-2.5 mb-4 text-xltext-slate-500">
+            <AlertCircle className="w-4 h-4 flex-shrink-0 text-slate-400" />
+            Complete assessments first to be able to submit feedback.
           </div>
         )}
 
+        {loading ? <Spinner /> : (
+          <>
+            {myFeedbacks.length === 0 ? (
+              <div className="text-center py-16">
+                <MessageSquare className="w-9 h-9 mx-auto mb-2 text-slate-200" />
+                <p className="text-sm text-slate-400 font-medium">No feedback submitted yet</p>
+              </div>
+            ) : (
+              <div className="space-y-3 mb-3">
+                {myFeedbacks.map(f => (
+                  <div key={f._id} className="bg-white border border-slate-200 rounded-xl p-4 hover:border-slate-300 transition-colors">
+                    <div className="flex justify-between items-start mb-2">
+                      <p className="font-semibold text-sm text-slate-800 leading-snug">
+                        {f.assessmentId?.competencyId?.name}
+                      </p>
+                      {f.rating > 0 && <StarRating value={f.rating} size="sm" />}
+                    </div>
+                    <p className="text-gray-500 mb-2.5 flex items-center gap-1">
+                      <Calendar className="w-3 h-3" />
+                      {new Date(f.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
+                    </p>
+                    <p className="text-sm text-slate-600 leading-relaxed bg-slate-50 rounded-lg px-3 py-2.5 border border-slate-100">
+                      {f.content}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+            <Paginator pagination={myPagination} goToPage={p => setMyPagination(prev => ({ ...prev, page: p }))} />
+          </>
+        )}
+
+        {/* Modal */}
         <Modal open={modal} onClose={() => setModal(false)} title="Submit Feedback">
-          <div className="space-y-3">
-            <select value={form.assessmentId} onChange={e => setForm(p => ({ ...p, assessmentId: e.target.value }))} className="w-full h-9 rounded border-slate-200 text-xm">
-              <option value="">Select Assessment...</option>
-              {pending.map(a => <option key={a._id} value={a._id}>{a.competencyId?.name}</option>)}
-            </select>
-            <StarRating value={form.rating} onChange={v => setForm(p => ({ ...p, rating: v }))} size="md" />
-            <textarea value={form.content} onChange={e => setForm(p => ({ ...p, content: e.target.value }))} rows={4} className="w-full rounded border-slate-200 text-xm p-2" placeholder="Your feedback..." />
-            <button onClick={() => { /* handle submit */ }} className="w-full py-2 bg-brand-red text-white rounded font-bold text-xm">Submit</button>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xlfont-semibold text-slate-600 mb-1.5">Assessment *</label>
+              <select value={form.assessmentId}
+                onChange={e => setForm(p => ({ ...p, assessmentId: e.target.value }))}
+                className="w-full h-9 px-3 rounded-lg border border-slate-300 text-sm text-slate-700 focus:ring-2 focus:ring-brand-red bg-white">
+                <option value="">— Select assessment —</option>
+                {pending.map(a => (
+                  <option key={a._id} value={a._id}>
+                    {a.competencyId?.name ? `  ${a.competencyId.name}` : ''}{a.targetGroup ? ` (${a.targetGroup})` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xlfont-semibold text-slate-600 mb-1.5">Rating <span className="font-normal text-slate-400">(optional)</span></label>
+              <StarRating value={form.rating} onChange={v => setForm(p => ({ ...p, rating: v }))} />
+            </div>
+            <div>
+              <label className="block text-xlfont-semibold text-slate-600 mb-1.5">Feedback *</label>
+              <textarea rows={4} value={form.content}
+                onChange={e => setForm(p => ({ ...p, content: e.target.value }))}
+                placeholder="Share your thoughts on the assessment experience..."
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-700 resize-none focus:ring-2 focus:ring-brand-red"
+                maxLength={2000} />
+              <p className="text-[10px] text-slate-400 text-right mt-0.5">{form.content.length} / 2000</p>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 mt-4 pt-3 border-t border-slate-100">
+            <button onClick={() => setModal(false)} className="px-3.5 py-2 border border-slate-300 rounded-lg text-sm font-semibold text-slate-600 hover:bg-slate-50">Cancel</button>
+            <button onClick={handleSubmit} className="px-4 py-2 bg-brand-red text-white rounded-lg text-sm font-semibold hover:bg-brand-red-dark">Submit</button>
           </div>
         </Modal>
       </div>
     );
   }
 
-  // Admin Layout
-  return (
-    <div className="p-5 max-w-6xl mx-auto">
-      {adminView === 'summary' ? (
-        <>
-          <div className="flex items-center justify-between mb-4">
-            <h1 className="text-2xl font-display font-bold text-brand-black">Feedback Overview</h1>
-            <button onClick={loadData} className="p-1.5 text-slate-400 hover:text-slate-600"><RefreshCw className="w-4 h-4" /></button>
+  // ─── ADMIN DETAIL VIEW ──────────────────────────────────────────────────────
+  if (adminView === 'detail' && selectedSummary) {
+    return (
+      <div className="p-6">
+        {/* Back + header */}
+        <div className="flex items-start gap-3 mb-5">
+          <button
+            onClick={() => { setAdminView('summary'); setSelectedSummary(null); }}
+            className="mt-0.5 p-1.5 hover:bg-slate-100 rounded-lg transition-colors flex-shrink-0">
+            <ArrowLeft className="w-4 h-4 text-slate-500" />
+          </button>
+          <div>
+            <h1 className="text-lg font-bold text-slate-800 leading-snug line-clamp-1">
+              {selectedSummary.competencyName && (
+                <span className="text-slate-500">{selectedSummary.competencyName}</span>
+              )}
+            </h1>
+            <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+              
+              {selectedSummary.targetGroup && (
+                <Chip color="slate">{selectedSummary.targetGroup.replace('-', ' ')}</Chip>
+              )}
+            </div>
           </div>
+        </div>
 
-          {/* Compact Filter Toolbar */}
-          <div className="flex flex-wrap items-center gap-2 bg-white p-2 border border-slate-200 rounded-lg mb-6 shadow-sm text-xm">
-            <div className="flex items-center gap-1.5 px-2 border-r border-slate-100 mr-1">
-              <Filter className="w-3.5 h-3.5 text-slate-400" />
-              <span className="font-bold text-slate-500 uppercase tracking-tight">Filters</span>
+
+        {/* Rating distribution */}
+        {selectedSummary.ratedCount > 0 && (
+          <div className="bg-white border border-slate-200 rounded-xl p-4 mb-5">
+            <p className="text-xlfont-bold text-slate-600 uppercase tracking-wide mb-3 flex items-center gap-1.5">
+              <BarChart3 className="w-3.5 h-3.5 text-brand-red" /> Rating Breakdown
+            </p>
+            <RatingDistribution summary={selectedSummary} />
+          </div>
+        )}
+
+        {/* Entries */}
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-sm font-semibold text-slate-700">Feedback Entries</p>
+          <span className="text-gray-500">{detailPagination.total} total</span>
+        </div>
+
+        {loading ? <Spinner /> : (
+          <>
+            <div className="space-y-3 mb-3">
+              {detailFeedbacks.length === 0 ? (
+                <div className="text-center py-12">
+                  <MessageSquare className="w-8 h-8 mx-auto mb-2 text-slate-200" />
+                  <p className="text-sm text-slate-400">No feedback entries found.</p>
+                </div>
+              ) : detailFeedbacks.map(f => (
+                <div key={f._id} className="bg-white border border-slate-200 rounded-xl p-4 hover:border-slate-300 transition-colors">
+                  <div className="flex justify-between items-start mb-2.5">
+                    <div className="flex items-center gap-2.5">
+                      <Avatar name={f.userId?.name} />
+                      <div>
+                        <p className="text-sm font-semibold text-slate-800 leading-tight">{f.userId?.name || 'Anonymous'}</p>
+                        <p className="text-[11px] text-slate-400">{f.userId?.department || '—'} · {f.userId?.position || '—'}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      {f.rating > 0 && <StarRating value={f.rating} size="sm" />}
+                      <span className="text-[11px] text-slate-400 flex items-center gap-1">
+                        <Calendar className="w-3 h-3" />
+                        {new Date(f.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </span>
+                    </div>
+                  </div>
+                  <p className="text-sm text-slate-600 leading-relaxed bg-slate-50 rounded-lg px-3 py-2.5 border border-slate-100">
+                    {f.content}
+                  </p>
+                </div>
+              ))}
             </div>
-            <select value={summaryFilters.competencyId} onChange={e => setSummaryFilters(p => ({ ...p, competencyId: e.target.value }))} className="h-8 rounded border-slate-200 text-xm bg-slate-50">
-              <option value="">All Competencies</option>
-              {competencies.map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
-            </select>
-            <div className="flex items-center gap-1">
-              <input type="date" value={summaryFilters.dateFrom} onChange={e => setSummaryFilters(p => ({ ...p, dateFrom: e.target.value }))} className="h-8 rounded border-slate-200 text-xm bg-slate-50" />
-              <span className="text-slate-300">-</span>
-              <input type="date" value={summaryFilters.dateTo} onChange={e => setSummaryFilters(p => ({ ...p, dateTo: e.target.value }))} className="h-8 rounded border-slate-200 text-xm bg-slate-50" />
-            </div>
-            {(summaryFilters.competencyId || summaryFilters.dateFrom) && (
-              <button onClick={() => setSummaryFilters({ competencyId: '', dateFrom: '', dateTo: '' })} className="flex items-center gap-1 text-slate-400 hover:text-brand-red ml-2 font-bold uppercase text-[10px]">
-                <X className="w-3 h-3" /> Clear
+            <Paginator pagination={detailPagination} goToPage={p => setDetailPagination(prev => ({ ...prev, page: p }))} />
+          </>
+        )}
+      </div>
+    );
+  }
+
+  // ─── ADMIN SUMMARY VIEW ─────────────────────────────────────────────────────
+  const totalFeedbacks = summaries.reduce((s, x) => s + x.totalFeedbacks, 0);
+  const ratedSummaries = summaries.filter(x => x.avgRating);
+  const avgOverall = ratedSummaries.length > 0
+    ? ratedSummaries.reduce((s, x) => s + x.avgRating, 0) / ratedSummaries.length
+    : null;
+
+  const hasFilters = summaryFilters.competencyId || summaryFilters.dateFrom || summaryFilters.dateTo;
+
+  return (
+    <div className="p-6">
+      {/* Header */}
+      <div className="flex justify-between items-center mb-5">
+        <div>
+          <h1 className="text-2xl font-display font-bold text-brand-black">Feedback Overview</h1>
+          <p className="text-gray-500 mt-0.5">Ratings and responses per assessment</p>
+        </div>
+        <button onClick={loadSummaries}
+          className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 rounded-lg text-xlfont-semibold text-slate-500 hover:bg-slate-50 transition-colors">
+          <RefreshCw className="w-3.5 h-3.5" /> Refresh
+        </button>
+      </div>
+
+      {/* Filter bar — compact single row */}
+      <div className="bg-white border border-slate-200 rounded-xl px-4 py-3 mb-5">
+        <div className="flex items-center gap-3 flex-wrap">
+          <Filter className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+          <select value={summaryFilters.competencyId}
+            onChange={e => setSummaryFilters(p => ({ ...p, competencyId: e.target.value }))}
+            className="h-8 px-2.5 rounded-lg border border-slate-200 text-xltext-slate-600 focus:ring-2 focus:ring-brand-red bg-white min-w-[160px]">
+            <option value="">All Competencies</option>
+            {competencies.map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
+          </select>
+          <input type="date" value={summaryFilters.dateFrom}
+            onChange={e => setSummaryFilters(p => ({ ...p, dateFrom: e.target.value }))}
+            className="h-8 px-2.5 rounded-lg border border-slate-200 text-xltext-slate-600 focus:ring-2 focus:ring-brand-red bg-white" />
+          <span className="text-slate-300 text-xs">—</span>
+          <input type="date" value={summaryFilters.dateTo}
+            onChange={e => setSummaryFilters(p => ({ ...p, dateTo: e.target.value }))}
+            className="h-8 px-2.5 rounded-lg border border-slate-200 text-xltext-slate-600 focus:ring-2 focus:ring-brand-red bg-white" />
+          <div className="flex items-center gap-1.5 ml-auto">
+            {hasFilters && (
+              <button onClick={() => setSummaryFilters({ competencyId: '', dateFrom: '', dateTo: '' })}
+                className="h-8 w-8 flex items-center justify-center border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-400">
+                <X className="w-3.5 h-3.5" />
               </button>
             )}
+            <button onClick={loadSummaries}
+              className="h-8 px-4 bg-brand-red text-white rounded-lg text-xlfont-semibold hover:bg-brand-red-dark transition-colors">
+              Apply
+            </button>
           </div>
+        </div>
+      </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-3">
-            {summaries.map(s => (
-              <div key={s.assessmentId} onClick={() => { setSelectedSummary(s); setAdminView('detail'); }}
-                className="group bg-white border border-slate-200 rounded-lg p-3 hover:border-brand-red/30 hover:shadow-md transition-all cursor-pointer">
-                <div className="flex justify-between items-start mb-2">
-                  <span className="text-[10px] font-black text-brand-red bg-brand-red/5 px-1.5 py-0.5 rounded uppercase tracking-tighter">
-                    {s.targetGroup?.split('-')[0] || 'Gen'}
-                  </span>
-                  <div className="flex items-center gap-1 text-xm font-bold text-slate-700">
-                    <Star className="w-3 h-3 text-amber-500" fill="currentColor" /> {s.avgRating?.toFixed(1) || '0.0'}
-                  </div>
-                </div>
-                <h3 className="text-xm font-bold text-slate-800 line-clamp-2 mb-3 h-8 leading-tight">{s.competencyName}</h3>
-                
-                <div className="space-y-1 mb-3">
-                  {[5, 4, 3, 2, 1].map(n => (
-                    <RatingBar key={n} label={n} count={s[`rating${n}`] || 0} pct={s.ratedCount > 0 ? ((s[`rating${n}`] || 0) / s.ratedCount) * 100 : 0} />
-                  ))}
-                </div>
-
-                <div className="pt-2 border-t border-slate-50 flex justify-between items-center text-[10px] text-slate-400 font-bold uppercase">
-                   <span>{s.totalFeedbacks} Reviews</span>
-                   <Eye className="w-3 h-3 text-slate-300 group-hover:text-brand-red transition-colors" />
-                </div>
-              </div>
-            ))}
-          </div>
-        </>
+      {/* Cards grid */}
+      {loading ? <Spinner /> : summaries.length === 0 ? (
+        <div className="text-center py-20">
+          <MessageSquare className="w-10 h-10 mx-auto mb-2 text-slate-200" />
+          <p className="text-sm text-slate-400 font-medium">No feedback data yet</p>
+          <p className="text-gray-500 mt-1">Feedback will appear once employees submit reviews.</p>
+        </div>
       ) : (
-        /* Detail View - Denser List */
-        <div>
-          <button onClick={() => setAdminView('summary')} className="flex items-center gap-1 text-[10px] font-black uppercase text-slate-400 hover:text-slate-600 mb-4 tracking-widest">
-            <ArrowLeft className="w-3 h-3" /> Back to Overview
-          </button>
-          
-          <div className="flex items-end justify-between border-b border-slate-200 pb-4 mb-4">
-            <div>
-              <h1 className="text-lg font-bold text-slate-800 leading-none">{selectedSummary.competencyName}</h1>
-              <p className="text-xm text-slate-500 mt-1 uppercase tracking-tighter font-bold">{selectedSummary.targetGroup}</p>
-            </div>
-            <div className="text-right">
-              <span className="text-2xl font-black text-slate-800 leading-none">{selectedSummary.avgRating?.toFixed(1)}</span>
-              <p className="text-[10px] text-slate-400 font-bold uppercase">Avg Score</p>
-            </div>
-          </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {summaries.map(s => (
+            <div key={s.assessmentId}
+              onClick={() => {
+                setSelectedSummary(s);
+                setDetailFeedbacks([]);
+                setDetailPagination({ page: 1, limit: 10, total: 0, totalPages: 0 });
+                setAdminView('detail');
+              }}
+              className="bg-white border border-slate-200 rounded-xl p-4 hover:border-brand-red/40 hover:shadow-sm transition-all cursor-pointer group">
 
-          <div className="max-w-2xl space-y-2">
-            {detailFeedbacks.map(f => (
-              <div key={f._id} className="p-3 bg-white border border-slate-100 rounded-lg shadow-sm">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-500 uppercase tracking-tighter">{f.userId?.name?.charAt(0)}</div>
-                    <span className="text-xm font-bold text-slate-700">{f.userId?.name}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <StarRating value={f.rating} />
-                    <span className="text-[10px] text-slate-300 font-medium">{new Date(f.createdAt).toLocaleDateString()}</span>
-                  </div>
-                </div>
-                <p className="text-xm text-slate-600 leading-relaxed italic border-l-2 border-slate-100 pl-3">"{f.content}"</p>
+              {/* Title + chips */}
+              <div className="flex items-center gap-1 mb-3 flex-wrap">
+                {s.competencyName && (
+                  <span className="text-[10px] text-slate-400">{s.competencyName}</span>
+                )}
+                {s.targetGroup && (
+                  <Chip color="slate">{s.targetGroup.replace('-', ' ')}</Chip>
+                )}
               </div>
-            ))}
-            <Paginator pagination={detailPagination} goToPage={p => setDetailPagination(prev => ({ ...prev, page: p }))} />
-          </div>
+
+              {/* Rating highlight + count */}
+              <div className="flex items-center justify-between mb-3">
+                {s.avgRating ? (
+                  <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xlfont-bold ${s.avgRating >= 4 ? 'bg-green-50 text-green-700' : s.avgRating >= 3 ? 'bg-orange-50 text-orange-700' : 'bg-red-50 text-red-600'}`}>
+                    <Star className="w-3 h-3" fill="currentColor" color="currentColor" />
+                    {s.avgRating.toFixed(1)}
+                  </div>
+                ) : (
+                  <span className="text-[11px] text-slate-400 italic">No ratings</span>
+                )}
+                <span className="text-[11px] text-slate-400">
+                  {s.ratedCount} rated · {s.totalFeedbacks} total
+                </span>
+              </div>
+
+              {/* Compact rating bars */}
+              {s.ratedCount > 0 && (
+                <div className="mb-3">
+                  <RatingDistribution summary={s} />
+                </div>
+              )}
+
+              {/* Footer CTA */}
+              <div className="flex items-center justify-end pt-2.5 border-t border-slate-100">
+                <span className="text-[11px] text-brand-red font-semibold flex items-center gap-1 group-hover:gap-1.5 transition-all">
+                  View entries <Eye className="w-3 h-3" />
+                </span>
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>
