@@ -561,7 +561,7 @@ export default function Results() {
     <div className="flex flex-col h-full overflow-hidden">
 
       {/* ── Sticky top section (header + filters + stats + count bar) ── */}
-      <div className="flex-shrink-0 px-7 pt-7 pb-0 bg-white z-20 shadow-sm sticky top-0">
+      <div className="flex-shrink-0 px-7 pt-7 pb-0  z-20 shadow-sm sticky top-0">
 
         {/* Page header */}
         <div className="flex justify-between items-start mb-4 flex-wrap gap-4">
