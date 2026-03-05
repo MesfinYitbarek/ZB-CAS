@@ -103,7 +103,7 @@ export default function Feedback() {
     return (
       <div className="p-5 max-w-3xl mx-auto">
         <div className="flex justify-between items-center mb-6">
-          <h1 className="text-xl font-bold text-slate-800">My Feedback</h1>
+          <h1 className="text-2xl font-display font-bold text-brand-black">My Feedback</h1>
           <button onClick={() => setModal(true)} disabled={pending.length === 0} 
             className="h-8 px-3 bg-brand-red text-white rounded-md text-xm font-bold flex items-center gap-1.5 hover:bg-brand-red-dark disabled:opacity-40">
             <Plus className="w-3.5 h-3.5" /> New Feedback
@@ -155,9 +155,9 @@ export default function Feedback() {
           <div className="flex flex-wrap items-center gap-2 bg-white p-2 border border-slate-200 rounded-lg mb-6 shadow-sm text-xm">
             <div className="flex items-center gap-1.5 px-2 border-r border-slate-100 mr-1">
               <Filter className="w-3.5 h-3.5 text-slate-400" />
-              <span className="font-bold text-slate-500 uppercase tracking-tight">Filters</span>
+              <span className=" font-display font-bold text-brand-black tracking-tight">Filters</span>
             </div>
-            <select value={summaryFilters.competencyId} onChange={e => setSummaryFilters(p => ({ ...p, competencyId: e.target.value }))} className="h-8 rounded border-slate-200 text-xm bg-slate-50">
+            <select value={summaryFilters.competencyId} onChange={e => setSummaryFilters(p => ({ ...p, competencyId: e.target.value }))} className="h-8 rounded border-slate-200 font-display text-xm bg-slate-50">
               <option value="">All Competencies</option>
               {competencies.map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
             </select>
