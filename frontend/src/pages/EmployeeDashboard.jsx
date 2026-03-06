@@ -231,12 +231,7 @@ export default function EmployeeDashboard() {
                 <div className="flex flex-col items-center justify-center py-8 gap-3">
                   <CheckCircle className="w-12 h-12 text-emerald-300" />
                   <p className="text-sm text-gray-500">All caught up! No pending assessments.</p>
-                  <button
-                    onClick={() => nav('/assessments')}
-                    className="mt-2 text-xs font-semibold text-brand-red hover:underline flex items-center gap-1"
-                  >
-                    View completed assessments <ArrowRight className="w-3 h-3" />
-                  </button>
+                  
                 </div>
               ) : (
                 <>

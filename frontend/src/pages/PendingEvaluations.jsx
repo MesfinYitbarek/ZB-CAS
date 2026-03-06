@@ -80,9 +80,9 @@ export default function PendingEvaluations() {
     <div className="h-[calc(100vh-4rem)] flex flex-col bg-gray-50 overflow-hidden">
 
       {/* ── Sticky header ────────────────────────────────────────────────── */}
-      <div className="flex-shrink-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between gap-4">
+      <div className="flex-shrink-0 border-b border-gray-100 px-6 py-4 flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">Pending Evaluations</h1>
+          <h1 className="text-2xl font-display font-bold text-brand-black">Pending Evaluations</h1>
           <p className="text-sm text-gray-400 mt-0.5">Supervisor assessments for your team</p>
         </div>
         <div className="flex items-center gap-2">
