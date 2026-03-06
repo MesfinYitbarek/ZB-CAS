@@ -1,5 +1,13 @@
-/* App.jsx */
-import { useState } from 'react';
+/* App.jsx
+ * PERFORMANCE: All page-level components are now loaded via React.lazy() so
+ * Vite splits them into separate chunks. The browser only downloads a chunk
+ * when the user first navigates to that route, dramatically reducing the
+ * initial JS bundle that must be parsed on first load.
+ *
+ * A shared <PageSuspense> wrapper shows a consistent loading spinner while
+ * any lazy chunk is being fetched.
+ */
+import { lazy, Suspense, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
 
@@ -7,40 +15,47 @@ import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import { LoadingPage } from './components/LoadingSpinner';
 
-// Auth Pages
+// ── Eager-loaded: Auth pages are tiny and needed before the app shell renders
 import Login from './pages/Login';
 import ResetPassword from './pages/ResetPassword';
 
+// ── Lazy-loaded: every page below becomes its own JS chunk ──────────────────
 // Dashboards
-import Dashboard from './pages/Dashboard';
-import AdminDashboard from './pages/AdminDashboard';
-import SupervisorDashboard from './pages/SupervisorDashboard';
-import EmployeeDashboard from './pages/EmployeeDashboard';
+const Dashboard           = lazy(() => import('./pages/Dashboard'));
+const AdminDashboard      = lazy(() => import('./pages/AdminDashboard'));
+const SupervisorDashboard = lazy(() => import('./pages/SupervisorDashboard'));
+const EmployeeDashboard   = lazy(() => import('./pages/EmployeeDashboard'));
 
 // User Management
-import Users from './pages/Users';
-import UserProfile from './pages/UserProfile';
+const Users       = lazy(() => import('./pages/Users'));
+const UserProfile = lazy(() => import('./pages/UserProfile'));
 
 // Competency Management
-import Competencies from './pages/Competencies';
-import Recommendations from './pages/Recommendations';
-import Questions from './pages/Questions';
+const Competencies    = lazy(() => import('./pages/Competencies'));
+const Recommendations = lazy(() => import('./pages/Recommendations'));
+const Questions       = lazy(() => import('./pages/Questions'));
 
 // Assessments
-import Assessments from './pages/Assessments';
-import AssessmentDetail from './pages/AssessmentDetail';
-import TakeAssessment from './pages/TakeAssessment';
+const Assessments          = lazy(() => import('./pages/Assessments'));
+const AssessmentDetail     = lazy(() => import('./pages/AssessmentDetail'));
+const TakeAssessment       = lazy(() => import('./pages/TakeAssessment'));
+const SupervisorEvaluation = lazy(() => import('./pages/SupervisorEvaluation'));
 
 // Results & Reports
-import Results from './pages/Results';
-import Reports from './pages/Reports';
-import Feedback from './pages/Feedback';
-import ActivityLog from './pages/ActivityLog';
+const Results    = lazy(() => import('./pages/Results'));
+const Reports    = lazy(() => import('./pages/Reports'));
+const Feedback   = lazy(() => import('./pages/Feedback'));
+const ActivityLog = lazy(() => import('./pages/ActivityLog'));
 
 // Supervisor Pages
-import MyTeam from './pages/MyTeam';
-import PendingEvaluations from './pages/PendingEvaluations';
-import SupervisorEvaluation from './pages/SupervisorEvaluation';
+const MyTeam             = lazy(() => import('./pages/MyTeam'));
+const PendingEvaluations = lazy(() => import('./pages/PendingEvaluations'));
+
+// ── Suspense wrapper ─────────────────────────────────────────────────────────
+// Wraps every lazy route so a consistent spinner appears while chunks load.
+function PageSuspense({ children }) {
+  return <Suspense fallback={<LoadingPage />}>{children}</Suspense>;
+}
 
 
 /* =========================================================
@@ -133,7 +148,7 @@ export default function App() {
           path="/dashboard"
           element={
             <ProtectedRoute>
-              <AppShell><SmartDashboard /></AppShell>
+              <AppShell><PageSuspense><SmartDashboard /></PageSuspense></AppShell>
             </ProtectedRoute>
           }
         />
@@ -143,7 +158,7 @@ export default function App() {
           path="/admin"
           element={
             <ProtectedRoute adminOnly>
-              <AppShell><AdminDashboard /></AppShell>
+              <AppShell><PageSuspense><AdminDashboard /></PageSuspense></AppShell>
             </ProtectedRoute>
           }
         />
@@ -153,7 +168,7 @@ export default function App() {
           path="/supervisor"
           element={
             <ProtectedRoute supervisorOnly>
-              <AppShell><SupervisorDashboard /></AppShell>
+              <AppShell><PageSuspense><SupervisorDashboard /></PageSuspense></AppShell>
             </ProtectedRoute>
           }
         />
@@ -163,7 +178,7 @@ export default function App() {
           path="/assessments/:assessmentId/evaluate"
           element={
             <ProtectedRoute allowedRoles={['SUPERVISOR']}>
-              <SupervisorEvaluation />
+              <PageSuspense><SupervisorEvaluation /></PageSuspense>
             </ProtectedRoute>
           }
         />
@@ -174,7 +189,7 @@ export default function App() {
           path="/users"
           element={
             <ProtectedRoute adminOnly>
-              <AppShell><Users /></AppShell>
+              <AppShell><PageSuspense><Users /></PageSuspense></AppShell>
             </ProtectedRoute>
           }
         />
@@ -182,7 +197,7 @@ export default function App() {
           path="/users/:id"
           element={
             <ProtectedRoute>
-              <AppShell><UserProfile /></AppShell>
+              <AppShell><PageSuspense><UserProfile /></PageSuspense></AppShell>
             </ProtectedRoute>
           }
         />
@@ -190,7 +205,7 @@ export default function App() {
           path="/profile"
           element={
             <ProtectedRoute>
-              <AppShell><UserProfile /></AppShell>
+              <AppShell><PageSuspense><UserProfile /></PageSuspense></AppShell>
             </ProtectedRoute>
           }
         />
@@ -201,7 +216,7 @@ export default function App() {
           path="/competencies"
           element={
             <ProtectedRoute adminOnly>
-              <AppShell><Competencies /></AppShell>
+              <AppShell><PageSuspense><Competencies /></PageSuspense></AppShell>
             </ProtectedRoute>
           }
         />
@@ -209,7 +224,7 @@ export default function App() {
           path="/recommendations"
           element={
             <ProtectedRoute adminOnly>
-              <AppShell><Recommendations /></AppShell>
+              <AppShell><PageSuspense><Recommendations /></PageSuspense></AppShell>
             </ProtectedRoute>
           }
         />
@@ -217,7 +232,7 @@ export default function App() {
           path="/questions"
           element={
             <ProtectedRoute adminOnly>
-              <AppShell><Questions /></AppShell>
+              <AppShell><PageSuspense><Questions /></PageSuspense></AppShell>
             </ProtectedRoute>
           }
         />
@@ -228,7 +243,7 @@ export default function App() {
           path="/assessments"
           element={
             <ProtectedRoute>
-              <AppShell><Assessments /></AppShell>
+              <AppShell><PageSuspense><Assessments /></PageSuspense></AppShell>
             </ProtectedRoute>
           }
         />
@@ -236,7 +251,7 @@ export default function App() {
           path="/assessments/:id"
           element={
             <ProtectedRoute>
-              <AppShell><AssessmentDetail /></AppShell>
+              <AppShell><PageSuspense><AssessmentDetail /></PageSuspense></AppShell>
             </ProtectedRoute>
           }
         />
@@ -244,7 +259,7 @@ export default function App() {
           path="/assessments/:assessmentId/take"
           element={
             <ProtectedRoute>
-              <TakeAssessment />
+              <PageSuspense><TakeAssessment /></PageSuspense>
             </ProtectedRoute>
           }
         />
@@ -255,7 +270,7 @@ export default function App() {
           path="/results"
           element={
             <ProtectedRoute>
-              <AppShell><Results /></AppShell>
+              <AppShell><PageSuspense><Results /></PageSuspense></AppShell>
             </ProtectedRoute>
           }
         />
@@ -263,7 +278,7 @@ export default function App() {
           path="/reports"
           element={
             <ProtectedRoute>
-              <AppShell><Reports /></AppShell>
+              <AppShell><PageSuspense><Reports /></PageSuspense></AppShell>
             </ProtectedRoute>
           }
         />
@@ -271,7 +286,7 @@ export default function App() {
           path="/feedback"
           element={
             <ProtectedRoute>
-              <AppShell><Feedback /></AppShell>
+              <AppShell><PageSuspense><Feedback /></PageSuspense></AppShell>
             </ProtectedRoute>
           }
         />
@@ -282,7 +297,7 @@ export default function App() {
           path="/activity-log"
           element={
             <ProtectedRoute adminOnly>
-              <AppShell><ActivityLog /></AppShell>
+              <AppShell><PageSuspense><ActivityLog /></PageSuspense></AppShell>
             </ProtectedRoute>
           }
         />
@@ -293,7 +308,7 @@ export default function App() {
           path="/my-team"
           element={
             <ProtectedRoute supervisorOnly>
-              <AppShell><MyTeam /></AppShell>
+              <AppShell><PageSuspense><MyTeam /></PageSuspense></AppShell>
             </ProtectedRoute>
           }
         />
@@ -301,7 +316,7 @@ export default function App() {
           path="/evaluations"
           element={
             <ProtectedRoute supervisorOnly>
-              <AppShell><PendingEvaluations /></AppShell>
+              <AppShell><PageSuspense><PendingEvaluations /></PageSuspense></AppShell>
             </ProtectedRoute>
           }
         />

@@ -32,6 +32,17 @@ export const generalLimiter = rateLimit({
   message: { status: 'fail', message: 'Too many requests. Please try again later.' },
 });
 
+// Refresh token limiter — prevents hammering /auth/refresh with a stolen cookie
+// Generous window because legitimate clients refresh at most once per 15-minute
+// access-token lifetime, but we allow headroom for concurrent tab refreshes.
+export const refreshLimiter = rateLimit({
+  windowMs: 900000,  // 15 min
+  max: parseInt(process.env.REFRESH_RATE_LIMIT_MAX, 10) || 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { status: 'fail', message: 'Too many refresh attempts. Please log in again.' },
+});
+
 // FIX A04: Auth limiter is EXPORTED and applied ONLY to specific routes
 // (login, forgot-password) — NOT the entire auth router
 // In production, replace the default memory store with Redis:

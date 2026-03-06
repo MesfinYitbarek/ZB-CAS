@@ -95,12 +95,12 @@ export default function Login() {
       {/* ── Left panel ─────────────────────────────────────────────────────── */}
       <div className="hidden lg:flex lg:flex-[0_0_42%] bg-[#1a1a1a] flex-col justify-between p-12 relative overflow-hidden">
         <div className="absolute inset-0 z-0 opacity-40">
-          <img src={bullArt} alt="" className="w-full h-full object-cover mix-blend-luminosity" />
+          <img src={bullArt} alt="" loading="lazy" className="w-full h-full object-cover mix-blend-luminosity" />
           <div className="absolute inset-0 bg-gradient-to-t from-[#1a1a1a] via-transparent to-[#1a1a1a]/80" />
         </div>
 
         <div className="flex items-center gap-3.5 z-10">
-          <img src={zIcon} alt="Zemen Icon" className="h-14 w-auto object-contain" />
+          <img src={zIcon} alt="Zemen Icon" loading="lazy" className="h-14 w-auto object-contain" />
           <div className="text-white font-display text-xl font-bold">CAS Platform</div>
         </div>
 
