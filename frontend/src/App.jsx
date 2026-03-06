@@ -14,6 +14,7 @@ import { useAuth } from './context/AuthContext';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import { LoadingPage } from './components/LoadingSpinner';
+import SupportWidget from './components/SupportWidget';
 
 // ── Eager-loaded: Auth pages are tiny and needed before the app shell renders
 import Login from './pages/Login';
@@ -46,6 +47,7 @@ const Results    = lazy(() => import('./pages/Results'));
 const Reports    = lazy(() => import('./pages/Reports'));
 const Feedback   = lazy(() => import('./pages/Feedback'));
 const ActivityLog = lazy(() => import('./pages/ActivityLog'));
+const FAQs = lazy(() => import('./pages/FAQs'));
 
 // Supervisor Pages
 const MyTeam             = lazy(() => import('./pages/MyTeam'));
@@ -108,6 +110,8 @@ function AppShell({ children }) {
         <Header onMobileToggle={() => setMobileOpen((p) => !p)} />
 
         <main className="flex-1">{children}</main>
+
+        <SupportWidget />
       </div>
     </div>
   );
@@ -293,6 +297,32 @@ export default function App() {
 
 
         {/* ── Activity Log ──────────────────────────────────────────────── */}
+        <Route
+          path="/activity-log"
+          element={
+            <ProtectedRoute adminOnly>
+              <AppShell><PageSuspense><ActivityLog /></PageSuspense></AppShell>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/activity-log"
+          element={
+            <ProtectedRoute adminOnly>
+              <AppShell><PageSuspense><ActivityLog /></PageSuspense></AppShell>
+            </ProtectedRoute>
+          }
+        />
+
+        {/* ── FAQ Management ─────────────────────────────────────────────── */}
+        <Route
+          path="/faqs"
+          element={
+            <ProtectedRoute adminOnly>
+              <AppShell><PageSuspense><FAQs /></PageSuspense></AppShell>
+            </ProtectedRoute>
+          }
+        />
         <Route
           path="/activity-log"
           element={

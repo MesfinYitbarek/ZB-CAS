@@ -33,6 +33,8 @@ import reportRoutes         from './routes/reportRoutes.js';
 import feedbackRoutes       from './routes/feedbackRoutes.js';
 import supervisorRoutes     from './routes/supervisorRoutes.js';
 import dashboardRoutes      from './routes/dashboardRoutes.js';
+import chatRoutes           from './routes/chatRoutes.js';
+import faqRoutes            from './routes/faqRoutes.js';
 
 const app = express();
 
@@ -86,6 +88,8 @@ app.use('/api/reports',         reportRoutes);
 app.use('/api/feedback',        feedbackRoutes);
 app.use('/api/supervisors',     supervisorRoutes);
 app.use('/api/dashboard',       dashboardRoutes);
+app.use('/api/chat',            chatRoutes);
+app.use('/api/faq',             faqRoutes);
 
 // ── 404 catcher ───────────────────────────────────────────────────────────────
 app.use((req, res, next) => {

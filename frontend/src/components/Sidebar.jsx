@@ -6,7 +6,7 @@ import {
   LayoutDashboard, Users, BookOpen, ClipboardList, FileText,
   BarChart3, MessageSquare, ChevronLeft, LogOut, Target,
   Lightbulb, Activity, UserCheck, ClipboardCheck, X,
-  RefreshCw, ChevronDown,
+  RefreshCw, ChevronDown, HelpCircle,
 } from 'lucide-react';
 import logo from '../image/z.jpg';
 
@@ -19,6 +19,7 @@ const NAV_ITEMS = [
   { icon: BookOpen, label: 'Question Bank', path: '/questions', roles: ['HR_ADMIN'] },
   { icon: Lightbulb, label: 'Recommendations', path: '/recommendations', roles: ['HR_ADMIN'] },
   { icon: Target, label: 'Assessments', path: '/assessments', roles: ['HR_ADMIN'] },
+  { icon: HelpCircle, label: 'FAQ Management', path: '/faqs', roles: ['HR_ADMIN'] },
 
   
 
@@ -34,6 +35,7 @@ const NAV_ITEMS = [
   { icon: FileText, label: 'Competency Results', path: '/results', roles: ['HR_ADMIN'] },
   { icon: BarChart3, label: 'Reports', path: '/reports', roles: ['HR_ADMIN'] },
   { icon: MessageSquare, label: 'Feedback', path: '/feedback', roles: ['EMPLOYEE', 'HR_ADMIN'] },
+  // Chat is now accessible via floating support widget
 
   // ✅ Activity Log moved to VERY BOTTOM
   // { icon: Activity,   label: 'Activity Log',   path: '/activity-log',   roles: ['HR_ADMIN'] },
@@ -209,7 +211,7 @@ export default function Sidebar({
         </nav>
 
         {/* ── Bottom Section ── */}
-        <div className="border-t border-white/10 pt-2 pb-4">
+        <div className="mt-auto border-t border-white/10 pt-2 pb-4">
 
           {/* ── Switch Role (only for multi-role users) ─────────────────── */}
           {isMultiRole && (

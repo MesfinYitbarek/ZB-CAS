@@ -10,7 +10,7 @@ import dotenv from 'dotenv';
 import mongoose from 'mongoose';
 import User from '../src/models/User.js';
 
-dotenv.config();
+dotenv.config({ path: '../.env' });
 
 const MONGO_URI = process.env.MONGO_URI;
 
@@ -21,7 +21,7 @@ const DEPARTMENTS = ['IT Support', 'Software Development'];
 const POSITIONS = ['IT Officer 2', 'IT Officer', 'Senior'];
 
 // Meets complexity: uppercase + lowercase + digit + special char + 8+ chars
-const DEFAULT_PASSWORD = 'Zemen@2024';
+const DEFAULT_PASSWORD = 'Zemen@2026';
 
 const seedUsers = async () => {
   try {
@@ -29,8 +29,8 @@ const seedUsers = async () => {
     console.log('✅ MongoDB connected');
 
     // ─── 1. SUPER USER ───────────────────────────────────────────────────────
-    const superEmail    = 'mesfin8109@gmail.com';
-    const superUsername = 'sys.admin';
+    const superEmail    = 'tesfayemikiyas14@gmail.com';
+    const superUsername = 'mickey.s';
 
     const existingSuper = await User.findOne({
       $or: [{ email: superEmail }, { username: superUsername }],
