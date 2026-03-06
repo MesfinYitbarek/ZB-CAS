@@ -95,7 +95,6 @@ const userSchema = new mongoose.Schema(
 userSchema.index({ supervisorId: 1 });
 userSchema.index({ department: 1, status: 1 });
 userSchema.index({ roles: 1 });
-userSchema.index({ username: 1 });   // fast login lookup
 
 // ─── Virtual: primary / default role ─────────────────────────────────────────
 const ROLE_PRIORITY = { HR_ADMIN: 0, SUPERVISOR: 1, EMPLOYEE: 2 };
