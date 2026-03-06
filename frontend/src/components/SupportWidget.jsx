@@ -387,21 +387,164 @@ export default function SupportWidget() {
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('faq'); // 'faq' | 'chat'
   const { isAdmin, isSupervisor, isEmployee } = useAuth();
+  
+  // Draggable position state
+  const [position, setPosition] = useState(() => {
+    const saved = localStorage.getItem('supportWidgetPosition');
+    if (saved) {
+      try {
+        const pos = JSON.parse(saved);
+        // Ensure position is valid (not off-screen after resize)
+        return {
+          x: Math.min(Math.max(pos.x, 20), window.innerWidth - 76),
+          y: Math.min(Math.max(pos.y, 20), window.innerHeight - 76),
+        };
+      } catch {
+        return { x: window.innerWidth - 80, y: window.innerHeight - 80 };
+      }
+    }
+    return { x: window.innerWidth - 80, y: window.innerHeight - 80 };
+  });
+  
+  const [isDragging, setIsDragging] = useState(false);
+  const dragRef = useRef({ startX: 0, startY: 0, initialX: 0, initialY: 0 });
 
   // Only show for employees, supervisors, and HR admins
   const canAccess = isEmployee || isSupervisor || isAdmin;
   if (!canAccess) return null;
+
+  // Handle drag start
+  const handleMouseDown = (e) => {
+    if (e.button !== 0) return; // Only left click
+    e.preventDefault();
+    setIsDragging(true);
+    dragRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      initialX: position.x,
+      initialY: position.y,
+    };
+  };
+
+  // Handle touch start for mobile
+  const handleTouchStart = (e) => {
+    const touch = e.touches[0];
+    setIsDragging(true);
+    dragRef.current = {
+      startX: touch.clientX,
+      startY: touch.clientY,
+      initialX: position.x,
+      initialY: position.y,
+    };
+  };
+
+  // Handle drag move
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (!isDragging) return;
+      
+      const deltaX = e.clientX - dragRef.current.startX;
+      const deltaY = e.clientY - dragRef.current.startY;
+      
+      const newX = Math.min(
+        Math.max(dragRef.current.initialX + deltaX, 20),
+        window.innerWidth - 76
+      );
+      const newY = Math.min(
+        Math.max(dragRef.current.initialY + deltaY, 20),
+        window.innerHeight - 76
+      );
+      
+      setPosition({ x: newX, y: newY });
+    };
+
+    const handleTouchMove = (e) => {
+      if (!isDragging) return;
+      const touch = e.touches[0];
+      
+      const deltaX = touch.clientX - dragRef.current.startX;
+      const deltaY = touch.clientY - dragRef.current.startY;
+      
+      const newX = Math.min(
+        Math.max(dragRef.current.initialX + deltaX, 20),
+        window.innerWidth - 76
+      );
+      const newY = Math.min(
+        Math.max(dragRef.current.initialY + deltaY, 20),
+        window.innerHeight - 76
+      );
+      
+      setPosition({ x: newX, y: newY });
+    };
+
+    const handleDragEnd = () => {
+      if (isDragging) {
+        setIsDragging(false);
+        // Save position to localStorage
+        localStorage.setItem('supportWidgetPosition', JSON.stringify({
+          x: Math.round(position.x),
+          y: Math.round(position.y),
+        }));
+      }
+    };
+
+    if (isDragging) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleDragEnd);
+      document.addEventListener('touchmove', handleTouchMove, { passive: true });
+      document.addEventListener('touchend', handleDragEnd);
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleDragEnd);
+      document.removeEventListener('touchmove', handleTouchMove);
+      document.removeEventListener('touchend', handleDragEnd);
+    };
+  }, [isDragging, position.x, position.y]);
+
+  // Handle window resize
+  useEffect(() => {
+    const handleResize = () => {
+      setPosition(prev => ({
+        x: Math.min(Math.max(prev.x, 20), window.innerWidth - 76),
+        y: Math.min(Math.max(prev.y, 20), window.innerHeight - 76),
+      }));
+    };
+    
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Handle button click (prevent opening when dragging)
+  const handleClick = (e) => {
+    if (!isDragging) {
+      setIsOpen(true);
+    }
+  };
 
   return (
     <>
       {/* Floating Button */}
       {!isOpen && (
         <button
-          onClick={() => setIsOpen(true)}
-          className="fixed bottom-6 right-6 w-14 h-14 rounded-full bg-brand-red text-white shadow-lg hover:shadow-xl hover:scale-110 transition-all z-50 flex items-center justify-center"
-          title="Get Support"
+          onMouseDown={handleMouseDown}
+          onTouchStart={handleTouchStart}
+          onClick={handleClick}
+          onDoubleClick={() => {
+            // Reset position on double click
+            setPosition({ x: window.innerWidth - 80, y: window.innerHeight - 80 });
+            localStorage.removeItem('supportWidgetPosition');
+          }}
+          style={{
+            left: `${position.x}px`,
+            top: `${position.y}px`,
+            position: 'fixed',
+          }}
+          className={`w-14 h-14 rounded-full bg-brand-red text-white shadow-lg hover:shadow-xl hover:scale-110 transition-all z-50 flex items-center justify-center cursor-${isDragging ? 'grabbing' : 'grab'} ${isDragging ? 'scale-95' : ''}`}
+          title="Get Support (drag to move, double-click to reset)"
         >
-          <HelpCircle className="w-7 h-7" />
+          <HelpCircle className="w-7 h-7 pointer-events-none" />
         </button>
       )}
 
