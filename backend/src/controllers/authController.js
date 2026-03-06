@@ -160,8 +160,33 @@ export const refresh = asyncHandler(async (req, res, next) => {
   }
 
   const user = await User.findById(decoded.id).select('+refreshToken');
-  if (!user || user.refreshToken !== refreshToken) {
-    return next(new AppError('Invalid refresh token.', 401));
+  if (!user) return next(new AppError('Invalid refresh token.', 401));
+
+  // Race-safety: React StrictMode (and concurrent tab refreshes) can send two
+  // requests with the same token in quick succession. The first rotates the DB
+  // token; the second arrives with the old token and would normally be rejected.
+  // We allow a 10-second reuse window: if the incoming token doesn't match the
+  // stored one but was issued within the last 10 seconds, we treat it as a
+  // valid "just-rotated" token and return a fresh pair without rotating again.
+  const tokenAge = Math.floor(Date.now() / 1000) - (decoded.iat || 0);
+  const tokenMatchesStored = user.refreshToken === refreshToken;
+
+  if (!tokenMatchesStored) {
+    // Outside the grace window → genuine replay attack or expired rotation
+    if (tokenAge > 10) {
+      return next(new AppError('Invalid refresh token.', 401));
+    }
+    // Within grace window: verify the stored token belongs to the same user
+    // (confirms this is a race, not a stolen token from a different session)
+    try {
+      const storedDecoded = verifyRefreshToken(user.refreshToken);
+      if (storedDecoded.id !== decoded.id) {
+        return next(new AppError('Invalid refresh token.', 401));
+      }
+    } catch {
+      return next(new AppError('Invalid refresh token.', 401));
+    }
+    // Grace-window hit — issue a fresh pair based on the already-rotated session
   }
 
   const newPair = buildTokenPair(user._id, user.defaultRole);

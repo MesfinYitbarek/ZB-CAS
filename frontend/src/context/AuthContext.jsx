@@ -19,6 +19,36 @@ function pickDefaultRole(roles = []) {
   )[0];
 }
 
+// Module-level flag — survives StrictMode's unmount/remount cycle.
+// React StrictMode deliberately mounts every component TWICE in development
+// to surface side-effect bugs. Without this guard the bootstrap useEffect fires
+// twice in parallel: both calls hit POST /auth/refresh with the same cookie,
+// the first rotates the token in the DB, and the second arrives with the now-
+// invalidated old token → 401 → catch clears session → user logged out.
+// Using a module-level promise means the second invocation just awaits the
+// result of the first instead of making a duplicate network request.
+let bootstrapPromise = null;
+
+function restoreSession() {
+  if (bootstrapPromise) return bootstrapPromise;
+  bootstrapPromise = api.post('/auth/refresh')
+    .then(({ data }) => {
+      const accessToken = data.data.accessToken;
+      return api.get('/users/me', {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      }).then(({ data: meData }) => ({
+        accessToken,
+        user: meData.data.user,
+      }));
+    })
+    .catch((err) => {
+      // Reset so a future explicit login can re-run the bootstrap
+      bootstrapPromise = null;
+      throw err;
+    });
+  return bootstrapPromise;
+}
+
 export default function AuthProvider({ children }) {
   const accessTokenRef = useRef(null);
   const [user,       setUser]       = useState(null);
@@ -34,22 +64,16 @@ export default function AuthProvider({ children }) {
     registerTokenGetter(() => accessTokenRef.current);
   }, []);
 
-  // Restore session on mount via httpOnly cookie refresh.
-  // Called once when the app loads (including hard page reloads).
-  //
-  // Failure handling:
-  //   • 400 / 401 / 403 → genuine "no valid session" → clear local state
-  //   • Network error / 5xx → transient failure → also clear so user can retry
-  //     (we cannot distinguish "no cookie" from "server down" here, so the
-  //      safe default is to require a fresh login; tokens are short-lived anyway)
+  // Restore session on mount.
+  // restoreSession() is deduplicated at module level so StrictMode's
+  // double-invoke never sends two simultaneous /auth/refresh requests.
   useEffect(() => {
-    api.post('/auth/refresh')
-      .then(({ data }) => {
-        accessTokenRef.current = data.data.accessToken;
-        return api.get('/users/me');
-      })
-      .then(({ data }) => {
-        const u = data.data.user;
+    let cancelled = false;
+
+    restoreSession()
+      .then(({ accessToken, user: u }) => {
+        if (cancelled) return;
+        accessTokenRef.current = accessToken;
         setUser(u);
         const stored   = sessionStorage.getItem('activeRole');
         const resolved = stored && u.roles?.includes(stored)
@@ -59,12 +83,9 @@ export default function AuthProvider({ children }) {
         sessionStorage.setItem('activeRole', resolved);
       })
       .catch((err) => {
-        // Only wipe the stored role if this is definitely an auth failure.
-        // For any error we still can't show the app without a valid token,
-        // so always reset — but log it so the team can spot unexpected errors.
+        if (cancelled) return;
         const status = err?.response?.status;
         if (status && status !== 400 && status !== 401 && status !== 403) {
-          // Unexpected server error during bootstrap — log but still clear
           console.warn('[AuthContext] Unexpected error during session restore:', status, err?.response?.data?.message);
         }
         accessTokenRef.current = null;
@@ -72,7 +93,11 @@ export default function AuthProvider({ children }) {
         setActiveRole(null);
         sessionStorage.removeItem('activeRole');
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => { cancelled = true; };
   }, []);
 
   // Login with username + password
@@ -80,6 +105,8 @@ export default function AuthProvider({ children }) {
     const { data } = await api.post('/auth/login', { username, password });
     const { user: u, accessToken, activeRole: ar } = data.data;
     accessTokenRef.current = accessToken;
+    // Reset the bootstrap promise so a future page refresh re-runs it
+    bootstrapPromise = null;
     setUser(u);
     setActiveRole(ar);
     sessionStorage.setItem('activeRole', ar);
@@ -89,6 +116,7 @@ export default function AuthProvider({ children }) {
   const logout = useCallback(async () => {
     try { await api.post('/auth/logout'); } catch { /* silent */ }
     accessTokenRef.current = null;
+    bootstrapPromise = null;
     setUser(null);
     setActiveRole(null);
     sessionStorage.clear();
