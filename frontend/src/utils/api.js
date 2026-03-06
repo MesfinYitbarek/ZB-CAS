@@ -94,8 +94,16 @@ api.interceptors.response.use(
         return api(orig);
       } catch (err) {
         processQueue(err);
-        sessionStorage.clear();
-        window.location.href = '/login';
+        // Only force a hard redirect to /login if we were already on a
+        // protected page (i.e. there WAS an active session that just expired).
+        // Do NOT redirect if we're already on /login or if there's no session
+        // to clear — that would cause an infinite reload loop on startup.
+        const alreadyOnAuth = window.location.pathname.startsWith('/login') ||
+                              window.location.pathname.startsWith('/reset-password');
+        if (!alreadyOnAuth) {
+          sessionStorage.removeItem('activeRole'); // remove only auth key, not all storage
+          window.location.href = '/login';
+        }
         throw err;
       } finally {
         isRefreshing = false;

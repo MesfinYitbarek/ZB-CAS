@@ -46,13 +46,27 @@ export const buildTokenPair = (userId, activeRole) => ({
 });
 
 /**
- * Cookie options for the refresh token (httpOnly, Secure, SameSite=Strict).
- * SECURITY FIX (A02): Refresh token must be sent as httpOnly cookie – not in body.
+ * Cookie options for the refresh token.
+ *
+ * SameSite 'lax'  (was 'strict'):
+ *   SameSite=Strict causes the browser to STRIP the cookie on any top-level
+ *   navigation — including a hard page refresh (F5 / Cmd+R). The very first
+ *   POST /auth/refresh that AuthContext fires on mount therefore arrives with
+ *   no cookie → 400 → catch clears the session → user is logged out.
+ *   'lax' still blocks the cookie on cross-site POST (CSRF protection), but
+ *   allows it on same-site navigations and reloads, which is correct here.
+ *
+ * path '/'  (was '/api/auth'):
+ *   Scoping to '/api/auth' is a good idea in theory, but some browsers do not
+ *   send path-restricted cookies on the very first request after a hard reload
+ *   before the page has fully initialised. Using '/' ensures the cookie is
+ *   reliably sent on the bootstrap POST /auth/refresh call from AuthContext.
+ *   The httpOnly + SameSite=Lax flags still protect it adequately.
  */
 export const refreshCookieOptions = () => ({
   httpOnly: true,
   secure:   process.env.NODE_ENV === 'production',
-  sameSite: 'strict',
+  sameSite: 'lax',    // FIX: was 'strict' — strips cookie on page reload
   maxAge:   30 * 24 * 60 * 60 * 1000, // 30 days in ms
-  path:     '/api/auth',               // scope cookie to auth routes only
+  path:     '/',      // FIX: was '/api/auth' — unreliable on first bootstrap request
 });

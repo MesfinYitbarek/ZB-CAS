@@ -183,7 +183,7 @@ export const logout = asyncHandler(async (req, res) => {
     user.refreshToken = null;
     await user.save({ validateBeforeSave: false });
   }
-  res.clearCookie('refreshToken', { path: '/api/auth' });
+  res.clearCookie('refreshToken', { path: '/' });  // path must match refreshCookieOptions
   logger.info({ event: 'user_logout', userId: req.user.id });
   res.status(200).json({ status: 'success', message: 'Logged out.' });
 });

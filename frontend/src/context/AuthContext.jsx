@@ -34,7 +34,14 @@ export default function AuthProvider({ children }) {
     registerTokenGetter(() => accessTokenRef.current);
   }, []);
 
-  // Restore session on mount via httpOnly cookie refresh
+  // Restore session on mount via httpOnly cookie refresh.
+  // Called once when the app loads (including hard page reloads).
+  //
+  // Failure handling:
+  //   • 400 / 401 / 403 → genuine "no valid session" → clear local state
+  //   • Network error / 5xx → transient failure → also clear so user can retry
+  //     (we cannot distinguish "no cookie" from "server down" here, so the
+  //      safe default is to require a fresh login; tokens are short-lived anyway)
   useEffect(() => {
     api.post('/auth/refresh')
       .then(({ data }) => {
@@ -44,12 +51,22 @@ export default function AuthProvider({ children }) {
       .then(({ data }) => {
         const u = data.data.user;
         setUser(u);
-        const stored = sessionStorage.getItem('activeRole');
-        const resolved = stored && u.roles?.includes(stored) ? stored : pickDefaultRole(u.roles);
+        const stored   = sessionStorage.getItem('activeRole');
+        const resolved = stored && u.roles?.includes(stored)
+          ? stored
+          : pickDefaultRole(u.roles);
         setActiveRole(resolved);
         sessionStorage.setItem('activeRole', resolved);
       })
-      .catch(() => {
+      .catch((err) => {
+        // Only wipe the stored role if this is definitely an auth failure.
+        // For any error we still can't show the app without a valid token,
+        // so always reset — but log it so the team can spot unexpected errors.
+        const status = err?.response?.status;
+        if (status && status !== 400 && status !== 401 && status !== 403) {
+          // Unexpected server error during bootstrap — log but still clear
+          console.warn('[AuthContext] Unexpected error during session restore:', status, err?.response?.data?.message);
+        }
         accessTokenRef.current = null;
         setUser(null);
         setActiveRole(null);
