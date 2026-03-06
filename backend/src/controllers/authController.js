@@ -149,47 +149,42 @@ export const switchRole = asyncHandler(async (req, res, next) => {
 
 // ─── REFRESH ──────────────────────────────────────────────────────────────────
 export const refresh = asyncHandler(async (req, res, next) => {
-  const refreshToken = req.cookies?.refreshToken || req.body.refreshToken;
-  if (!refreshToken) return next(new AppError('Refresh token is required.', 400));
+  // Accept token from httpOnly cookie (browser) or body (non-browser clients)
+  const incomingToken = req.cookies?.refreshToken || req.body?.refreshToken;
+  if (!incomingToken) {
+    return next(new AppError('Refresh token is required.', 400));
+  }
 
+  // 1. Verify the token is structurally valid and not expired
   let decoded;
   try {
-    decoded = verifyRefreshToken(refreshToken);
+    decoded = verifyRefreshToken(incomingToken);
   } catch {
     return next(new AppError('Invalid or expired refresh token.', 401));
   }
 
-  const user = await User.findById(decoded.id).select('+refreshToken');
-  if (!user) return next(new AppError('Invalid refresh token.', 401));
-
-  // Race-safety: React StrictMode (and concurrent tab refreshes) can send two
-  // requests with the same token in quick succession. The first rotates the DB
-  // token; the second arrives with the old token and would normally be rejected.
-  // We allow a 10-second reuse window: if the incoming token doesn't match the
-  // stored one but was issued within the last 10 seconds, we treat it as a
-  // valid "just-rotated" token and return a fresh pair without rotating again.
-  const tokenAge = Math.floor(Date.now() / 1000) - (decoded.iat || 0);
-  const tokenMatchesStored = user.refreshToken === refreshToken;
-
-  if (!tokenMatchesStored) {
-    // Outside the grace window → genuine replay attack or expired rotation
-    if (tokenAge > 10) {
-      return next(new AppError('Invalid refresh token.', 401));
-    }
-    // Within grace window: verify the stored token belongs to the same user
-    // (confirms this is a race, not a stolen token from a different session)
-    try {
-      const storedDecoded = verifyRefreshToken(user.refreshToken);
-      if (storedDecoded.id !== decoded.id) {
-        return next(new AppError('Invalid refresh token.', 401));
-      }
-    } catch {
-      return next(new AppError('Invalid refresh token.', 401));
-    }
-    // Grace-window hit — issue a fresh pair based on the already-rotated session
+  // 2. Load the user — explicitly include the refreshToken field (select:false)
+  const user = await User.findById(decoded.id).select('+refreshToken +roles');
+  if (!user) {
+    return next(new AppError('User not found.', 401));
   }
 
-  const newPair = buildTokenPair(user._id, user.defaultRole);
+  // 3. Verify the token matches what is stored in the DB (rotation check)
+  if (user.refreshToken !== incomingToken) {
+    return next(new AppError('Refresh token has already been used or revoked.', 401));
+  }
+
+  // 4. Determine the active role to encode in the new access token.
+  //    user.defaultRole is a Mongoose virtual — fall back explicitly in case
+  //    the virtual is not available (e.g. lean queries or serialisation edge cases).
+  const roles = user.roles || [];
+  const roleOrder = { HR_ADMIN: 0, SUPERVISOR: 1, EMPLOYEE: 2 };
+  const activeRole = roles.length > 0
+    ? [...roles].sort((a, b) => (roleOrder[a] ?? 99) - (roleOrder[b] ?? 99))[0]
+    : 'EMPLOYEE';
+
+  // 5. Issue a new token pair and rotate the stored refresh token
+  const newPair = buildTokenPair(user._id, activeRole);
   user.refreshToken = newPair.refreshToken;
   await user.save({ validateBeforeSave: false });
 

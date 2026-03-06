@@ -48,25 +48,29 @@ export const buildTokenPair = (userId, activeRole) => ({
 /**
  * Cookie options for the refresh token.
  *
- * SameSite 'lax'  (was 'strict'):
- *   SameSite=Strict causes the browser to STRIP the cookie on any top-level
- *   navigation — including a hard page refresh (F5 / Cmd+R). The very first
- *   POST /auth/refresh that AuthContext fires on mount therefore arrives with
- *   no cookie → 400 → catch clears the session → user is logged out.
- *   'lax' still blocks the cookie on cross-site POST (CSRF protection), but
- *   allows it on same-site navigations and reloads, which is correct here.
+ * Development  (NODE_ENV !== 'production'):
+ *   Frontend and backend share the same origin via the Vite proxy, so
+ *   SameSite=Lax + Secure=false is correct and cookies flow freely.
  *
- * path '/'  (was '/api/auth'):
- *   Scoping to '/api/auth' is a good idea in theory, but some browsers do not
- *   send path-restricted cookies on the very first request after a hard reload
- *   before the page has fully initialised. Using '/' ensures the cookie is
- *   reliably sent on the bootstrap POST /auth/refresh call from AuthContext.
- *   The httpOnly + SameSite=Lax flags still protect it adequately.
+ * Production on Render (or any cross-origin deployment):
+ *   Frontend (https://zb-cas.onrender.com) and backend API
+ *   (https://zb-cas-api.onrender.com) are DIFFERENT origins.
+ *   Cross-origin cookies require SameSite=None AND Secure=true.
+ *   Without this the browser silently drops the cookie on every request,
+ *   so POST /auth/refresh arrives with no cookie → 400 → user is logged out.
+ *
+ *   SameSite=None is still safe here because:
+ *     • The token is validated against the DB on every use (rotation check)
+ *     • HTTPS is enforced in production (Secure=true)
+ *     • httpOnly prevents JS access entirely
  */
-export const refreshCookieOptions = () => ({
-  httpOnly: true,
-  secure:   process.env.NODE_ENV === 'production',
-  sameSite: 'lax',    // FIX: was 'strict' — strips cookie on page reload
-  maxAge:   30 * 24 * 60 * 60 * 1000, // 30 days in ms
-  path:     '/',      // FIX: was '/api/auth' — unreliable on first bootstrap request
-});
+export const refreshCookieOptions = () => {
+  const isProd = process.env.NODE_ENV === 'production';
+  return {
+    httpOnly: true,
+    secure:   isProd,                     // must be true when SameSite=None
+    sameSite: isProd ? 'none' : 'lax',   // 'none' required for cross-origin prod
+    maxAge:   30 * 24 * 60 * 60 * 1000, // 30 days in ms
+    path:     '/',
+  };
+};
