@@ -39,6 +39,7 @@ const Questions       = lazy(() => import('./pages/Questions'));
 // Assessments
 const Assessments          = lazy(() => import('./pages/Assessments'));
 const AssessmentDetail     = lazy(() => import('./pages/AssessmentDetail'));
+const AssessmentRequests   = lazy(() => import('./pages/AssessmentRequests'));
 const TakeAssessment       = lazy(() => import('./pages/TakeAssessment'));
 const SupervisorEvaluation = lazy(() => import('./pages/SupervisorEvaluation'));
 
@@ -188,7 +189,17 @@ export default function App() {
         />
 
 
-        {/* ── Users ─────────────────────────────────────────────────────── */}
+        {/* ── Assessment Requests (from ZB_SP) ────────────────────────── */}
+        <Route
+          path="/assessment-requests"
+          element={
+            <ProtectedRoute adminOnly>
+              <AppShell><PageSuspense><AssessmentRequests /></PageSuspense></AppShell>
+            </ProtectedRoute>
+          }
+        />
+
+         {/* ── Users ─────────────────────────────────────────────────────── */}
         <Route
           path="/users"
           element={
