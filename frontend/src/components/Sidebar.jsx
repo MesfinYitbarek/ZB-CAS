@@ -6,7 +6,7 @@ import {
   LayoutDashboard, Users, BookOpen, ClipboardList, FileText,
   BarChart3, MessageSquare, ChevronLeft, LogOut, Target,
   Lightbulb, Activity, UserCheck, ClipboardCheck, X,
-  RefreshCw, ChevronDown, HelpCircle,
+  RefreshCw, ChevronDown, HelpCircle, Inbox,
 } from 'lucide-react';
 import logo from '../image/z.jpg';
 
@@ -14,6 +14,7 @@ const NAV_ITEMS = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard', roles: null },
 
   // ── HR Admin ─────────────────────────────────────────
+  { icon: Inbox, label: 'Assessment Requests', path: '/assessment-requests', roles: ['HR_ADMIN'] },
   { icon: Users, label: 'Users', path: '/users', roles: ['HR_ADMIN'] },
   { icon: Target, label: 'Competencies', path: '/competencies', roles: ['HR_ADMIN'] },
   { icon: BookOpen, label: 'Question Bank', path: '/questions', roles: ['HR_ADMIN'] },

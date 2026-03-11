@@ -45,6 +45,7 @@ export default function AdminDashboard() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [extRequests, setExtRequests] = useState([]);
 
   const load = useCallback(async (p, silent = false) => {
     if (!silent) setLoading(true);
@@ -60,7 +61,16 @@ export default function AdminDashboard() {
     }
   }, []);
 
-  useEffect(() => { load(period); }, [period, load]);
+  const loadExtRequests = useCallback(async () => {
+    try {
+      const res = await api.get('/external/assessment-requests');
+      setExtRequests(res.data?.data?.requests || []);
+    } catch (err) {
+      console.error('Failed to load external requests:', err);
+    }
+  }, []);
+
+  useEffect(() => { load(period); loadExtRequests(); }, [period, load, loadExtRequests]);
 
   if (loading) {
     return (
@@ -75,6 +85,7 @@ export default function AdminDashboard() {
 
   const { stats = {}, charts = {}, recentActivity = [], quickStats = {} } = data || {};
   const periodLabel = PERIOD_OPTIONS.find(p => p.key === period)?.full || '';
+
 
   return (
     <div className="h-[calc(100vh-4rem)] flex flex-col bg-[#f8f9fb] overflow-hidden">
@@ -112,13 +123,33 @@ export default function AdminDashboard() {
                 ))}
               </div>
               <button
-                onClick={() => load(period, true)}
+                onClick={() => { load(period, true); loadExtRequests(); }}
                 className="w-9 h-9 bg-white border border-gray-200 rounded-xl flex items-center justify-center text-gray-400 hover:text-gray-600 transition-all shadow-sm"
               >
                 <RefreshCw className="w-4 h-4" />
               </button>
             </div>
           </div>
+
+          {/* Compact External Requests Notification */}
+          {(() => {
+            const pending = extRequests.filter(r => r.status === 'PENDING' || r.status === 'IN_PROGRESS').length;
+            return pending > 0 ? (
+              <button
+                onClick={() => nav('/assessment-requests')}
+                className="w-full flex items-center gap-2 bg-orange-50 rounded-lg border border-orange-200/80 px-3 py-2 hover:bg-orange-100 transition-all text-left group"
+              >
+                <AlertCircle className="w-4 h-4 text-orange-500 flex-shrink-0" />
+                <span className="text-xs font-medium text-gray-700 flex-1">
+                  <span className="font-bold text-orange-700">{pending}</span> pending assessment request{pending !== 1 ? 's' : ''} from ZB Succession Planning
+                </span>
+                <span className="px-2 py-0.5 bg-orange-200 text-orange-800 rounded-full text-[10px] font-bold flex-shrink-0">
+                  View
+                </span>
+                <ChevronRight className="w-3.5 h-3.5 text-orange-400 group-hover:translate-x-0.5 transition-transform flex-shrink-0" />
+              </button>
+            ) : null;
+          })()}
 
           {/* PRIMARY KPIs */}
           <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3">
@@ -211,4 +242,4 @@ export default function AdminDashboard() {
       </div>
     </div>
   );
-}
+}
