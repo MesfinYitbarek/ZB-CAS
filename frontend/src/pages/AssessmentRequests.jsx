@@ -25,7 +25,7 @@ export default function AssessmentRequests() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
   const [linkingId, setLinkingId] = useState(null);
-  const [linkForm, setLinkForm] = useState({ linkedUserId: '', linkedAssessmentId: '', status: 'IN_PROGRESS' });
+  const [linkForm, setLinkForm] = useState({ linkedUserId: '', linkedAssessmentIds: [], status: 'IN_PROGRESS' });
   const [casUsers, setCasUsers] = useState([]);
   const [casAssessments, setCasAssessments] = useState([]);
   const [saving, setSaving] = useState(false);
@@ -47,14 +47,24 @@ export default function AssessmentRequests() {
 
   const openLinkPanel = async (reqId) => {
     setLinkingId(reqId);
-    setLinkForm({ linkedUserId: '', linkedAssessmentId: '', status: 'IN_PROGRESS' });
+    setLinkForm({ linkedUserId: '', linkedAssessmentIds: [], status: 'IN_PROGRESS' });
     try {
       const [usersRes, assRes] = await Promise.all([
         api.get('/users?limit=200'),
         api.get('/assessments?limit=200'),
       ]);
-      setCasUsers(usersRes.data?.data?.users || []);
+      const users = usersRes.data?.data?.users || [];
+      setCasUsers(users);
       setCasAssessments(assRes.data?.data?.assessments || []);
+
+      // Auto-match user by email from the request
+      const req = requests.find(r => r._id === reqId);
+      if (req?.employeeEmail) {
+        const matchedUser = users.find(u => u.email?.toLowerCase() === req.employeeEmail.toLowerCase());
+        if (matchedUser) {
+          setLinkForm(f => ({ ...f, linkedUserId: matchedUser._id }));
+        }
+      }
     } catch (err) {
       show('Failed to load users/assessments.', 'error');
     }
@@ -193,37 +203,69 @@ export default function AssessmentRequests() {
                   <div className="border-t border-gray-100 bg-gray-50 p-5 space-y-4">
                     <div className="flex items-center gap-2">
                       <Link2 className="w-4 h-4 text-brand-red" />
-                      <p className="text-sm font-semibold text-gray-800">Link to ZB CAS Records</p>
+                      <p className="text-sm font-semibold text-gray-800">
+                        Link: {req.employeeName} — {req.competencies?.map(c => c.name).join(', ') || 'Assessment'}
+                      </p>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1.5">ZB CAS User *</label>
-                        <select
-                          value={linkForm.linkedUserId}
-                          onChange={e => setLinkForm(f => ({ ...f, linkedUserId: e.target.value }))}
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-brand-red focus:border-transparent"
-                        >
-                          <option value="">— Select User —</option>
-                          {casUsers.map(u => (
-                            <option key={u._id} value={u._id}>{u.name} ({u.email})</option>
-                          ))}
-                        </select>
+                        <label className="block text-xs font-medium text-gray-600 mb-1.5">ZB CAS User (auto-matched)</label>
+                        {(() => {
+                          const matchedUser = casUsers.find(u => u._id === linkForm.linkedUserId);
+                          return matchedUser ? (
+                            <div className="w-full border border-green-200 bg-green-50 rounded-lg px-3 py-2.5 text-sm text-green-800 font-medium">
+                              ✓ {matchedUser.name} ({matchedUser.email})
+                            </div>
+                          ) : (
+                            <select
+                              value={linkForm.linkedUserId}
+                              onChange={e => setLinkForm(f => ({ ...f, linkedUserId: e.target.value, linkedAssessmentIds: [] }))}
+                              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-brand-red focus:border-transparent"
+                            >
+                              <option value="">— Select User —</option>
+                              {casUsers.map(u => (
+                                <option key={u._id} value={u._id}>{u.name} ({u.email})</option>
+                              ))}
+                            </select>
+                          );
+                        })()}
                       </div>
                       <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1.5">ZB CAS Assessment *</label>
-                        <select
-                          value={linkForm.linkedAssessmentId}
-                          onChange={e => setLinkForm(f => ({ ...f, linkedAssessmentId: e.target.value }))}
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-brand-red focus:border-transparent"
-                        >
-                          <option value="">— Select Assessment —</option>
-                          {casAssessments.map(a => (
-                            <option key={a._id} value={a._id}>
-                              {a.competencyId?.name || 'Assessment'} — {a.status} ({new Date(a.startDate).toLocaleDateString()})
-                            </option>
-                          ))}
-                        </select>
+                        <label className="block text-xs font-medium text-gray-600 mb-1.5">ZB CAS Assessments (Select one or more) *</label>
+                        <div className="w-full border border-gray-300 rounded-lg p-3 text-sm focus-within:ring-2 focus-within:ring-brand-red focus-within:border-transparent max-h-48 overflow-y-auto bg-white">
+                          {casAssessments.length === 0 ? (
+                            <p className="text-gray-400 italic">No assessments available</p>
+                          ) : (
+                            casAssessments.map(a => {
+                              const isChecked = Array.isArray(linkForm.linkedAssessmentIds) 
+                                ? linkForm.linkedAssessmentIds.includes(a._id) 
+                                : false;
+                              return (
+                                <label key={a._id} className="flex items-start gap-2 mb-2 cursor-pointer hover:bg-gray-50 p-1 rounded">
+                                  <input
+                                    type="checkbox"
+                                    className="mt-0.5 rounded text-brand-red focus:ring-brand-red"
+                                    checked={isChecked}
+                                    onChange={(e) => {
+                                      const checked = e.target.checked;
+                                      setLinkForm(f => {
+                                        const currentIds = Array.isArray(f.linkedAssessmentIds) ? f.linkedAssessmentIds : [];
+                                        const newIds = checked 
+                                          ? [...currentIds, a._id] 
+                                          : currentIds.filter(id => id !== a._id);
+                                        return { ...f, linkedAssessmentIds: newIds };
+                                      });
+                                    }}
+                                  />
+                                  <span>
+                                    {a.competencyId?.name || 'Assessment'} — <span className="text-gray-500 text-xs">{a.status} ({new Date(a.startDate).toLocaleDateString()})</span>
+                                  </span>
+                                </label>
+                              );
+                            })
+                          )}
+                        </div>
                       </div>
                     </div>
 
@@ -243,7 +285,7 @@ export default function AssessmentRequests() {
                     <div className="flex gap-3 pt-1">
                       <button
                         onClick={() => handleLink(req._id)}
-                        disabled={saving || !linkForm.linkedUserId || !linkForm.linkedAssessmentId}
+                        disabled={saving || !linkForm.linkedUserId || !linkForm.linkedAssessmentIds || linkForm.linkedAssessmentIds.length === 0}
                         className="px-5 py-2.5 text-sm font-semibold bg-brand-red text-white rounded-lg disabled:opacity-50 hover:bg-opacity-90 transition-colors flex items-center gap-2"
                       >
                         {saving ? (

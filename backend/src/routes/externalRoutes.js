@@ -80,6 +80,7 @@ router.get('/assessment-requests', async (req, res) => {
     const requests = await ExternalRequest.find(filter)
       .populate('linkedUserId', 'name email')
       .populate('linkedAssessmentId', 'status startDate endDate')
+      .populate('linkedAssessmentIds', 'status startDate endDate')
       .sort({ createdAt: -1 })
       .lean();
 
@@ -98,13 +99,24 @@ router.patch('/assessment-requests/:id', async (req, res) => {
       return res.status(404).json({ status: 'fail', message: 'Request not found.' });
     }
 
-    const { status, linkedUserId, linkedAssessmentId, notes } = req.body;
+    const oldStatus = request.status;
+    const { status, linkedUserId, linkedAssessmentId, linkedAssessmentIds, notes } = req.body;
     if (status) request.status = status;
     if (linkedUserId) request.linkedUserId = linkedUserId;
     if (linkedAssessmentId) request.linkedAssessmentId = linkedAssessmentId;
+    if (linkedAssessmentIds) request.linkedAssessmentIds = linkedAssessmentIds;
     if (notes !== undefined) request.notes = notes;
 
     await request.save();
+
+    logger.info({
+      event: 'external_request_updated',
+      requestId: request._id,
+      employee: request.employeeName,
+      oldStatus,
+      newStatus: request.status,
+      linkedAssessmentIds: request.linkedAssessmentIds,
+    });
 
     res.status(200).json({ status: 'success', data: { request } });
   } catch (error) {
@@ -124,8 +136,13 @@ router.get('/assessment-results/:id', validateApiKey, async (req, res) => {
       return res.status(404).json({ status: 'fail', message: 'External request not found.' });
     }
 
-    // If assessment not linked or not completed yet
-    if (!request.linkedAssessmentId) {
+    // Combine old string id and new array of ids for backwards compatibility
+    const assessmentIds = request.linkedAssessmentIds?.length > 0 
+      ? request.linkedAssessmentIds 
+      : (request.linkedAssessmentId ? [request.linkedAssessmentId] : []);
+
+    // If assessment not linked yet
+    if (assessmentIds.length === 0) {
       return res.status(200).json({
         status: 'success',
         data: {
@@ -136,9 +153,21 @@ router.get('/assessment-results/:id', validateApiKey, async (req, res) => {
       });
     }
 
-    // Fetch the actual results from ZB CAS Result model
+    // If status is NOT COMPLETED or SYNCED, return status only — no scores
+    if (request.status !== 'COMPLETED' && request.status !== 'SYNCED') {
+      return res.status(200).json({
+        status: 'success',
+        data: {
+          requestStatus: request.status,
+          message: `Assessment is ${request.status}. Scores will be available once completed.`,
+          competencies: [],
+        },
+      });
+    }
+
+    // ── COMPLETED: fetch actual results from ZB CAS Result model ──
     const results = await Result.find({
-      assessmentId: request.linkedAssessmentId,
+      assessmentId: { $in: assessmentIds },
       ...(request.linkedUserId ? { userId: request.linkedUserId } : {}),
     })
       .populate('competencyId', 'name category')
@@ -148,8 +177,8 @@ router.get('/assessment-results/:id', validateApiKey, async (req, res) => {
       return res.status(200).json({
         status: 'success',
         data: {
-          requestStatus: request.status,
-          message: 'Assessment is in progress. No results available yet.',
+          requestStatus: 'COMPLETED',
+          message: 'Assessment is completed but no result records found yet.',
           competencies: [],
         },
       });
@@ -166,9 +195,7 @@ router.get('/assessment-results/:id', validateApiKey, async (req, res) => {
     }));
 
     // Auto-update request status to SYNCED
-    if (request.status === 'COMPLETED') {
-      await ExternalRequest.findByIdAndUpdate(req.params.id, { status: 'SYNCED' });
-    }
+    await ExternalRequest.findByIdAndUpdate(req.params.id, { status: 'SYNCED' });
 
     res.status(200).json({
       status: 'success',
