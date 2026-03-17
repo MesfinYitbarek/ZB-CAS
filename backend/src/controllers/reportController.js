@@ -874,3 +874,265 @@ export const exportReports = asyncHandler(async (req, res, next) => {
   res.setHeader('Content-Disposition', `attachment; filename="reports_${userId}.json"`);
   res.status(200).json(reports);
 });
+// ─── CUSTOM REPORT BUILDER — PIVOT DATA ──────────────────────────────────────
+// Returns flat rows used by the frontend pivot engine and Excel export.
+// Query params:
+//   rowField    – field to group rows by
+//   colField    – field to group columns by (optional; omit for flat table)
+//   valueField  – 'score' | 'count' | 'level'
+//   aggregation – 'avg' | 'count' | 'sum'  (default: avg)
+//   plus all standard filter params (department, competencyId, dateFrom, …)
+export const getCustomPivotData = asyncHandler(async (req, res) => {
+  const { rowField, colField, valueField = 'score', aggregation = 'avg' } = req.query;
+
+  if (!rowField) return res.status(400).json({ status: 'error', message: 'rowField is required.' });
+
+  // Build base filter from shared helper
+  const filter = await buildFilter(req.query, req.user);
+
+  // Fetch raw report documents — unwind competencyResults so each row = one competency result
+  const raw = await Report.aggregate([
+    { $match: filter },
+    { $unwind: { path: '$competencyResults', preserveNullAndEmptyArrays: false } },
+    {
+      $project: {
+        employeeName:    '$user.name',
+        department:      '$user.department',
+        position:        '$user.position',
+        gender:          '$user.gender',
+        employeeId:      '$user.employeeId',
+        competency:      '$competencyResults.competencyName',
+        competencyCategory: '$competencyResults.category',
+        score:           '$competencyResults.finalScore',
+        level:           '$competencyResults.level',
+        selfScore:       '$competencyResults.scoreDetails.selfScore',
+        supervisorScore: '$competencyResults.scoreDetails.supervisorScore',
+        purpose:         '$assessment.purpose',
+        assessmentType:  '$assessment.type',
+        targetGroup:     '$assessment.targetGroup',
+        date: { $dateToString: { format: '%Y-%m', date: '$generatedAt' } },
+        generatedAt:     '$generatedAt',
+      }
+    }
+  ]);
+
+  // Field accessor
+  const FIELD_MAP = {
+    employeeName:       r => r.employeeName    || '—',
+    department:         r => r.department       || '—',
+    position:           r => r.position         || '—',
+    gender:             r => r.gender           || '—',
+    competency:         r => r.competency       || '—',
+    competencyCategory: r => r.competencyCategory || '—',
+    level:              r => r.level            || '—',
+    purpose:            r => r.purpose          || '—',
+    assessmentType:     r => r.assessmentType   || '—',
+    targetGroup:        r => r.targetGroup      || '—',
+    date:               r => r.date             || '—',
+  };
+
+  const getRow = FIELD_MAP[rowField] || (r => '—');
+  const getCol = colField ? (FIELD_MAP[colField] || (() => '—')) : null;
+
+  // Aggregate into pivot structure
+  // key: `${rowVal}|||${colVal}` → [values]
+  const buckets = {};
+  const rowVals = new Set();
+  const colVals = new Set();
+
+  raw.forEach(r => {
+    const rv = getRow(r);
+    const cv = getCol ? getCol(r) : '__total__';
+    const key = `${rv}|||${cv}`;
+
+    rowVals.add(rv);
+    colVals.add(cv);
+
+    if (!buckets[key]) buckets[key] = { values: [], count: 0 };
+    const v = valueField === 'score' ? r.score
+            : valueField === 'selfScore' ? r.selfScore
+            : valueField === 'supervisorScore' ? r.supervisorScore
+            : 1;
+    if (v !== null && v !== undefined) buckets[key].values.push(Number(v) || 0);
+    buckets[key].count++;
+  });
+
+  // Compute aggregation
+  const compute = (vals) => {
+    if (!vals.length) return null;
+    if (aggregation === 'count') return vals.length;
+    if (aggregation === 'sum')   return parseFloat(vals.reduce((a, b) => a + b, 0).toFixed(2));
+    // avg (default)
+    return parseFloat((vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2));
+  };
+
+  const rowArr = [...rowVals].sort();
+  const colArr = getCol ? [...colVals].filter(c => c !== '__total__').sort() : null;
+
+  // Build matrix rows
+  const matrix = rowArr.map(rv => {
+    const cells = {};
+    if (colArr) {
+      colArr.forEach(cv => {
+        const b = buckets[`${rv}|||${cv}`];
+        cells[cv] = b ? compute(b.values) : null;
+      });
+      // Row total
+      const allVals = colArr.flatMap(cv => buckets[`${rv}|||${cv}`]?.values || []);
+      cells.__rowTotal = compute(allVals);
+    } else {
+      const b = buckets[`${rv}|||__total__`];
+      cells.__value = b ? compute(b.values) : null;
+    }
+    return { rowLabel: rv, cells };
+  });
+
+  // Column totals
+  const colTotals = {};
+  if (colArr) {
+    colArr.forEach(cv => {
+      const allVals = rowArr.flatMap(rv => buckets[`${rv}|||${cv}`]?.values || []);
+      colTotals[cv] = compute(allVals);
+    });
+    const allVals = Object.values(buckets).flatMap(b => b.values);
+    colTotals.__rowTotal = compute(allVals);
+  }
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      rowField, colField: colField || null, valueField, aggregation,
+      columns: colArr,
+      rows: matrix,
+      colTotals,
+      totalRows: raw.length,
+    },
+  });
+});
+
+// ─── CUSTOM REPORT BUILDER — EXCEL EXPORT ────────────────────────────────────
+export const exportCustomPivotExcel = asyncHandler(async (req, res) => {
+  const { rowField, colField, valueField = 'score', aggregation = 'avg' } = req.query;
+  if (!rowField) return res.status(400).json({ status: 'error', message: 'rowField is required.' });
+
+  // Reuse the pivot logic by calling the same aggregate
+  const filter = await buildFilter(req.query, req.user);
+
+  const raw = await Report.aggregate([
+    { $match: filter },
+    { $unwind: { path: '$competencyResults', preserveNullAndEmptyArrays: false } },
+    {
+      $project: {
+        employeeName: '$user.name', department: '$user.department',
+        position: '$user.position', gender: '$user.gender',
+        competency: '$competencyResults.competencyName',
+        competencyCategory: '$competencyResults.category',
+        score: '$competencyResults.finalScore', level: '$competencyResults.level',
+        selfScore: '$competencyResults.scoreDetails.selfScore',
+        supervisorScore: '$competencyResults.scoreDetails.supervisorScore',
+        purpose: '$assessment.purpose', assessmentType: '$assessment.type',
+        targetGroup: '$assessment.targetGroup',
+        date: { $dateToString: { format: '%Y-%m', date: '$generatedAt' } },
+      }
+    }
+  ]);
+
+  const FIELD_MAP = {
+    employeeName: r => r.employeeName || '—', department: r => r.department || '—',
+    position: r => r.position || '—', gender: r => r.gender || '—',
+    competency: r => r.competency || '—', competencyCategory: r => r.competencyCategory || '—',
+    level: r => r.level || '—', purpose: r => r.purpose || '—',
+    assessmentType: r => r.assessmentType || '—', targetGroup: r => r.targetGroup || '—',
+    date: r => r.date || '—',
+  };
+
+  const getRow = FIELD_MAP[rowField] || (r => '—');
+  const getCol = colField ? (FIELD_MAP[colField] || (() => '—')) : null;
+  const buckets = {};
+  const rowVals = new Set(), colVals = new Set();
+
+  raw.forEach(r => {
+    const rv = getRow(r), cv = getCol ? getCol(r) : '__total__';
+    rowVals.add(rv); colVals.add(cv);
+    const key = `${rv}|||${cv}`;
+    if (!buckets[key]) buckets[key] = [];
+    const v = valueField === 'score' ? r.score : valueField === 'selfScore' ? r.selfScore : valueField === 'supervisorScore' ? r.supervisorScore : 1;
+    if (v !== null && v !== undefined) buckets[key].push(Number(v) || 0);
+  });
+
+  const compute = vals => {
+    if (!vals.length) return null;
+    if (aggregation === 'count') return vals.length;
+    if (aggregation === 'sum') return parseFloat(vals.reduce((a, b) => a + b, 0).toFixed(2));
+    return parseFloat((vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2));
+  };
+
+  const rowArr = [...rowVals].sort();
+  const colArr = getCol ? [...colVals].filter(c => c !== '__total__').sort() : null;
+
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'ZB CAS'; wb.created = new Date();
+  const ws = wb.addWorksheet('Custom Report');
+
+  // Styling helpers
+  const hdStyle = { font: { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC8102E' } }, alignment: { horizontal: 'center', vertical: 'middle' }, border: { bottom: { style: 'thin', color: { argb: 'FF999999' } } } };
+  const totStyle = { font: { bold: true, size: 10 }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFE5E5' } }, alignment: { horizontal: 'right' } };
+  const cellStyle = { alignment: { horizontal: 'right' }, font: { size: 10 } };
+  const rowHdStyle = { font: { bold: true, size: 10 }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8F8F8' } } };
+
+  // Title
+  ws.mergeCells(1, 1, 1, (colArr ? colArr.length + 2 : 2));
+  const titleCell = ws.getCell(1, 1);
+  titleCell.value = `Custom Report — ${rowField} ${colArr ? `× ${colField}` : ''} (${aggregation} of ${valueField})`;
+  titleCell.style = { font: { bold: true, size: 14 }, alignment: { horizontal: 'center' } };
+  ws.getRow(1).height = 28;
+
+  ws.getRow(2).values = ['Generated:', new Date().toLocaleString()];
+  ws.getRow(2).font = { italic: true, size: 10 };
+
+  // Header row
+  const headerRow = ws.getRow(4);
+  headerRow.values = colArr
+    ? [rowField, ...colArr, 'Total']
+    : [rowField, aggregation + ' of ' + valueField];
+  headerRow.eachCell(cell => Object.assign(cell, hdStyle));
+  headerRow.height = 20;
+
+  // Data rows
+  rowArr.forEach((rv, i) => {
+    const row = ws.getRow(5 + i);
+    if (colArr) {
+      const vals = colArr.map(cv => { const b = buckets[`${rv}|||${cv}`]; return b ? compute(b) : null; });
+      const allVals = colArr.flatMap(cv => buckets[`${rv}|||${cv}`] || []);
+      row.values = [rv, ...vals, compute(allVals)];
+      row.getCell(1).style = rowHdStyle;
+      for (let c = 2; c <= colArr.length + 1; c++) row.getCell(c).style = cellStyle;
+      row.getCell(colArr.length + 2).style = totStyle;
+    } else {
+      const b = buckets[`${rv}|||__total__`];
+      row.values = [rv, b ? compute(b) : null];
+      row.getCell(1).style = rowHdStyle;
+      row.getCell(2).style = cellStyle;
+    }
+  });
+
+  // Column totals row
+  if (colArr) {
+    const totRow = ws.getRow(5 + rowArr.length);
+    const tots = colArr.map(cv => { const vals = rowArr.flatMap(rv => buckets[`${rv}|||${cv}`] || []); return compute(vals); });
+    const grandTotal = compute(Object.values(buckets).flat());
+    totRow.values = ['Total', ...tots, grandTotal];
+    totRow.eachCell(cell => Object.assign(cell, totStyle));
+  }
+
+  // Column widths
+  ws.getColumn(1).width = 28;
+  if (colArr) colArr.forEach((_, i) => { ws.getColumn(i + 2).width = 14; });
+  else ws.getColumn(2).width = 16;
+
+  const filename = `custom_report_${rowField}_${Date.now()}.xlsx`;
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  await wb.xlsx.write(res);
+  res.end();
+});

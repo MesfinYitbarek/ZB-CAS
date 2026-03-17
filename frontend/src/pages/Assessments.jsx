@@ -614,7 +614,7 @@ export default function Assessments() {
                       )}
                     </div>
 
-                    <div className="border-t border-gray-100 px-5 py-3 flex justify-between items-center bg-gray-50">
+                    <div className="border-t border-gray-100 px-3 py-1 flex justify-between items-center bg-gray-50">
                       {isAdmin && next && a.status !== 'SCHEDULED' && (
                         <button onClick={() => changeStatus(a._id, next)}
                           className="px-3 py-1.5 text-xs font-semibold text-brand-red border border-brand-red rounded-lg hover:bg-brand-red-muted transition-colors">

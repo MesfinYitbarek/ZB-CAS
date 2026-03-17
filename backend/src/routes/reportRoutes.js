@@ -10,6 +10,10 @@ const router = express.Router();
 
 router.use(protect);
 
+// ── Custom report builder (pivot) ─────────────────────────────────────────────
+router.get('/custom/pivot',        authorize('HR_ADMIN'), repCtrl.getCustomPivotData);
+router.get('/custom/export/excel', authorize('HR_ADMIN'), repCtrl.exportCustomPivotExcel);
+
 // ── Analytics & stats ─────────────────────────────────────────────────────────
 router.get('/stats',          authorize('HR_ADMIN'),              repCtrl.getReportStats);
 router.get('/filter-options', authorize('HR_ADMIN', 'SUPERVISOR'), repCtrl.getReportFilterOptions);
