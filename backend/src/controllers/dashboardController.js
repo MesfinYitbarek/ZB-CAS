@@ -3,6 +3,7 @@ import Competency from '../models/Competency.js';
 import Assessment from '../models/Assessment.js';
 import Result from '../models/Result.js';
 import Feedback from '../models/Feedback.js';
+import Question from '../models/Question.js';
 import AppError from '../utils/AppError.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import Response from '../models/Response.js';
@@ -55,7 +56,7 @@ export const getAdminDashboardStats = asyncHandler(async (req, res) => {
     totalUsers, activeUsers, totalCompetencies, assessments,
     totalResults, pendingResults, recentActivity,
     competencyCategories, assessmentStatusDist, trendData,
-    levelDist, deptPerformance, scoreStats
+    levelDist, deptPerformance, scoreStats, questionsByCompetency
   ] = await Promise.all([
     User.countDocuments(),
     User.countDocuments({ status: 'ACTIVE' }),
@@ -109,6 +110,28 @@ export const getAdminDashboardStats = asyncHandler(async (req, res) => {
           stdDev: { $stdDevPop: '$finalScore' }
         }
       }
+    ]),
+    // Questions per competency with category breakdown
+    Question.aggregate([
+      {
+        $lookup: {
+          from: 'competencies',
+          localField: 'competencyId',
+          foreignField: '_id',
+          as: 'competency'
+        }
+      },
+      { $unwind: '$competency' },
+      {
+        $group: {
+          _id: { competencyId: '$competencyId', name: '$competency.name', category: '$competency.category' },
+          total: { $sum: 1 },
+          byType: { $push: '$type' },
+          byTargetGroup: { $push: '$targetGroup' },
+        }
+      },
+      { $sort: { total: -1 } },
+      { $limit: 15 }
     ])
   ]);
 
@@ -142,7 +165,20 @@ export const getAdminDashboardStats = asyncHandler(async (req, res) => {
           avgScore: Math.round(d.avgScore),
           count: d.count,
           employees: d.employeeCount
-        }))
+        })),
+        questionsByCompetency: questionsByCompetency.map(q => {
+          const typeCount = {};
+          (q.byType || []).forEach(t => { typeCount[t] = (typeCount[t] || 0) + 1; });
+          const tgCount = {};
+          (q.byTargetGroup || []).forEach(t => { tgCount[t] = (tgCount[t] || 0) + 1; });
+          return {
+            name: q._id.name,
+            category: q._id.category,
+            total: q.total,
+            types: typeCount,
+            targetGroups: tgCount,
+          };
+        }),
       },
       recentActivity,
       quickStats: {

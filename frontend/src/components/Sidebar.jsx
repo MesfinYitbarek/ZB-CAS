@@ -20,7 +20,7 @@ const NAV_ITEMS = [
   { icon: BookOpen, label: 'Question Bank', path: '/questions', roles: ['HR_ADMIN'] },
   { icon: Lightbulb, label: 'Recommendations', path: '/recommendations', roles: ['HR_ADMIN'] },
   { icon: Target, label: 'Assessments', path: '/assessments', roles: ['HR_ADMIN'] },
-  { icon: HelpCircle, label: 'FAQ Management', path: '/faqs', roles: ['HR_ADMIN'] },
+  
 
   
 
@@ -36,8 +36,9 @@ const NAV_ITEMS = [
   { icon: FileText, label: 'Competency Results', path: '/results', roles: ['HR_ADMIN'] },
   { icon: BarChart3, label: 'Reports', path: '/reports', roles: ['HR_ADMIN'] },
   { icon: MessageSquare, label: 'Feedback', path: '/feedback', roles: ['EMPLOYEE', 'HR_ADMIN'] },
-  // Chat is now accessible via floating support widget
-
+  
+  
+  { icon: HelpCircle, label: 'FAQ Management', path: '/faqs', roles: ['HR_ADMIN'] },
   // ✅ Activity Log moved to VERY BOTTOM
   // { icon: Activity,   label: 'Activity Log',   path: '/activity-log',   roles: ['HR_ADMIN'] },
 ];

@@ -7,7 +7,7 @@ import {
 import {
   Users, ClipboardList, Target, TrendingUp, TrendingDown,
   Activity, Award, AlertCircle, RefreshCw,
-  BarChart2, Clock, Zap, ChevronRight
+  BarChart2, Clock, Zap, ChevronRight, BookOpen
 } from 'lucide-react';
 import api from '../utils/api';
 
@@ -38,6 +38,146 @@ const ChartTooltip = ({ active, payload, label }) => {
     </div>
   );
 };
+
+// ─── Category colors matching the competency model categories ─────────────────
+const CAT_META = {
+  'Core-Personal effectiveness': { color: '#C8102E', bg: 'bg-red-50',     text: 'text-red-600',    bar: '#C8102E' },
+  'Core-Behavioral':             { color: '#f59e0b', bg: 'bg-amber-50',   text: 'text-amber-600',  bar: '#f59e0b' },
+  'Managerial':                  { color: '#3b82f6', bg: 'bg-blue-50',    text: 'text-blue-600',   bar: '#3b82f6' },
+  'Leadership':                  { color: '#8b5cf6', bg: 'bg-violet-50',  text: 'text-violet-600', bar: '#8b5cf6' },
+  'Technical':                   { color: '#10b981', bg: 'bg-emerald-50', text: 'text-emerald-600', bar: '#10b981' },
+};
+const DEFAULT_CAT = { color: '#94a3b8', bg: 'bg-gray-50', text: 'text-gray-500', bar: '#94a3b8' };
+
+const TYPE_LABELS = {
+  MCQ: 'MCQ', Rating: 'Rating', TrueFalse: 'T/F', MultiSelect: 'Multi',
+  Matching: 'Match', Ordering: 'Order', ScenarioMCQ: 'Scenario', DragDropClassification: 'DnD',
+};
+
+function QuestionBankInsight({ data = [] }) {
+  const [hovered, setHovered] = useState(null);
+  const [viewMode, setViewMode] = useState('all');
+
+  const totalQuestions = data.reduce((s, d) => s + d.total, 0);
+  const categories = [...new Set(data.map(d => d.category))];
+  const filtered = viewMode === 'all' ? data : data.filter(d => d.category === viewMode);
+  const maxTotal = Math.max(...filtered.map(d => d.total), 1);
+
+  if (!data.length) {
+    return (
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex flex-col items-center justify-center gap-3 text-center" style={{ minHeight: 320 }}>
+        <div className="w-12 h-12 bg-gray-100 rounded-2xl flex items-center justify-center">
+          <BookOpen className="w-6 h-6 text-gray-400" />
+        </div>
+        <div>
+          <p className="text-sm font-semibold text-gray-600">No questions yet</p>
+          <p className="text-xs text-gray-400 mt-0.5">Add questions to competencies to see coverage</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex flex-col">
+      <div className="flex items-start justify-between mb-4 gap-3">
+        <div>
+          <h3 className="text-sm font-bold text-gray-900">Question Bank Coverage</h3>
+          <p className="text-xs text-gray-400 mt-0.5">
+            <span className="font-semibold text-gray-700">{totalQuestions.toLocaleString()}</span> questions
+            across <span className="font-semibold text-gray-700">{data.length}</span> competencies
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-1 justify-end">
+          <button
+            onClick={() => setViewMode('all')}
+            className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all ${
+              viewMode === 'all' ? 'bg-brand-black text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+            }`}
+          >All</button>
+          {categories.map(cat => {
+            const meta = CAT_META[cat] || DEFAULT_CAT;
+            const short = cat.replace('Core-', '').slice(0, 7);
+            return (
+              <button
+                key={cat}
+                onClick={() => setViewMode(viewMode === cat ? 'all' : cat)}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all ${
+                  viewMode === cat ? 'text-white' : `${meta.bg} ${meta.text} hover:opacity-80`
+                }`}
+                style={viewMode === cat ? { background: meta.color } : {}}
+              >{short}</button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="flex-1 space-y-1.5 overflow-y-auto" style={{ maxHeight: 268 }}>
+        {filtered.map((item, i) => {
+          const meta  = CAT_META[item.category] || DEFAULT_CAT;
+          const pct   = Math.round((item.total / maxTotal) * 100);
+          const isHov = hovered === i;
+          const topTypes = Object.entries(item.types || {}).sort((a, b) => b[1] - a[1]).slice(0, 3);
+          return (
+            <div
+              key={item.name}
+              onMouseEnter={() => setHovered(i)}
+              onMouseLeave={() => setHovered(null)}
+              className={`rounded-xl px-3 py-2.5 transition-all duration-150 cursor-default ${isHov ? 'bg-gray-50' : ''}`}
+            >
+              <div className="flex items-center justify-between mb-1.5 gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: meta.color }} />
+                  <span className="text-xs font-semibold text-gray-800 truncate">{item.name}</span>
+                </div>
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <div className={`flex gap-1 transition-all duration-150 ${isHov ? 'opacity-100' : 'opacity-0'}`}>
+                    {topTypes.map(([type, count]) => (
+                      <span key={type} className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${meta.bg} ${meta.text}`}>
+                        {TYPE_LABELS[type] || type} {count}
+                      </span>
+                    ))}
+                  </div>
+                  <span className="text-xs font-bold text-gray-700 tabular-nums w-6 text-right">{item.total}</span>
+                </div>
+              </div>
+              <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                <div
+                  className="h-full rounded-full transition-all duration-500"
+                  style={{ width: `${pct}%`, background: meta.bar, opacity: isHov ? 1 : 0.72 }}
+                />
+              </div>
+              {isHov && item.targetGroups && (
+                <div className="flex gap-3 mt-1.5">
+                  {Object.entries(item.targetGroups).map(([tg, cnt]) => (
+                    <span key={tg} className="text-[10px] text-gray-400">
+                      <span className="font-semibold text-gray-600">{cnt}</span> {tg}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3 pt-3 border-t border-gray-100">
+        {categories.map(cat => {
+          const meta = CAT_META[cat] || DEFAULT_CAT;
+          const catTotal = data.filter(d => d.category === cat).reduce((s, d) => s + d.total, 0);
+          return (
+            <div key={cat} className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full" style={{ background: meta.color }} />
+              <span className="text-[10px] text-gray-500">
+                {cat.replace('Core-', '')} <span className="font-semibold text-gray-700">{catTotal}</span>
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 
 export default function AdminDashboard() {
   const nav = useNavigate();
@@ -179,11 +319,11 @@ export default function AdminDashboard() {
             ))}
           </div>
 
-          {/* CHARTS ROW */}
+          {/* CHARTS ROW — Activity Trend | Question Bank Coverage | Assessment Status */}
           <div className="grid lg:grid-cols-3 gap-5">
 
-            {/* Activity Trend - Now only showing Assessments */}
-            <div className="lg:col-span-2 bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+            {/* Activity Trend */}
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex flex-col">
               <div className="flex items-center justify-between mb-5">
                 <div>
                   <h3 className="text-sm font-bold text-gray-900">Activity Trend</h3>
@@ -193,22 +333,27 @@ export default function AdminDashboard() {
                   <div className="flex items-center gap-1"><div className="w-3 h-0.5 bg-blue-400" /><span>Assessments</span></div>
                 </div>
               </div>
-              <ResponsiveContainer width="100%" height={250}>
-                <AreaChart data={charts.trend || []} margin={{ top: 5, right: 5, bottom: 0, left: -25 }}>
-                  <defs>
-                    <linearGradient id="gBlue" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.15} />
-                      <stop offset="100%" stopColor="#3b82f6" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                  <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                  <Tooltip content={<ChartTooltip />} />
-                  <Area type="monotone" dataKey="assessments" stroke="#3b82f6" strokeWidth={2} fill="url(#gBlue)" dot={false} activeDot={{ r: 4 }} />
-                </AreaChart>
-              </ResponsiveContainer>
+              <div className="flex-1">
+                <ResponsiveContainer width="100%" height={250}>
+                  <AreaChart data={charts.trend || []} margin={{ top: 5, right: 5, bottom: 0, left: -25 }}>
+                    <defs>
+                      <linearGradient id="gBlue" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.15} />
+                        <stop offset="100%" stopColor="#3b82f6" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                    <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                    <Tooltip content={<ChartTooltip />} />
+                    <Area type="monotone" dataKey="assessments" stroke="#3b82f6" strokeWidth={2} fill="url(#gBlue)" dot={false} activeDot={{ r: 4 }} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
             </div>
+
+            {/* Question Bank Coverage */}
+            <QuestionBankInsight data={charts.questionsByCompetency || []} />
 
             {/* Assessment Status */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
@@ -242,4 +387,4 @@ export default function AdminDashboard() {
       </div>
     </div>
   );
-}
+}

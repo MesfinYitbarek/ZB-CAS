@@ -1,457 +1,583 @@
-/* components/SupportWidget.jsx */
-import { useState, useEffect, useCallback, useRef } from 'react';
+/* components/SupportWidget.jsx — Real-time Telegram/Instagram-quality chat */
+/* Socket.IO WebSocket | Optimistic sends | Typing indicators | Presence | Read receipts */
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useSocket } from '../hooks/useSocket';
 import api from '../utils/api';
 import {
-  HelpCircle,
-  X,
-  MessageCircle,
-  Search,
-  Send,
-  ChevronDown,
-  ChevronUp,
-  Clock,
-  Check,
-  CheckCheck,
-  User,
-  Bot,
+  HelpCircle, X, MessageCircle, Search, Send,
+  ChevronDown, Check, CheckCheck, User, Bot,
+  ArrowLeft, Circle,
 } from 'lucide-react';
 
-// FAQ Item Component
-function FAQItem({ faq }) {
-  const [isOpen, setIsOpen] = useState(false);
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
+function formatTime(d) {
+  return new Date(d).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+function formatDateSep(d) {
+  const date = new Date(d);
+  const today = new Date();
+  const yest = new Date(today); yest.setDate(yest.getDate() - 1);
+  if (date.toDateString() === today.toDateString()) return 'Today';
+  if (date.toDateString() === yest.toDateString()) return 'Yesterday';
+  return date.toLocaleDateString([], { month: 'long', day: 'numeric' });
+}
+function isSameDay(a, b) {
+  const da = new Date(a), db = new Date(b);
+  return da.getFullYear() === db.getFullYear() && da.getMonth() === db.getMonth() && da.getDate() === db.getDate();
+}
+function getInitials(name = '') {
+  return name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+}
+
+// ─── Avatar ───────────────────────────────────────────────────────────────────
+
+function Avatar({ name, size = 'md', online = false }) {
+  const dims = size === 'sm' ? 'w-8 h-8 text-xs' : 'w-10 h-10 text-sm';
   return (
-    <div className="border-b border-gray-100 last:border-0">
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="w-full py-3 px-4 flex items-center justify-between text-left hover:bg-gray-50 transition-colors"
-      >
-        <span className="font-medium text-gray-800 text-sm pr-4">{faq.question}</span>
-        {isOpen ? (
-          <ChevronUp className="w-4 h-4 text-gray-400 flex-shrink-0" />
-        ) : (
-          <ChevronDown className="w-4 h-4 text-gray-400 flex-shrink-0" />
-        )}
-      </button>
-      {isOpen && (
-        <div className="px-4 pb-4 text-sm text-gray-600 leading-relaxed">
-          {faq.answer}
-        </div>
-      )}
+    <div className="relative flex-shrink-0">
+      <div className={`${dims} rounded-full bg-gradient-to-br from-red-400 to-brand-red flex items-center justify-center font-semibold text-white`}>
+        {getInitials(name) || <User className="w-4 h-4" />}
+      </div>
+      {online && <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-white rounded-full" />}
     </div>
   );
 }
 
-// Chat Tab Component
-function ChatTab({ onBack }) {
-  const { user, isAdmin } = useAuth();
-  const [admins, setAdmins] = useState([]);
-  const [conversations, setConversations] = useState([]);
-  const [selectedUser, setSelectedUser] = useState(null);
-  const [messages, setMessages] = useState([]);
-  const [newMessage, setNewMessage] = useState('');
-  const [sending, setSending] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const messagesEndRef = useRef(null);
+// ─── Typing Dots ──────────────────────────────────────────────────────────────
 
-  // Fetch HR admins and conversations
-  const loadData = useCallback(async () => {
-    try {
-      setLoading(true);
-      const [adminsRes, convRes] = await Promise.all([
-        api.get('/chat/admins'),
-        api.get('/chat/conversations'),
-      ]);
-      setAdmins(adminsRes.data.data || []);
-      setConversations(convRes.data.data || []);
-    } catch (err) {
-      console.error('Failed to load chat data:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+function TypingDots() {
+  return (
+    <div className="flex items-center gap-1 px-3 py-2">
+      {[0, 1, 2].map(i => (
+        <span key={i} className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
+          style={{ animationDelay: `${i * 0.15}s`, animationDuration: '0.9s' }} />
+      ))}
+    </div>
+  );
+}
 
-  useEffect(() => {
-    loadData();
-    // Poll for new messages every 10 seconds
-    const interval = setInterval(() => {
-      loadData();
-      if (selectedUser) {
-        fetchMessages(selectedUser._id);
-      }
-    }, 10000);
-    return () => clearInterval(interval);
-  }, [loadData, selectedUser]);
+// ─── Message Bubble ───────────────────────────────────────────────────────────
 
-  // Fetch messages
-  const fetchMessages = useCallback(async (userId) => {
-    if (!userId) return;
-    try {
-      const { data } = await api.get(`/chat/conversation/${userId}`);
-      setMessages(data.data || []);
-    } catch (err) {
-      console.error('Failed to fetch messages:', err);
-    }
-  }, []);
-
-  // Scroll to bottom
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  // Send message
-  const handleSend = async (e) => {
-    e.preventDefault();
-    if (!newMessage.trim() || !selectedUser || sending) return;
-
-    setSending(true);
-    try {
-      const { data } = await api.post('/chat/send', {
-        receiverId: selectedUser._id,
-        message: newMessage.trim(),
-      });
-      setMessages((prev) => [...prev, data.data]);
-      setNewMessage('');
-      loadData();
-    } catch (err) {
-      console.error('Failed to send message:', err);
-    } finally {
-      setSending(false);
-    }
-  };
-
-  // Select user
-  const handleSelectUser = async (userData) => {
-    setSelectedUser(userData);
-    await fetchMessages(userData._id);
-  };
-
-  // Format time
-  const formatTime = (dateString) => {
-    const date = new Date(dateString);
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  };
-
-  // Get all contacts
-  const getContacts = () => {
-    const contactMap = new Map();
-
-    // Add admins
-    admins.forEach((admin) => {
-      if (admin._id !== user?._id) {
-        contactMap.set(admin._id, { partner: admin, lastMessage: null, unreadCount: 0 });
-      }
-    });
-
-    // Add conversations
-    conversations.forEach((conv) => {
-      contactMap.set(conv.partner._id, conv);
-    });
-
-    return Array.from(contactMap.values()).sort((a, b) => {
-      if (a.lastMessage && b.lastMessage) {
-        return new Date(b.lastMessage.createdAt) - new Date(a.lastMessage.createdAt);
-      }
-      if (a.lastMessage) return -1;
-      if (b.lastMessage) return 1;
-      return 0;
-    });
-  };
-
-  const contacts = getContacts();
-
-  if (loading) {
-    return (
-      <div className="flex-1 flex items-center justify-center">
-        <div className="animate-pulse text-gray-400">Loading...</div>
-      </div>
-    );
-  }
-
-  // Chat view
-  if (selectedUser) {
-    return (
-      <div className="flex-1 flex flex-col">
-        {/* Header */}
-        <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-3">
-          <button
-            onClick={() => setSelectedUser(null)}
-            className="text-gray-400 hover:text-gray-600"
-          >
-            <ChevronDown className="w-5 h-5 rotate-90" />
-          </button>
-          <div className="w-8 h-8 rounded-full bg-brand-red/10 flex items-center justify-center">
-            <User className="w-4 h-4 text-brand-red" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="font-medium text-gray-900 text-sm truncate">{selectedUser.name}</p>
-            <p className="text-xs text-gray-500">{selectedUser.position || 'HR Admin'}</p>
-          </div>
-        </div>
-
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
-          {messages.length === 0 ? (
-            <div className="text-center text-gray-400 text-sm py-8">
-              Start a conversation with {selectedUser.name}
-            </div>
-          ) : (
-            messages.map((msg) => {
-              const isMe = msg.sender._id === user?._id;
-              return (
-                <div
-                  key={msg._id}
-                  className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}
-                >
-                  <div
-                    className={`max-w-[80%] rounded-2xl px-4 py-2 text-sm ${
-                      isMe
-                        ? 'bg-brand-red text-white rounded-br-md'
-                        : 'bg-gray-100 text-gray-800 rounded-bl-md'
-                    }`}
-                  >
-                    <p>{msg.message}</p>
-                    <div className={`flex items-center gap-1 mt-1 text-xs ${isMe ? 'text-white/70' : 'text-gray-400'}`}>
-                      <span>{formatTime(msg.createdAt)}</span>
-                      {isMe && (
-                        msg.read ? (
-                          <CheckCheck className="w-3 h-3" />
-                        ) : (
-                          <Check className="w-3 h-3" />
-                        )
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })
+function MessageBubble({ msg, isMe, isFirst, isLast }) {
+  const isOpt = msg._optimistic;
+  return (
+    <div className={`flex ${isMe ? 'justify-end' : 'justify-start'} ${isLast ? 'mb-3' : 'mb-0.5'}`}>
+      <div className={`
+        relative max-w-[78%] px-3 py-2 text-sm leading-relaxed break-words transition-opacity duration-200
+        ${isOpt ? 'opacity-70' : 'opacity-100'}
+        ${isMe
+          ? `bg-brand-red text-white rounded-2xl ${isFirst ? '' : ''} ${isLast ? 'rounded-br-sm' : ''}`
+          : `bg-gray-100 text-gray-900 rounded-2xl ${isLast ? 'rounded-bl-sm' : ''}`
+        }
+      `}>
+        <p className="whitespace-pre-wrap">{msg.message}</p>
+        <div className={`flex items-center justify-end gap-1 mt-0.5 text-[10px] ${isMe ? 'text-white/60' : 'text-gray-400'}`}>
+          <span>{formatTime(msg.createdAt || new Date())}</span>
+          {isMe && (
+            isOpt ? <Circle className="w-2.5 h-2.5 opacity-50" />
+            : msg.read ? <CheckCheck className="w-3 h-3 text-sky-300" />
+            : <Check className="w-3 h-3" />
           )}
-          <div ref={messagesEndRef} />
         </div>
-
-        {/* Input */}
-        <form onSubmit={handleSend} className="p-3 border-t border-gray-100 flex gap-2">
-          <input
-            type="text"
-            value={newMessage}
-            onChange={(e) => setNewMessage(e.target.value)}
-            placeholder="Type a message..."
-            className="flex-1 px-3 py-2 bg-gray-100 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-brand-red/20"
-          />
-          <button
-            type="submit"
-            disabled={!newMessage.trim() || sending}
-            className="w-10 h-10 rounded-full bg-brand-red text-white flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed hover:bg-red-700 transition-colors"
-          >
-            <Send className="w-4 h-4" />
-          </button>
-        </form>
-      </div>
-    );
-  }
-
-  // Contact list view
-  return (
-    <div className="flex-1 flex flex-col">
-      <div className="p-4 border-b border-gray-100">
-        <p className="text-sm text-gray-500 mb-1">Select an HR admin to chat with</p>
-      </div>
-      <div className="flex-1 overflow-y-auto">
-        {contacts.length === 0 ? (
-          <div className="text-center text-gray-400 text-sm py-8">
-            No HR admins available
-          </div>
-        ) : (
-          contacts.map((contact) => (
-            <button
-              key={contact.partner._id}
-              onClick={() => handleSelectUser(contact.partner)}
-              className="w-full px-4 py-3 flex items-center gap-3 hover:bg-gray-50 transition-colors border-b border-gray-50 last:border-0"
-            >
-              <div className="w-10 h-10 rounded-full bg-brand-red/10 flex items-center justify-center flex-shrink-0">
-                <User className="w-5 h-5 text-brand-red" />
-              </div>
-              <div className="flex-1 min-w-0 text-left">
-                <p className="font-medium text-gray-900 text-sm truncate">{contact.partner.name}</p>
-                <p className="text-xs text-gray-500 truncate">
-                  {contact.lastMessage?.message || contact.partner.position || 'HR Admin'}
-                </p>
-              </div>
-              {contact.unreadCount > 0 && (
-                <span className="w-5 h-5 rounded-full bg-brand-red text-white text-xs flex items-center justify-center">
-                  {contact.unreadCount}
-                </span>
-              )}
-            </button>
-          ))
-        )}
       </div>
     </div>
   );
 }
 
-// FAQ Tab Component
-function FAQTab() {
-  const [faqs, setFaqs] = useState([]);
-  const [categories, setCategories] = useState([]);
-  const [selectedCategory, setSelectedCategory] = useState('ALL');
-  const [searchQuery, setSearchQuery] = useState('');
+// ─── Chat View ────────────────────────────────────────────────────────────────
+
+function ChatView({ partner, onBack, socket, connected, currentUserId, onlineUsers }) {
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState('');
+  const [sending, setSending] = useState(false);
+  const [partnerTyping, setPartnerTyping] = useState(false);
+  const [showScrollBtn, setShowScrollBtn] = useState(false);
   const [loading, setLoading] = useState(true);
+  const endRef = useRef(null);
+  const containerRef = useRef(null);
+  const taRef = useRef(null);
+  const typingTimer = useRef(null);
+  const isOnline = onlineUsers.has(partner._id);
 
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        setLoading(true);
-        const [faqsRes, catsRes] = await Promise.all([
-          api.get('/faq/public'),
-          api.get('/faq/categories'),
-        ]);
-        setFaqs(faqsRes.data.data || []);
-        setCategories([{ value: 'ALL', label: 'All Categories' }, ...(catsRes.data.data || [])]);
-      } catch (err) {
-        console.error('Failed to load FAQs:', err);
-      } finally {
-        setLoading(false);
-      }
+    let live = true;
+    api.get(`/chat/conversation/${partner._id}`)
+      .then(({ data }) => { if (live) setMessages(data.data || []); })
+      .catch(console.error)
+      .finally(() => { if (live) setLoading(false); });
+    socket?.emit('message:read', { senderId: partner._id });
+    return () => { live = false; };
+  }, [partner._id, socket]);
+
+  useEffect(() => {
+    if (!socket) return;
+    const onNew = (msg) => {
+      const senderId = msg.sender?._id || msg.sender;
+      const receiverId = msg.receiver?._id || msg.receiver;
+      const related = (senderId === partner._id && receiverId === currentUserId) ||
+        (senderId === currentUserId && receiverId === partner._id);
+      if (!related) return;
+      setMessages(prev => {
+        const withoutOpt = prev.filter(m => !(m._optimistic && m.message === msg.message && (m.sender?._id || m.sender) === currentUserId));
+        if (withoutOpt.some(m => m._id === msg._id)) return withoutOpt;
+        return [...withoutOpt, msg];
+      });
+      if (senderId === partner._id) socket.emit('message:read', { senderId: partner._id });
     };
-    loadData();
-  }, []);
+    const onRead = ({ byUserId }) => {
+      if (byUserId === partner._id) setMessages(prev => prev.map(m =>
+        (m.sender?._id || m.sender) === currentUserId ? { ...m, read: true } : m
+      ));
+    };
+    const onTypStart = ({ userId }) => { if (userId === partner._id) setPartnerTyping(true); };
+    const onTypStop = ({ userId }) => { if (userId === partner._id) setPartnerTyping(false); };
 
-  const filteredFAQs = faqs.filter((faq) => {
-    const matchesCategory = selectedCategory === 'ALL' || faq.category === selectedCategory;
-    const matchesSearch =
-      !searchQuery ||
-      faq.question.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      faq.answer.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesCategory && matchesSearch;
-  });
+    socket.on('message:new', onNew);
+    socket.on('message:read', onRead);
+    socket.on('typing:start', onTypStart);
+    socket.on('typing:stop', onTypStop);
+    return () => {
+      socket.off('message:new', onNew);
+      socket.off('message:read', onRead);
+      socket.off('typing:start', onTypStart);
+      socket.off('typing:stop', onTypStop);
+    };
+  }, [socket, partner._id, currentUserId]);
 
-  if (loading) {
-    return (
-      <div className="flex-1 flex items-center justify-center">
-        <div className="animate-pulse text-gray-400">Loading FAQs...</div>
-      </div>
-    );
-  }
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: loading ? 'instant' : 'smooth' }); }, [messages, partnerTyping, loading]);
+
+  const handleScroll = () => {
+    const el = containerRef.current;
+    if (!el) return;
+    setShowScrollBtn(el.scrollHeight - el.scrollTop - el.clientHeight > 100);
+  };
+
+  const handleInputChange = (e) => {
+    setInput(e.target.value);
+    const ta = taRef.current;
+    if (ta) { ta.style.height = 'auto'; ta.style.height = `${Math.min(ta.scrollHeight, 120)}px`; }
+    if (socket && e.target.value) {
+      socket.emit('typing:start', { receiverId: partner._id });
+      clearTimeout(typingTimer.current);
+      typingTimer.current = setTimeout(() => socket.emit('typing:stop', { receiverId: partner._id }), 1500);
+    } else if (socket) {
+      socket.emit('typing:stop', { receiverId: partner._id });
+    }
+  };
+
+  const handleSend = useCallback(async () => {
+    const text = input.trim();
+    if (!text || sending) return;
+    socket?.emit('typing:stop', { receiverId: partner._id });
+    clearTimeout(typingTimer.current);
+    const opt = { _id: `opt-${Date.now()}`, _optimistic: true,
+      sender: { _id: currentUserId }, receiver: { _id: partner._id },
+      message: text, read: false, createdAt: new Date().toISOString() };
+    setMessages(prev => [...prev, opt]);
+    setInput('');
+    if (taRef.current) taRef.current.style.height = 'auto';
+    setSending(true);
+
+    if (socket && connected) {
+      socket.emit('message:send', { receiverId: partner._id, message: text }, (res) => {
+        setSending(false);
+        if (res?.error) { setMessages(prev => prev.filter(m => m._id !== opt._id)); setInput(text); }
+      });
+    } else {
+      try {
+        const { data } = await api.post('/chat/send', { receiverId: partner._id, message: text });
+        setMessages(prev => [...prev.filter(m => m._id !== opt._id), data.data]);
+      } catch { setMessages(prev => prev.filter(m => m._id !== opt._id)); setInput(text); }
+      finally { setSending(false); }
+    }
+  }, [input, sending, socket, connected, partner._id, currentUserId]);
+
+  const handleKeyDown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } };
+
+  const grouped = useMemo(() => messages.map((msg, i) => {
+    const prev = messages[i - 1], next = messages[i + 1];
+    const sid = msg.sender?._id || msg.sender;
+    const psid = prev ? (prev.sender?._id || prev.sender) : null;
+    const nsid = next ? (next.sender?._id || next.sender) : null;
+    const showDate = !prev || !isSameDay(prev.createdAt, msg.createdAt);
+    return { msg, isFirst: sid !== psid || showDate, isLast: sid !== nsid || (next && !isSameDay(msg.createdAt, next.createdAt)), showDate };
+  }), [messages]);
 
   return (
-    <div className="flex-1 flex flex-col">
-      {/* Search */}
-      <div className="p-3 border-b border-gray-100">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search FAQs..."
-            className="w-full pl-9 pr-3 py-2 bg-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-red/20"
-          />
+    <div className="flex-1 flex flex-col min-h-0">
+      {/* Header */}
+      <div className="px-3 py-2.5 border-b border-gray-100 flex items-center gap-2.5 bg-white flex-shrink-0">
+        <button onClick={onBack} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-500 transition-colors">
+          <ArrowLeft className="w-4 h-4" />
+        </button>
+        <Avatar name={partner.name} size="sm" online={isOnline} />
+        <div className="flex-1 min-w-0">
+          <p className="font-semibold text-gray-900 text-sm leading-tight truncate">{partner.name}</p>
+          <p className="text-xs text-gray-500 leading-tight">
+            {partnerTyping ? <span className="text-brand-red italic">typing…</span>
+              : isOnline ? 'Online' : partner.position || 'HR Admin'}
+          </p>
         </div>
+        <div className={`w-2 h-2 rounded-full flex-shrink-0 ${connected ? 'bg-green-500' : 'bg-orange-400'}`} />
       </div>
 
-      {/* Categories */}
-      <div className="px-3 py-2 border-b border-gray-100 flex gap-2 overflow-x-auto">
-        {categories.map((cat) => (
-          <button
-            key={cat.value}
-            onClick={() => setSelectedCategory(cat.value)}
-            className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
-              selectedCategory === cat.value
-                ? 'bg-brand-red text-white'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}
-          >
-            {cat.label}
-          </button>
-        ))}
-      </div>
-
-      {/* FAQ List */}
-      <div className="flex-1 overflow-y-auto">
-        {filteredFAQs.length === 0 ? (
-          <div className="text-center text-gray-400 text-sm py-8">
-            No FAQs found
+      {/* Messages */}
+      <div ref={containerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-3 py-3" style={{ overscrollBehavior: 'contain' }}>
+        {loading ? (
+          <div className="flex items-center justify-center h-full">
+            <div className="flex gap-1">{[0,1,2].map(i=><div key={i} className="w-2 h-2 bg-gray-300 rounded-full animate-bounce" style={{animationDelay:`${i*0.12}s`}}/>)}</div>
           </div>
-        ) : (
-          filteredFAQs.map((faq) => <FAQItem key={faq._id} faq={faq} />)
+        ) : messages.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full gap-3 text-center">
+            <div className="w-14 h-14 rounded-full bg-brand-red/10 flex items-center justify-center">
+              <MessageCircle className="w-7 h-7 text-brand-red/50" />
+            </div>
+            <div><p className="text-sm font-medium text-gray-700">Start a conversation</p><p className="text-xs text-gray-400 mt-0.5">with {partner.name}</p></div>
+          </div>
+        ) : grouped.map(({ msg, isFirst, isLast, showDate }) => {
+          const sid = msg.sender?._id || msg.sender;
+          return (
+            <div key={msg._id}>
+              {showDate && (
+                <div className="flex items-center gap-2 my-3">
+                  <div className="flex-1 h-px bg-gray-100" />
+                  <span className="text-[10px] font-medium text-gray-400">{formatDateSep(msg.createdAt)}</span>
+                  <div className="flex-1 h-px bg-gray-100" />
+                </div>
+              )}
+              <MessageBubble msg={msg} isMe={sid === currentUserId} isFirst={isFirst} isLast={isLast} />
+            </div>
+          );
+        })}
+        {partnerTyping && (
+          <div className="flex justify-start mb-2">
+            <div className="bg-gray-100 rounded-2xl rounded-bl-sm"><TypingDots /></div>
+          </div>
         )}
+        <div ref={endRef} />
       </div>
-    </div>
-  );
-}
 
-// Main Support Widget Component
-export default function SupportWidget() {
-  const [isOpen, setIsOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState('faq'); // 'faq' | 'chat'
-  const { isAdmin, isSupervisor, isEmployee } = useAuth();
-
-  // Only show for employees, supervisors, and HR admins
-  const canAccess = isEmployee || isSupervisor || isAdmin;
-  if (!canAccess) return null;
-
-  return (
-    <>
-      {/* Floating Button */}
-      {!isOpen && (
-        <button
-          onClick={() => setIsOpen(true)}
-          className="fixed bottom-6 right-6 w-14 h-14 rounded-full bg-brand-red text-white shadow-lg hover:shadow-xl hover:scale-110 transition-all z-50 flex items-center justify-center"
-          title="Get Support"
-        >
-          <HelpCircle className="w-7 h-7" />
+      {/* Scroll button */}
+      {showScrollBtn && (
+        <button onClick={() => endRef.current?.scrollIntoView({ behavior: 'smooth' })}
+          className="absolute bottom-16 right-4 w-8 h-8 rounded-full bg-white shadow-md border border-gray-200 flex items-center justify-center hover:bg-gray-50 z-10">
+          <ChevronDown className="w-4 h-4 text-gray-600" />
         </button>
       )}
 
-      {/* Support Panel */}
-      {isOpen && (
-        <div className="fixed bottom-6 right-6 w-80 sm:w-96 h-[500px] bg-white rounded-2xl shadow-2xl z-50 flex flex-col overflow-hidden animate-in slide-in-from-bottom-2 duration-200">
-          {/* Header */}
-          <div className="bg-brand-red text-white px-4 py-3 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Bot className="w-5 h-5" />
-              <span className="font-semibold">Support Center</span>
+      {/* Input */}
+      <div className="px-3 py-2.5 border-t border-gray-100 bg-white flex items-end gap-2 flex-shrink-0">
+        <textarea ref={taRef} value={input} onChange={handleInputChange} onKeyDown={handleKeyDown}
+          placeholder="Message…" rows={1}
+          className="flex-1 px-3 py-2 bg-gray-100 rounded-2xl text-sm resize-none focus:outline-none focus:ring-2 focus:ring-brand-red/20 focus:bg-white transition-all"
+          style={{ minHeight: '36px', maxHeight: '120px' }}
+        />
+        <button onClick={handleSend} disabled={!input.trim() || sending}
+          className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-200 ${
+            input.trim() ? 'bg-brand-red text-white hover:bg-red-700 shadow-md scale-100' : 'bg-gray-200 text-gray-400 scale-90'
+          }`}>
+          <Send className="w-4 h-4 translate-x-px" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Contact List ─────────────────────────────────────────────────────────────
+
+function ContactList({ onSelect, socket, onlineUsers }) {
+  const { user } = useAuth();
+  const [contacts, setContacts] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    try {
+      const [a, c] = await Promise.all([api.get('/chat/admins'), api.get('/chat/conversations')]);
+      const map = new Map();
+      (a.data.data || []).forEach(adm => { if (adm._id !== user?._id) map.set(adm._id, { partner: adm, lastMessage: null, unreadCount: 0 }); });
+      (c.data.data || []).forEach(conv => map.set(conv.partner._id, conv));
+      const sorted = Array.from(map.values()).sort((a, b) => {
+        if (a.lastMessage && b.lastMessage) return new Date(b.lastMessage.createdAt) - new Date(a.lastMessage.createdAt);
+        return a.lastMessage ? -1 : b.lastMessage ? 1 : 0;
+      });
+      setContacts(sorted);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  }, [user?._id]);
+
+  useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    if (!socket) return;
+    const onNew = (msg) => {
+      const sid = msg.sender?._id || msg.sender;
+      setContacts(prev => prev.map(c => {
+        if (c.partner._id === sid || c.partner._id === (msg.receiver?._id || msg.receiver)) {
+          return { ...c, lastMessage: msg, unreadCount: sid !== user?._id ? (c.unreadCount || 0) + 1 : c.unreadCount };
+        }
+        return c;
+      }));
+    };
+    socket.on('message:new', onNew);
+    return () => socket.off('message:new', onNew);
+  }, [socket, user?._id]);
+
+  if (loading) return <div className="flex-1 flex items-center justify-center"><div className="flex gap-1">{[0,1,2].map(i=><div key={i} className="w-2 h-2 bg-gray-300 rounded-full animate-bounce" style={{animationDelay:`${i*0.12}s`}}/>)}</div></div>;
+  if (!contacts.length) return <div className="flex-1 flex flex-col items-center justify-center gap-2 text-center px-6"><div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center"><User className="w-6 h-6 text-gray-400" /></div><p className="text-sm text-gray-500">No HR admins available</p></div>;
+
+  return (
+    <div className="flex-1 overflow-y-auto">
+      <div className="px-3 pt-2 pb-1"><p className="text-xs font-medium text-gray-400 uppercase tracking-wide">HR Admins</p></div>
+      {contacts.map(c => (
+        <button key={c.partner._id} onClick={() => onSelect(c.partner)}
+          className="w-full px-3 py-2.5 flex items-center gap-3 hover:bg-gray-50 active:bg-gray-100 transition-colors">
+          <Avatar name={c.partner.name} online={onlineUsers.has(c.partner._id)} />
+          <div className="flex-1 min-w-0 text-left">
+            <div className="flex items-baseline justify-between gap-2">
+              <p className="font-semibold text-gray-900 text-sm truncate">{c.partner.name}</p>
+              {c.lastMessage && <span className="text-[10px] text-gray-400 flex-shrink-0">{formatTime(c.lastMessage.createdAt)}</span>}
             </div>
-            <button
-              onClick={() => setIsOpen(false)}
-              className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-white/20 transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
+            <p className="text-xs text-gray-500 truncate mt-0.5">{c.lastMessage?.message || c.partner.position || 'HR Admin'}</p>
           </div>
+          {c.unreadCount > 0 && (
+            <span className="w-5 h-5 rounded-full bg-brand-red text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0">
+              {c.unreadCount > 9 ? '9+' : c.unreadCount}
+            </span>
+          )}
+        </button>
+      ))}
+    </div>
+  );
+}
 
-          {/* Tabs */}
-          <div className="flex border-b border-gray-100">
-            <button
-              onClick={() => setActiveTab('faq')}
-              className={`flex-1 py-3 flex items-center justify-center gap-2 text-sm font-medium transition-colors ${
-                activeTab === 'faq'
-                  ? 'text-brand-red border-b-2 border-brand-red'
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              <HelpCircle className="w-4 h-4" />
-              FAQs
-            </button>
-            <button
-              onClick={() => setActiveTab('chat')}
-              className={`flex-1 py-3 flex items-center justify-center gap-2 text-sm font-medium transition-colors ${
-                activeTab === 'chat'
-                  ? 'text-brand-red border-b-2 border-brand-red'
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              <MessageCircle className="w-4 h-4" />
-              Chat
-            </button>
-          </div>
+// ─── Chat Tab ─────────────────────────────────────────────────────────────────
 
-          {/* Content */}
-          {activeTab === 'faq' ? <FAQTab /> : <ChatTab />}
+function ChatTab({ socket, connected }) {
+  const { user } = useAuth();
+  const [selected, setSelected] = useState(null);
+  const [onlineUsers, setOnlineUsers] = useState(new Set());
+
+  useEffect(() => {
+    if (!socket) return;
+    const onOnline = ({ userId }) => setOnlineUsers(p => new Set([...p, userId]));
+    const onOffline = ({ userId }) => setOnlineUsers(p => { const s = new Set(p); s.delete(userId); return s; });
+    socket.on('user:online', onOnline);
+    socket.on('user:offline', onOffline);
+    return () => { socket.off('user:online', onOnline); socket.off('user:offline', onOffline); };
+  }, [socket]);
+
+  return selected
+    ? <ChatView partner={selected} onBack={() => setSelected(null)} socket={socket} connected={connected} currentUserId={user?._id} onlineUsers={onlineUsers} />
+    : <ContactList onSelect={setSelected} socket={socket} onlineUsers={onlineUsers} />;
+}
+
+// ─── FAQ ──────────────────────────────────────────────────────────────────────
+
+const CAT_DOT = {
+  GENERAL: 'bg-gray-400', ASSESSMENT: 'bg-blue-400', TECHNICAL: 'bg-purple-400',
+  HR: 'bg-rose-400', POLICY: 'bg-amber-400', OTHER: 'bg-teal-400',
+};
+
+function FAQItem({ faq }) {
+  const [open, setOpen] = useState(false);
+  const dot = CAT_DOT[faq.category] || 'bg-gray-300';
+  return (
+    <div className="border-b border-gray-100 last:border-0">
+      <button
+        onClick={() => setOpen(!open)}
+        className={`w-full py-3 px-4 flex items-start justify-between text-left gap-3 transition-colors ${open ? 'bg-gray-50' : 'hover:bg-gray-50/70'}`}
+      >
+        <div className="flex items-start gap-2 flex-1 min-w-0">
+          <span className={`flex-shrink-0 w-1.5 h-1.5 rounded-full mt-1.5 ${dot}`} />
+          <span className="font-medium text-gray-800 text-sm leading-relaxed">{faq.question}</span>
         </div>
-      )}
+        <ChevronDown className={`flex-shrink-0 w-4 h-4 text-gray-400 mt-0.5 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+      </button>
+      <div className={`overflow-hidden transition-all duration-200 ${open ? 'max-h-96' : 'max-h-0'}`}>
+        <p className="px-4 pb-4 pl-8 text-sm text-gray-600 leading-relaxed">{faq.answer}</p>
+      </div>
+    </div>
+  );
+}
+
+function FAQTab() {
+  const [faqs, setFaqs] = useState([]);
+  const [cats, setCats] = useState([]);
+  const [selCat, setSelCat] = useState('ALL');
+  const [q, setQ] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    Promise.all([api.get('/faq/public'), api.get('/faq/categories')])
+      .then(([fr, cr]) => {
+        setFaqs(fr.data.data || []);
+        setCats([{ value: 'ALL', label: 'All' }, ...(cr.data.data || [])]);
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, []);
+
+  const filtered = useMemo(() => faqs.filter(f => {
+    const mc = selCat === 'ALL' || f.category === selCat;
+    const ms = !q || f.question.toLowerCase().includes(q.toLowerCase()) || f.answer.toLowerCase().includes(q.toLowerCase());
+    return mc && ms;
+  }), [faqs, selCat, q]);
+
+  if (loading) return (
+    <div className="flex-1 flex items-center justify-center">
+      <div className="flex gap-1">{[0,1,2].map(i=><div key={i} className="w-2 h-2 bg-gray-300 rounded-full animate-bounce" style={{animationDelay:`${i*0.12}s`}}/>)}</div>
+    </div>
+  );
+
+  return (
+    <div className="flex-1 flex flex-col min-h-0">
+      {/* Search + categories */}
+      <div className="p-3 space-y-2 border-b border-gray-100 flex-shrink-0">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+          <input
+            value={q}
+            onChange={e => setQ(e.target.value)}
+            placeholder="Search FAQs…"
+            className="w-full pl-9 pr-3 py-2 bg-gray-100 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-red/20 transition-all"
+          />
+        </div>
+        <div className="flex gap-1.5 overflow-x-auto pb-0.5 scrollbar-none">
+          {cats.map(c => (
+            <button
+              key={c.value}
+              onClick={() => setSelCat(c.value)}
+              className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
+                selCat === c.value ? 'bg-brand-red text-white shadow-sm' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+              }`}
+            >
+              {c.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* List */}
+      <div className="flex-1 overflow-y-auto">
+        {filtered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full gap-2 text-center px-6 py-10">
+            <HelpCircle className="w-8 h-8 text-gray-300" />
+            <p className="text-sm text-gray-400">
+              {q || selCat !== 'ALL' ? 'No FAQs match your search' : 'No FAQs available yet'}
+            </p>
+            {(q || selCat !== 'ALL') && (
+              <button onClick={() => { setQ(''); setSelCat('ALL'); }} className="text-xs text-brand-red hover:underline mt-1">
+                Clear filters
+              </button>
+            )}
+          </div>
+        ) : (
+          <>
+            {filtered.map(f => <FAQItem key={f._id} faq={f} />)}
+            <p className="text-center text-[10px] text-gray-300 py-3">
+              {filtered.length} result{filtered.length !== 1 ? 's' : ''}
+            </p>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Widget ──────────────────────────────────────────────────────────────
+
+export default function SupportWidget() {
+  const { isAdmin, isSupervisor, isEmployee, user, getAccessToken } = useAuth();
+  const [isOpen, setIsOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState('faq');
+  const [unread, setUnread] = useState(0);
+  const [token, setToken] = useState(null);
+
+  useEffect(() => { if (getAccessToken) setToken(getAccessToken()); }, [getAccessToken, user]);
+  const { socket, connected } = useSocket(token);
+
+  useEffect(() => {
+    api.get('/chat/unread').then(({ data }) => setUnread(data.data?.count || 0)).catch(() => {});
+    const iv = setInterval(() => api.get('/chat/unread').then(({ data }) => setUnread(data.data?.count || 0)).catch(() => {}), 30000);
+    return () => clearInterval(iv);
+  }, []);
+
+  useEffect(() => {
+    if (!socket) return;
+    const onNew = (msg) => {
+      if ((msg.receiver?._id || msg.receiver) === user?._id && (!isOpen || activeTab !== 'chat')) setUnread(p => p + 1);
+    };
+    socket.on('message:new', onNew);
+    return () => socket.off('message:new', onNew);
+  }, [socket, user?._id, isOpen, activeTab]);
+
+  useEffect(() => { if (isOpen && activeTab === 'chat') setUnread(0); }, [isOpen, activeTab]);
+
+  if (!(isEmployee || isSupervisor || isAdmin)) return null;
+
+  return (
+    <>
+      {/* Floating button */}
+      <button onClick={() => setIsOpen(v => !v)}
+        className={`fixed bottom-6 right-6 w-14 h-14 rounded-full shadow-lg z-50 flex items-center justify-center transition-all duration-300 ${
+          isOpen ? 'bg-gray-700 text-white rotate-90 scale-95' : 'bg-brand-red text-white hover:scale-110 hover:shadow-xl'
+        }`}>
+        {isOpen ? <X className="w-6 h-6" /> : <HelpCircle className="w-7 h-7" />}
+        {!isOpen && unread > 0 && (
+          <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-yellow-400 text-gray-900 text-[10px] font-bold flex items-center justify-center shadow">
+            {unread > 9 ? '9+' : unread}
+          </span>
+        )}
+      </button>
+
+      {/* Panel */}
+      <div className={`fixed bottom-24 right-6 w-80 sm:w-[360px] bg-white rounded-2xl shadow-2xl z-50 flex flex-col overflow-hidden border border-gray-100 transition-all duration-300 origin-bottom-right ${
+        isOpen ? 'opacity-100 scale-100 pointer-events-auto' : 'opacity-0 scale-95 pointer-events-none'
+      }`} style={{ height: 'min(540px, calc(100vh - 6rem))', maxHeight: 'calc(100vh - 6rem)' }}>
+
+        {/* Header */}
+        <div className="bg-brand-red text-white px-4 py-3 flex items-center justify-between flex-shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center">
+              <Bot className="w-4 h-4" />
+            </div>
+            <div>
+              <p className="font-semibold text-sm leading-tight">Support Center</p>
+              <p className="text-[10px] text-white/70 flex items-center gap-1">
+                {connected
+                  ? <><span className="w-1.5 h-1.5 bg-green-400 rounded-full inline-block" />Live</>
+                  : <><span className="w-1.5 h-1.5 bg-orange-300 rounded-full inline-block animate-pulse" />Connecting…</>
+                }
+              </p>
+            </div>
+          </div>
+          <button onClick={() => setIsOpen(false)} className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-white/20 transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex border-b border-gray-100 flex-shrink-0">
+          {[{ id: 'faq', label: 'FAQs', icon: HelpCircle }, { id: 'chat', label: 'Chat', icon: MessageCircle, badge: unread }].map(t => (
+            <button key={t.id} onClick={() => setActiveTab(t.id)}
+              className={`flex-1 py-2.5 flex items-center justify-center gap-1.5 text-sm font-medium transition-colors relative ${
+                activeTab === t.id ? 'text-brand-red' : 'text-gray-400 hover:text-gray-600'
+              }`}>
+              <t.icon className="w-4 h-4" />
+              {t.label}
+              {t.badge > 0 && <span className="w-4 h-4 rounded-full bg-brand-red text-white text-[9px] font-bold flex items-center justify-center">{t.badge}</span>}
+              {activeTab === t.id && <span className="absolute bottom-0 left-4 right-4 h-0.5 bg-brand-red rounded-full" />}
+            </button>
+          ))}
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 flex flex-col min-h-0 relative">
+          {activeTab === 'faq' ? <FAQTab /> : <ChatTab socket={socket} connected={connected} />}
+        </div>
+      </div>
     </>
   );
 }

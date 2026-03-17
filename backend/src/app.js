@@ -3,9 +3,15 @@
  *  A02/A05 – cookieParser added so httpOnly refresh token cookies can be read
  *  A06     – package.json pinned to exact Express version (see package.json)
  *  A09     – startup log uses structured logger
+ *
+ * REAL-TIME CHAT:
+ *  Socket.IO mounted on the same HTTP server for WebSocket support.
+ *  See src/services/socketService.js
  */
 import 'dotenv/config';
+import http from 'http';
 import express from 'express';
+import { initSocket } from './services/socketService.js';
 import connectDB from './config/database.js';
 import errorHandler from './middleware/errorHandler.js';
 import AppError from './utils/AppError.js';
@@ -104,8 +110,14 @@ app.use(errorHandler);
 // ── Connect DB & start ───────────────────────────────────────────────────────
 const PORT = process.env.PORT || 5000;
 
+// Wrap express in a plain http.Server so Socket.IO can share the same port
+const httpServer = http.createServer(app);
+
+// Boot Socket.IO real-time layer
+initSocket(httpServer);
+
 connectDB().then(() => {
-  app.listen(PORT, () => {
+  httpServer.listen(PORT, () => {
     logger.info({ event: 'server_start', port: PORT, env: process.env.NODE_ENV || 'development' });
   });
 });
