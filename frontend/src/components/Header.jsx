@@ -3,6 +3,8 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Menu, User, LogOut, ChevronDown, Home, Users, BookOpen, Target, FileText, MessageSquare, Clock, Zap, ChevronRight, Search, Plus, TrendingUp, Award, Lightbulb, ClipboardList, UserCheck, ClipboardCheck, BarChart3, Activity } from 'lucide-react';
+import NotificationBell from './NotificationBell';
+import { useSocket } from '../hooks/useSocket';
 
 // Human-readable label + colour for each role
 const ROLE_META = {
@@ -52,7 +54,8 @@ const SEARCH_ITEMS = [
 ];
 
 export default function Header({ onMobileToggle }) {
-  const { user, activeRole, logout } = useAuth();
+  const { user, activeRole, logout, getAccessToken } = useAuth();
+  const { socket } = useSocket(getAccessToken ? getAccessToken() : null);
   const nav = useNavigate();
   const location = useLocation();
 
@@ -218,6 +221,8 @@ export default function Header({ onMobileToggle }) {
           <span className="text-gray-500">Search...</span>
           <span className="text-xs font-mono bg-white px-1.5 py-0.5 rounded text-gray-400 border border-gray-200">⌘K</span>
         </button> */}
+
+        <NotificationBell socket={socket} />
 
         <div className="relative" ref={profileRef}>
           <button onClick={() => setShowProfileMenu(!showProfileMenu)} className="flex items-center gap-2 p-1 hover:bg-gray-100 rounded-lg transition-base group" aria-label="Profile menu">

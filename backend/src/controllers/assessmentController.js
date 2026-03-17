@@ -14,6 +14,11 @@ import {
   sendSupervisorReminder,
   sendAssessmentReminderEmail,
 } from '../services/emailService.js';
+import {
+  notifyAssessmentAssigned,
+  notifySupervisorReminder,
+  notifyDeadlineReminder,
+} from '../services/notificationService.js';
 import mongoose from 'mongoose';
 
 // ─── AUTO-ACTIVATE HELPER ────────────────────────────────────────────────────
@@ -254,14 +259,20 @@ export const updateStatus = asyncHandler(async (req, res, next) => {
 
   if (status === 'SCHEDULED') {
     const employees = await resolveEmployees(assessment);
-    employees.forEach((emp) => sendAssessmentNotification(emp, assessment));
+    employees.forEach((emp) => {
+      sendAssessmentNotification(emp, assessment);
+      notifyAssessmentAssigned(emp._id, assessment.description, assessment._id);
+    });
 
     if (assessment.type === 'Combined' || assessment.type === 'SupervisorOnly') {
       const supervisorIds = [...new Set(employees.map((e) => e.supervisorId).filter(Boolean))];
       const supervisors = await User.find({ _id: { $in: supervisorIds } }).lean();
       supervisors.forEach((sup) => {
         const supEmployees = employees.filter((e) => e.supervisorId?.toString() === sup._id.toString());
-        supEmployees.forEach((emp) => sendSupervisorReminder(sup, emp.name, assessment));
+        supEmployees.forEach((emp) => {
+          sendSupervisorReminder(sup, emp.name, assessment);
+          notifySupervisorReminder(sup._id, emp.name, assessment.description, assessment._id);
+        });
       });
     }
   }
@@ -342,7 +353,11 @@ export const processPendingReminders = async () => {
     const daysLeft = Math.ceil((deadline - now) / (1000 * 60 * 60 * 24));
     if (daysLeft <= assessment.reminderDaysBefore) {
       const employees = await resolveEmployees(assessment);
-      employees.forEach(emp => sendAssessmentReminderEmail(emp, assessment));
+      employees.forEach(emp => {
+        sendAssessmentReminderEmail(emp, assessment);
+        const daysLeft = Math.max(1, Math.ceil((new Date(assessment.endDate) - new Date()) / 86400000));
+        notifyDeadlineReminder(emp._id, assessment.description, daysLeft, assessment._id);
+      });
       await Assessment.findByIdAndUpdate(assessment._id, { reminderSent: true });
       processedCount++;
     }
@@ -353,4 +368,54 @@ export const processPendingReminders = async () => {
 export const sendReminderEmails = asyncHandler(async (req, res) => {
   const processedCount = await processPendingReminders();
   res.status(200).json({ status: 'success', message: `Reminders processed for ${processedCount} assessment(s).` });
+});
+
+// ─── SEND SUPERVISOR EVAL REMINDER (HR_ADMIN) ────────────────────────────────
+// POST /api/assessments/:id/supervisor-reminder
+// Body: { supervisorId }  — sends email + in-app notification to that supervisor
+export const sendSupervisorEvalReminder = asyncHandler(async (req, res, next) => {
+  const assessment = await Assessment.findById(req.params.id)
+    .populate('competencyId', 'name').lean();
+  if (!assessment) return next(new AppError('Assessment not found.', 404));
+
+  const { supervisorId } = req.body;
+  if (!supervisorId) return next(new AppError('supervisorId is required.', 400));
+
+  const supervisor = await User.findById(supervisorId).lean();
+  if (!supervisor) return next(new AppError('Supervisor not found.', 404));
+
+  // Which employees is this supervisor evaluating in this assessment?
+  const evalEntries = (assessment.supervisorEvaluations || []).filter(
+    e => e.supervisorId?.toString() === supervisorId.toString() && e.status === 'PENDING'
+  );
+  if (!evalEntries.length) {
+    return res.status(200).json({ status: 'success', message: 'No pending evaluations for this supervisor.' });
+  }
+
+  const employeeIds = evalEntries.map(e => e.employeeId);
+  const employees = await User.find({ _id: { $in: employeeIds } }).select('name').lean();
+  const empNames = employees.map(e => e.name).join(', ');
+
+  const assessmentDescription = assessment.description || assessment.competencyId?.name || 'Assessment';
+
+  // Email
+  sendSupervisorReminder(supervisor, empNames, {
+    description: assessmentDescription,
+    endDate: assessment.endDate,
+  });
+
+  // In-app notification
+  notifySupervisorReminder(
+    supervisorId,
+    empNames,
+    assessmentDescription,
+    assessment._id
+  );
+
+  logger.info({ event: 'supervisor_eval_reminder_sent', assessmentId: assessment._id, supervisorId, sentBy: req.user.id });
+
+  res.status(200).json({
+    status: 'success',
+    message: `Reminder sent to ${supervisor.name}.`,
+  });
 });

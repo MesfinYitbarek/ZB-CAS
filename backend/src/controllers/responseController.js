@@ -9,6 +9,7 @@ import AppError from '../utils/AppError.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import { scoreIndividual } from '../services/scoringService.js';
 import { sendResultsEmail } from '../services/emailService.js';
+import { notifyResultReady } from '../services/notificationService.js';
 
 /* ═══════════════════════════════════════════════════════════════════════════
    HELPERS
@@ -145,6 +146,13 @@ export const submitAssessment = asyncHandler(async (req, res, next) => {
           },
         ]
       ).catch((e) => console.error('Email failed:', e.message));
+      notifyResultReady(
+        employeeId,
+        assessment.competencyId?.name || 'Competency',
+        result.finalScore,
+        result.level,
+        result._id
+      );
     }
 
     return res.status(200).json({

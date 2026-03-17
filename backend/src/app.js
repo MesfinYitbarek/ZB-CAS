@@ -43,6 +43,7 @@ import dashboardRoutes      from './routes/dashboardRoutes.js';
 import chatRoutes           from './routes/chatRoutes.js';
 import faqRoutes            from './routes/faqRoutes.js';
 import externalRoutes       from './routes/externalRoutes.js';
+import notificationRoutes   from './routes/notificationRoutes.js';
 
 const app = express();
 
@@ -99,6 +100,7 @@ app.use('/api/dashboard',       dashboardRoutes);
 app.use('/api/chat',            chatRoutes);
 app.use('/api/faq',             faqRoutes);
 app.use('/api/external',        externalRoutes);
+app.use('/api/notifications',   notificationRoutes);
 
 // ── 404 catcher ───────────────────────────────────────────────────────────────
 app.use((req, res, next) => {

@@ -140,5 +140,8 @@ export function initSocket(httpServer) {
     });
   });
 
+  // Expose io globally so notificationService can push events without circular imports
+  global._io = io;
+
   return io;
 }

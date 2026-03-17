@@ -10,6 +10,7 @@ import {
   refreshCookieOptions,
 } from '../utils/jwt.js';
 import { sendWelcomeEmail, sendPasswordResetEmail } from '../services/emailService.js';
+import { notifyAccountCreated } from '../services/notificationService.js';
 import logger from '../utils/logger.js';
 
 /* ─── Password complexity ─────────────────────────────────────────────────── */
@@ -52,6 +53,7 @@ export const register = asyncHandler(async (req, res, next) => {
   });
 
   sendWelcomeEmail(user, tempPassword);
+  notifyAccountCreated(user._id);
   logger.info({ event: 'user_registered', createdBy: req.user.id, newUserId: user._id });
 
   res.status(201).json({

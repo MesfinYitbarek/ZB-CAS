@@ -16,6 +16,7 @@ import asyncHandler from '../utils/asyncHandler.js';
 import AppError from '../utils/AppError.js';
 import { scoreFullAssessment, scoreIndividual } from '../services/scoringService.js';
 import { sendResultsEmail } from '../services/emailService.js';
+import { notifyResultReady } from '../services/notificationService.js';
 import logger from '../utils/logger.js';
 
 // ─── OWNERSHIP HELPER ─────────────────────────────────────────────────────────
@@ -43,6 +44,7 @@ export const scoreAssessment = asyncHandler(async (req, res, next) => {
         level: r.level,
         assessmentType: 'Combined'
       }]).catch(e => logger.error({ event: 'email_fail', message: e.message }));
+      notifyResultReady(r.userId, 'Competency', r.finalScore, r.level, r._id);
     }
   });
 
