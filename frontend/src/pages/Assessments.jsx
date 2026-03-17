@@ -386,146 +386,7 @@ export default function Assessments() {
   };
 
   // ─── TARGET AUDIENCE PICKER ───────────────────────────────────────────────
-  const TargetAudiencePicker = () => (
-    <div className="border border-gray-200 rounded-xl p-4 space-y-3">
-      <label className="block text-sm font-semibold text-gray-700">Target Audience *</label>
 
-      <div className="grid grid-cols-3 gap-2">
-        {[
-          { value: 'ALL_DEPARTMENTS', label: 'All Departments' },
-          { value: 'DEPARTMENT_ALL', label: 'Specific Dept(s)' },
-          { value: 'SPECIFIC_EMPLOYEES', label: 'Specific Employee(s)' },
-        ].map(opt => (
-          <button
-            key={opt.value}
-            type="button"
-            onClick={() => setForm(prev => ({ ...prev, targetAudience: { type: opt.value, departments: [], employeeIds: [] } }))}
-            className={`px-3 py-2 rounded-lg text-xs font-medium border transition-all ${form.targetAudience.type === opt.value
-              ? 'bg-brand-red text-white border-brand-red'
-              : 'bg-white text-gray-600 border-gray-300 hover:border-brand-red'
-              }`}
-          >
-            {opt.label}
-          </button>
-        ))}
-      </div>
-
-      {form.targetAudience.type === 'ALL_DEPARTMENTS' && (
-        <p className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
-          All active employees across all departments will be assigned this assessment.
-        </p>
-      )}
-
-      {form.targetAudience.type === 'DEPARTMENT_ALL' && (
-        <div>
-          <label className="text-xs text-gray-500 mb-1 block">Select Departments *</label>
-          {departments.length === 0 ? (
-            <p className="text-xs text-gray-400 italic">No departments found.</p>
-          ) : (
-            <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-2 space-y-1 bg-white">
-              {departments.map(dept => (
-                <label key={dept} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-gray-50 p-1 rounded">
-                  <input
-                    type="checkbox"
-                    checked={form.targetAudience.departments.includes(dept)}
-                    onChange={e => {
-                      const depts = e.target.checked
-                        ? [...form.targetAudience.departments, dept]
-                        : form.targetAudience.departments.filter(d => d !== dept);
-                      setForm(prev => ({ ...prev, targetAudience: { ...prev.targetAudience, departments: depts } }));
-                    }}
-                    className="w-4 h-4 accent-brand-red"
-                  />
-                  <span className="text-gray-700">{dept}</span>
-                </label>
-              ))}
-            </div>
-          )}
-          {form.targetAudience.departments.length > 0 && (
-            <p className="text-xs text-brand-red font-medium mt-1">
-              {form.targetAudience.departments.length} department(s) selected
-            </p>
-          )}
-        </div>
-      )}
-
-      {form.targetAudience.type === 'SPECIFIC_EMPLOYEES' && (
-        <div className="space-y-2">
-          <div className="grid grid-cols-3 gap-2">
-            <input
-              type="text"
-              placeholder="Search by name…"
-              value={employeeSearch.name}
-              onChange={e => setEmployeeSearch(prev => ({ ...prev, name: e.target.value }))}
-              onKeyDown={e => e.key === 'Enter' && handleEmployeeSearch()}
-              className="border border-gray-300 rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-brand-red"
-            />
-            <select
-              value={employeeSearch.department}
-              onChange={e => setEmployeeSearch(prev => ({ ...prev, department: e.target.value }))}
-              className="border border-gray-300 rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-brand-red"
-            >
-              <option value="">All Departments</option>
-              {departments.map(d => <option key={d} value={d}>{d}</option>)}
-            </select>
-            <input
-              type="text"
-              placeholder="Filter by position…"
-              value={employeeSearch.position}
-              onChange={e => setEmployeeSearch(prev => ({ ...prev, position: e.target.value }))}
-              onKeyDown={e => e.key === 'Enter' && handleEmployeeSearch()}
-              className="border border-gray-300 rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-brand-red"
-            />
-          </div>
-          <button
-            type="button"
-            onClick={handleEmployeeSearch}
-            className="w-full py-2 text-xs bg-gray-100 hover:bg-gray-200 rounded-lg font-medium transition-colors flex items-center justify-center gap-1"
-          >
-            <Search className="w-3 h-3" /> Search Employees
-          </button>
-
-          {searchResults.length > 0 && (
-            <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-lg divide-y bg-white">
-              {searchResults.map(emp => {
-                const selected = form.targetAudience.employeeIds.includes(emp._id);
-                return (
-                  <label
-                    key={emp._id}
-                    className={`flex items-center gap-3 p-2.5 cursor-pointer hover:bg-gray-50 transition-colors ${selected ? 'bg-red-50' : ''}`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selected}
-                      onChange={e => {
-                        const ids = e.target.checked
-                          ? [...form.targetAudience.employeeIds, emp._id]
-                          : form.targetAudience.employeeIds.filter(id => id !== emp._id);
-                        setForm(prev => ({ ...prev, targetAudience: { ...prev.targetAudience, employeeIds: ids } }));
-                      }}
-                      className="w-4 h-4 accent-brand-red flex-shrink-0"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-semibold text-gray-800 truncate">{emp.name}</p>
-                      <p className="text-xs text-gray-400">{emp.department} · {emp.position}</p>
-                    </div>
-                    {selected && <Check className="w-3 h-3 text-brand-red flex-shrink-0" />}
-                  </label>
-                );
-              })}
-            </div>
-          )}
-
-          {form.targetAudience.employeeIds.length > 0 && (
-            <div className="flex items-center gap-2 text-xs text-brand-red font-semibold bg-red-50 px-3 py-1.5 rounded-lg">
-              <Users className="w-3 h-3" />
-              {form.targetAudience.employeeIds.length} employee(s) selected
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
 
   return (
     <div className="h-[calc(100vh-4rem)] flex flex-col p-7">
@@ -1004,7 +865,144 @@ export default function Assessments() {
             <h3 className="text-sm font-bold text-purple-800 mb-3 flex items-center gap-2">
               <Users className="w-4 h-4" /> Target Audience
             </h3>
-            <TargetAudiencePicker />
+            <div className="border border-gray-200 rounded-xl p-4 space-y-3">
+                  <label className="block text-sm font-semibold text-gray-700">Target Audience *</label>
+
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { value: 'ALL_DEPARTMENTS', label: 'All Departments' },
+                      { value: 'DEPARTMENT_ALL', label: 'Specific Dept(s)' },
+                      { value: 'SPECIFIC_EMPLOYEES', label: 'Specific Employee(s)' },
+                    ].map(opt => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setForm(prev => ({ ...prev, targetAudience: { type: opt.value, departments: [], employeeIds: [] } }))}
+                        className={`px-3 py-2 rounded-lg text-xs font-medium border transition-all ${form.targetAudience.type === opt.value
+                          ? 'bg-brand-red text-white border-brand-red'
+                          : 'bg-white text-gray-600 border-gray-300 hover:border-brand-red'
+                          }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {form.targetAudience.type === 'ALL_DEPARTMENTS' && (
+                    <p className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
+                      All active employees across all departments will be assigned this assessment.
+                    </p>
+                  )}
+
+                  {form.targetAudience.type === 'DEPARTMENT_ALL' && (
+                    <div>
+                      <label className="text-xs text-gray-500 mb-1 block">Select Departments *</label>
+                      {departments.length === 0 ? (
+                        <p className="text-xs text-gray-400 italic">No departments found.</p>
+                      ) : (
+                        <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-2 space-y-1 bg-white">
+                          {departments.map(dept => (
+                            <label key={dept} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-gray-50 p-1 rounded">
+                              <input
+                                type="checkbox"
+                                checked={form.targetAudience.departments.includes(dept)}
+                                onChange={e => {
+                                  const depts = e.target.checked
+                                    ? [...form.targetAudience.departments, dept]
+                                    : form.targetAudience.departments.filter(d => d !== dept);
+                                  setForm(prev => ({ ...prev, targetAudience: { ...prev.targetAudience, departments: depts } }));
+                                }}
+                                className="w-4 h-4 accent-brand-red"
+                              />
+                              <span className="text-gray-700">{dept}</span>
+                            </label>
+                          ))}
+                        </div>
+                      )}
+                      {form.targetAudience.departments.length > 0 && (
+                        <p className="text-xs text-brand-red font-medium mt-1">
+                          {form.targetAudience.departments.length} department(s) selected
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {form.targetAudience.type === 'SPECIFIC_EMPLOYEES' && (
+                    <div className="space-y-2">
+                      <div className="grid grid-cols-3 gap-2">
+                        <input
+                          type="text"
+                          placeholder="Search by name…"
+                          value={employeeSearch.name}
+                          onChange={e => setEmployeeSearch(prev => ({ ...prev, name: e.target.value }))}
+                          onKeyDown={e => e.key === 'Enter' && handleEmployeeSearch()}
+                          className="border border-gray-300 rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-brand-red"
+                        />
+                        <select
+                          value={employeeSearch.department}
+                          onChange={e => setEmployeeSearch(prev => ({ ...prev, department: e.target.value }))}
+                          className="border border-gray-300 rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-brand-red"
+                        >
+                          <option value="">All Departments</option>
+                          {departments.map(d => <option key={d} value={d}>{d}</option>)}
+                        </select>
+                        <input
+                          type="text"
+                          placeholder="Filter by position…"
+                          value={employeeSearch.position}
+                          onChange={e => setEmployeeSearch(prev => ({ ...prev, position: e.target.value }))}
+                          onKeyDown={e => e.key === 'Enter' && handleEmployeeSearch()}
+                          className="border border-gray-300 rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-brand-red"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleEmployeeSearch}
+                        className="w-full py-2 text-xs bg-gray-100 hover:bg-gray-200 rounded-lg font-medium transition-colors flex items-center justify-center gap-1"
+                      >
+                        <Search className="w-3 h-3" /> Search Employees
+                      </button>
+
+                      {searchResults.length > 0 && (
+                        <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-lg divide-y bg-white">
+                          {searchResults.map(emp => {
+                            const selected = form.targetAudience.employeeIds.includes(emp._id);
+                            return (
+                              <label
+                                key={emp._id}
+                                className={`flex items-center gap-3 p-2.5 cursor-pointer hover:bg-gray-50 transition-colors ${selected ? 'bg-red-50' : ''}`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={selected}
+                                  onChange={e => {
+                                    const ids = e.target.checked
+                                      ? [...form.targetAudience.employeeIds, emp._id]
+                                      : form.targetAudience.employeeIds.filter(id => id !== emp._id);
+                                    setForm(prev => ({ ...prev, targetAudience: { ...prev.targetAudience, employeeIds: ids } }));
+                                  }}
+                                  className="w-4 h-4 accent-brand-red flex-shrink-0"
+                                />
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-xs font-semibold text-gray-800 truncate">{emp.name}</p>
+                                  <p className="text-xs text-gray-400">{emp.department} · {emp.position}</p>
+                                </div>
+                                {selected && <Check className="w-3 h-3 text-brand-red flex-shrink-0" />}
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {form.targetAudience.employeeIds.length > 0 && (
+                        <div className="flex items-center gap-2 text-xs text-brand-red font-semibold bg-red-50 px-3 py-1.5 rounded-lg">
+                          <Users className="w-3 h-3" />
+                          {form.targetAudience.employeeIds.length} employee(s) selected
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
           </div>
 
           {/* ── Combined Weights ── */}

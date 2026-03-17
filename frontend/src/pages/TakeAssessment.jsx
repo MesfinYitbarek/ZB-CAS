@@ -165,7 +165,7 @@ const SecurityViolationBanner = ({ violations, onDismiss }) => {
   const recent = violations[violations.length - 1];
   if (!recent) return null;
   return (
-    <div className="fixed top-0 left-0 right-0 z-50 bg-red-600 text-white px-4 py-2 flex items-center justify-between shadow-lg animate-in slide-in-from-top duration-300">
+    <div className="fixed top-0 left-0 right-0 z-[60] bg-red-600 text-white px-4 py-2 flex items-center justify-between shadow-lg animate-in slide-in-from-top duration-300">
       <div className="flex items-center gap-2">
         <AlertTriangle className="w-4 h-4 flex-shrink-0" />
         <div>
@@ -304,20 +304,26 @@ export default function TakeAssessment() {
   const respondentType = 'self';
   const employeeId = user?._id;
 
+  // Use a ref to count violations inside the callback — avoids stale closure
+  const violationCountRef = useRef(0);
+
   const security = useAssessmentSecurity(assessmentId, (violation) => {
     api.post(`/responses/security-violation`, {
       assessmentId,
-      userId: user._id,
+      userId: user?._id,
       violation,
     }).catch(() => { });
 
-    setShowViolationBanner(true);
-    setShowSecurityMonitor(true); // Show monitor when new violation occurs
+    violationCountRef.current += 1;
+    const count = violationCountRef.current;
 
-    // Show serious modal on 3rd, 6th, 9th... violation
-    if (security.totalViolations >= 3 && security.totalViolations > seriousModalShownAt) {
+    setShowViolationBanner(true);
+    setShowSecurityMonitor(true);
+
+    // Show serious modal at every 3rd violation (3, 6, 9…)
+    if (count >= 3 && count % 3 === 0) {
       setShowSeriousModal(true);
-      setSeriousModalShownAt(security.totalViolations);
+      setSeriousModalShownAt(count);
     }
   });
 
@@ -573,9 +579,9 @@ export default function TakeAssessment() {
         return (
           <div className="space-y-2">
             {q.scenario && q.type === 'ScenarioMCQ' && (
-              <div className="p-3 bg-blue-50 border-l-4 border-blue-500 rounded mb-4">
+              <div className="p-3 bg-blue-50 border-l-4 border-blue-500 rounded mb-4 max-h-48 overflow-y-auto">
                 <div className="text-[10px] font-bold text-blue-800 uppercase tracking-wide mb-1">Scenario</div>
-                <p className="text-xs text-blue-900 leading-relaxed whitespace-pre-wrap">{q.scenario}</p>
+                <p className="text-xs text-blue-900 leading-relaxed whitespace-pre-wrap break-words">{q.scenario}</p>
               </div>
             )}
             {(q.options || []).map((opt, idx) => {
@@ -586,7 +592,7 @@ export default function TakeAssessment() {
                     {chosen && <div className="w-2 h-2 rounded-full bg-white" />}
                   </div>
                   <input type="radio" name={q._id} checked={chosen} onChange={() => handleAnswer(q._id, opt)} className="hidden" />
-                  <span className={`text-xs flex-1 ${chosen ? 'text-red-800 font-medium' : 'text-gray-700'}`}>{opt}</span>
+                  <span className={`text-sm flex-1 leading-relaxed break-words ${chosen ? 'text-red-800 font-medium' : 'text-gray-700'}`}>{opt}</span>
                 </label>
               );
             })}
@@ -627,9 +633,13 @@ export default function TakeAssessment() {
 
       case 'ShortAnswer':
         return (
-          <textarea rows={4} value={answers[q._id] || ''} onChange={(e) => handleAnswer(q._id, e.target.value)}
+          <textarea
+            rows={5}
+            value={answers[q._id] || ''}
+            onChange={(e) => handleAnswer(q._id, e.target.value)}
             placeholder="Type your answer here..."
-            className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:border-red-600 focus:ring focus:ring-red-200 text-xs resize-none" />
+            className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:border-red-600 focus:ring focus:ring-red-200 text-sm resize-y min-h-[100px]"
+          />
         );
 
       case 'MultiSelect':
@@ -646,7 +656,7 @@ export default function TakeAssessment() {
                     const current = answers[q._id] || [];
                     handleAnswer(q._id, e.target.checked ? [...current, opt] : current.filter(i => i !== opt));
                   }} className="hidden" />
-                  <span className={`text-xs flex-1 ${selected ? 'text-red-800 font-medium' : 'text-gray-700'}`}>{opt}</span>
+                  <span className={`text-sm flex-1 leading-relaxed break-words ${selected ? 'text-red-800 font-medium' : 'text-gray-700'}`}>{opt}</span>
                 </label>
               );
             })}
@@ -661,11 +671,11 @@ export default function TakeAssessment() {
             <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
               {(q.matchingLeft || []).map((leftItem, idx) => (
                 <div key={idx} className="flex items-center gap-2 mb-2 last:mb-0">
-                  <div className="flex-1 p-2.5 bg-white rounded border border-gray-300 text-xs font-medium text-gray-800">{leftItem}</div>
-                  <span className="text-gray-400 text-lg">↔</span>
+                  <div className="flex-1 p-2.5 bg-white rounded border border-gray-300 text-xs font-medium text-gray-800 break-words min-w-0">{leftItem}</div>
+                  <span className="text-gray-400 text-lg flex-shrink-0">↔</span>
                   <select value={(answers[q._id] || {})[leftItem] || ''}
                     onChange={(e) => handleAnswer(q._id, { ...(answers[q._id] || {}), [leftItem]: e.target.value })}
-                    className="flex-1 h-10 px-3 rounded border border-gray-300 focus:border-red-600 focus:ring focus:ring-red-200 text-xs bg-white">
+                    className="flex-1 h-10 px-3 rounded border border-gray-300 focus:border-red-600 focus:ring focus:ring-red-200 text-xs bg-white min-w-0">
                     <option value="">— Select match —</option>
                     {(q.matchingRight || []).map((r) => <option key={r} value={r}>{r}</option>)}
                   </select>
@@ -688,7 +698,7 @@ export default function TakeAssessment() {
                     <option value="">—</option>
                     {(q.orderItems || []).map((_, i) => <option key={i} value={i + 1}>{i + 1}</option>)}
                   </select>
-                  <div className="flex-1 p-2.5 bg-white rounded border border-gray-300 text-xs font-medium text-gray-800">{item}</div>
+                  <div className="flex-1 p-2.5 bg-white rounded border border-gray-300 text-xs font-medium text-gray-800 break-words min-w-0">{item}</div>
                 </div>
               ))}
             </div>
@@ -702,8 +712,8 @@ export default function TakeAssessment() {
             <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
               {(q.classificationItems || []).map((item, idx) => (
                 <div key={idx} className="flex items-center gap-2 mb-2 last:mb-0">
-                  <div className="flex-1 p-2.5 bg-white rounded border border-gray-300 text-xs font-medium text-gray-800">{item}</div>
-                  <span className="text-gray-400 text-lg">→</span>
+                  <div className="flex-1 p-2.5 bg-white rounded border border-gray-300 text-xs font-medium text-gray-800 break-words min-w-0">{item}</div>
+                  <span className="text-gray-400 text-lg flex-shrink-0">→</span>
                   <select value={(answers[q._id] || {})[item] || ''}
                     onChange={(e) => handleAnswer(q._id, { ...(answers[q._id] || {}), [item]: e.target.value })}
                     className="flex-1 h-10 px-3 rounded border border-gray-300 focus:border-red-600 text-xs bg-white">
@@ -1004,7 +1014,7 @@ export default function TakeAssessment() {
       )}
 
       {/* ── Sticky Header ── */}
-      <div className={`sticky ${showViolationBanner ? 'top-10' : 'top-0'} z-40 bg-white border-b border-gray-200 shadow-sm`}>
+      <div className="sticky top-0 z-30 bg-white border-b border-gray-200 shadow-sm">
         <div className="max-w-4xl mx-auto px-4 py-2">
           <div className="flex justify-between items-center mb-2">
             <button
@@ -1045,16 +1055,16 @@ export default function TakeAssessment() {
 
         {/* Question Card */}
         <div className="bg-white rounded-xl shadow border border-gray-100 overflow-hidden">
-          <div className="bg-gradient-to-r from-red-50 to-red-100 px-5 py-3 border-b border-gray-200">
-            <div className="flex justify-between items-center mb-1">
-              <span className="text-[10px] font-semibold text-gray-500 uppercase">
+          <div className="bg-gradient-to-r from-red-50 to-red-100 px-5 pt-3 pb-4 border-b border-gray-200">
+            <div className="flex justify-between items-start gap-2 mb-2">
+              <span className="text-[10px] font-semibold text-gray-500 uppercase flex-shrink-0 mt-0.5">
                 Q{currentQuestionIndex + 1}/{questions.length}
               </span>
-              <span className="px-2 py-0.5 bg-white rounded-full text-[9px] font-semibold text-gray-700 border border-gray-200">
+              <span className="px-2 py-0.5 bg-white rounded-full text-[9px] font-semibold text-gray-700 border border-gray-200 flex-shrink-0">
                 {currentQuestion?.type}
               </span>
             </div>
-            <p className="text-sm font-medium text-brand-black leading-relaxed">
+            <p className="text-sm font-medium text-brand-black leading-relaxed whitespace-pre-wrap break-words">
               {currentQuestion?.text}
             </p>
           </div>
