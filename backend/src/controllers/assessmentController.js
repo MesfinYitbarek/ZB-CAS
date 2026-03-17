@@ -38,6 +38,49 @@ export const autoCompleteExpiredAssessments = async () => {
   return result.modifiedCount || 0;
 };
 
+
+// ─── DUPLICATE / CLONE ────────────────────────────────────────────────────────
+// Creates a DRAFT copy of an existing assessment with a new date range.
+export const duplicateAssessment = asyncHandler(async (req, res, next) => {
+  const { startDate, endDate } = req.body;
+
+  if (!startDate || !endDate)
+    return next(new AppError('New startDate and endDate are required.', 400));
+  if (new Date(endDate) <= new Date(startDate))
+    return next(new AppError('End date must be after start date.', 400));
+
+  const source = await Assessment.findById(req.params.id).lean();
+  if (!source) return next(new AppError('Assessment not found.', 404));
+
+  const clone = await Assessment.create({
+    competencyId:       source.competencyId,
+    targetGroup:        source.targetGroup,
+    purpose:            source.purpose,
+    description:        source.description ? `${source.description} (copy)` : '',
+    targetAudience:     source.targetAudience,
+    target:             source.target,
+    questionIds:        source.questionIds,
+    timeLimit:          source.timeLimit,
+    type:               source.type,
+    weight:             source.weight,
+    reminderDaysBefore: source.reminderDaysBefore,
+    reminderSent:       false,
+    startDate:          new Date(startDate),
+    endDate:            new Date(endDate),
+    status:             'DRAFT',
+    createdBy:          req.user.id,
+  });
+
+  const populated = await Assessment.findById(clone._id)
+    .populate('competencyId', 'name category')
+    .populate('createdBy', 'name email')
+    .lean();
+
+  logger.info({ event: 'assessment_duplicated', sourceId: source._id, cloneId: clone._id, by: req.user.id });
+
+  res.status(201).json({ status: 'success', data: { assessment: populated } });
+});
+
 // ─── RESOLVE EMPLOYEES HELPER ────────────────────────────────────────────────
 const resolveEmployees = async (assessment) => {
   const base = { status: 'ACTIVE' };

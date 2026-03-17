@@ -19,6 +19,7 @@ router.get('/:id', aCtrl.getAssessment);
 // ── Writes – HR_ADMIN ─────────────────────────────────────────────────────────
 router.post('/', authorize('HR_ADMIN'), aCtrl.createAssessment);
 router.post('/send-reminders', authorize('HR_ADMIN'), aCtrl.sendReminderEmails);
+router.post('/:id/duplicate', authorize('HR_ADMIN'), aCtrl.duplicateAssessment);
 router.put('/:id', authorize('HR_ADMIN'), aCtrl.updateAssessment);
 router.patch('/:id/status', authorize('HR_ADMIN'), aCtrl.updateStatus);
 router.delete('/:id', authorize('HR_ADMIN'), aCtrl.deleteAssessments);

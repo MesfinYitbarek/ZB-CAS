@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Plus, Calendar, Clock, ChevronLeft, ChevronRight, Target, Users, Eye,
-  AlertCircle, Check, X, Shuffle, Edit2, Bell, Briefcase, Search
+  AlertCircle, Check, X, Shuffle, Edit2, Bell, Briefcase, Search, Copy
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
@@ -63,6 +63,9 @@ export default function Assessments() {
   });
   const [form, setForm] = useState(initForm());
   const [scoreConfirm, setScoreConfirm] = useState(null);
+  const [duplicateSource, setDuplicateSource] = useState(null);
+  const [duplicateDates, setDuplicateDates] = useState({ startDate: '', endDate: '', startTime: '09:00', endTime: '17:00' });
+  const [duplicating, setDuplicating] = useState(false);
 
 
   useEffect(() => {
@@ -352,6 +355,39 @@ export default function Assessments() {
 
   const handleScoreResults = (assessmentId) => setScoreConfirm(assessmentId);
 
+  // ── Duplicate ────────────────────────────────────────────────────────────────
+  const openDuplicate = (assessment) => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const nextWeek = new Date();
+    nextWeek.setDate(nextWeek.getDate() + 8);
+    const fmt = (d) => d.toISOString().split('T')[0];
+    setDuplicateSource(assessment);
+    setDuplicateDates({ startDate: fmt(tomorrow), endDate: fmt(nextWeek), startTime: '09:00', endTime: '17:00' });
+  };
+
+  const handleDuplicate = async () => {
+    if (!duplicateSource || !duplicateDates.startDate || !duplicateDates.endDate) return;
+    setDuplicating(true);
+    try {
+      const startDate = new Date(`${duplicateDates.startDate}T${duplicateDates.startTime}:00`);
+      const endDate   = new Date(`${duplicateDates.endDate}T${duplicateDates.endTime}:00`);
+      if (endDate <= startDate) { show('End date must be after start date.', 'error'); setDuplicating(false); return; }
+      const { data } = await api.post(`/assessments/${duplicateSource._id}/duplicate`, {
+        startDate: startDate.toISOString(),
+        endDate:   endDate.toISOString(),
+      });
+      setDuplicateSource(null);
+      show(`"${duplicateSource.competencyId?.name || 'Assessment'}" duplicated as a new draft.`, 'success');
+      fetchAssessments();
+    } catch (err) {
+      show(err.response?.data?.message || 'Failed to duplicate assessment.', 'error');
+    } finally {
+      setDuplicating(false);
+    }
+  };
+
+
   const executeScoreResults = async (assessmentId) => {
     setScoreConfirm(null);
     try {
@@ -631,10 +667,19 @@ export default function Assessments() {
                         </button>
                       )}
                       {isAdmin && (
-                        <button onClick={() => nav(`/assessments/${a._id}`)}
-                          className="text-xs font-semibold text-gray-500 hover:text-brand-red transition-colors flex items-center gap-1">
-                          Details <ChevronRight className="w-3 h-3" />
-                        </button>
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={() => openDuplicate(a)}
+                            className="text-xs font-semibold text-gray-400 hover:text-brand-red transition-colors flex items-center gap-1"
+                            title="Duplicate as new draft"
+                          >
+                            <Copy className="w-3 h-3" /> Duplicate
+                          </button>
+                          <button onClick={() => nav(`/assessments/${a._id}`)}
+                            className="text-xs font-semibold text-gray-500 hover:text-brand-red transition-colors flex items-center gap-1">
+                            Details <ChevronRight className="w-3 h-3" />
+                          </button>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -692,6 +737,95 @@ export default function Assessments() {
             <div className="flex gap-3">
               <button onClick={() => setScoreConfirm(null)} className="flex-1 py-2.5 border border-gray-300 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-50">Cancel</button>
               <button onClick={() => executeScoreResults(scoreConfirm)} className="flex-1 py-2.5 bg-purple-600 text-white rounded-lg text-sm font-semibold hover:bg-purple-700">Score Results</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Duplicate Assessment Modal ─────────────────────────────────────────── */}
+      {duplicateSource && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6">
+            {/* Header */}
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-brand-red/10 flex items-center justify-center flex-shrink-0">
+                <Copy className="w-5 h-5 text-brand-red" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-brand-black leading-tight">Duplicate assessment</h3>
+                <p className="text-xs text-gray-400 mt-0.5 truncate max-w-[200px]">
+                  {duplicateSource.competencyId?.name || 'Assessment'}
+                </p>
+              </div>
+            </div>
+
+            <p className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2 mb-4 leading-relaxed">
+              A new <strong className="text-gray-700">DRAFT</strong> copy will be created with the same competency, questions, target audience, type, and weights. 
+            </p>
+
+            {/* Date / time pickers */}
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1.5">Start date &amp; time</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="date"
+                    value={duplicateDates.startDate}
+                    onChange={e => setDuplicateDates(p => ({ ...p, startDate: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-red/20 focus:border-brand-red/40"
+                  />
+                  <input
+                    type="time"
+                    value={duplicateDates.startTime}
+                    onChange={e => setDuplicateDates(p => ({ ...p, startTime: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-red/20 focus:border-brand-red/40"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1.5">End date &amp; time</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="date"
+                    value={duplicateDates.endDate}
+                    onChange={e => setDuplicateDates(p => ({ ...p, endDate: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-red/20 focus:border-brand-red/40"
+                  />
+                  <input
+                    type="time"
+                    value={duplicateDates.endTime}
+                    onChange={e => setDuplicateDates(p => ({ ...p, endTime: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-red/20 focus:border-brand-red/40"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-3 mt-5">
+              <button
+                onClick={() => setDuplicateSource(null)}
+                className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDuplicate}
+                disabled={duplicating || !duplicateDates.startDate || !duplicateDates.endDate}
+                className="flex-1 py-2.5 bg-brand-red text-white rounded-xl text-sm font-semibold hover:bg-brand-red-dark disabled:opacity-60 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+              >
+                {duplicating ? (
+                  <>
+                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Duplicating…</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>Create copy</span>
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>
