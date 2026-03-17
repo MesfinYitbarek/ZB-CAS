@@ -12,6 +12,7 @@ import 'dotenv/config';
 import http from 'http';
 import express from 'express';
 import { initSocket } from './services/socketService.js';
+import { startScheduler } from './services/schedulerService.js';
 import connectDB from './config/database.js';
 import errorHandler from './middleware/errorHandler.js';
 import AppError from './utils/AppError.js';
@@ -120,6 +121,8 @@ connectDB().then(() => {
   httpServer.listen(PORT, () => {
     logger.info({ event: 'server_start', port: PORT, env: process.env.NODE_ENV || 'development' });
   });
+  // Boot cron jobs after DB is ready so they can query MongoDB
+  startScheduler();
 });
 
 export default app;

@@ -17,7 +17,8 @@ import {
 import mongoose from 'mongoose';
 
 // ─── AUTO-ACTIVATE HELPER ────────────────────────────────────────────────────
-const autoActivateScheduledAssessments = async () => {
+// Exported so schedulerService can call it on a cron schedule
+export const autoActivateScheduledAssessments = async () => {
   const now = new Date();
   const result = await Assessment.updateMany(
     { status: 'SCHEDULED', startDate: { $lte: now } },
@@ -27,7 +28,8 @@ const autoActivateScheduledAssessments = async () => {
 };
 
 // ─── AUTO-COMPLETE HELPER ────────────────────────────────────────────────────
-const autoCompleteExpiredAssessments = async () => {
+// Exported so schedulerService can call it on a cron schedule
+export const autoCompleteExpiredAssessments = async () => {
   const now = new Date();
   const result = await Assessment.updateMany(
     { status: 'ACTIVE', endDate: { $lte: now } },
@@ -286,7 +288,8 @@ export const getDepartments = asyncHandler(async (req, res) => {
 });
 
 // ─── SEND REMINDER EMAILS ─────────────────────────────────────────────────────
-export const sendReminderEmails = asyncHandler(async (req, res) => {
+// ─── PROCESS REMINDERS (called by scheduler AND HTTP endpoint) ──────────────
+export const processPendingReminders = async () => {
   const now = new Date();
   const assessments = await Assessment.find({ status: 'ACTIVE', reminderDaysBefore: { $ne: null }, reminderSent: false }).lean();
   let processedCount = 0;
@@ -301,6 +304,10 @@ export const sendReminderEmails = asyncHandler(async (req, res) => {
       processedCount++;
     }
   }
+  return processedCount;
+};
 
+export const sendReminderEmails = asyncHandler(async (req, res) => {
+  const processedCount = await processPendingReminders();
   res.status(200).json({ status: 'success', message: `Reminders processed for ${processedCount} assessment(s).` });
 });
