@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Inbox, Link2, Check, Clock, RefreshCw, AlertCircle, X } from 'lucide-react';
+import { Inbox, Link2, Check, Clock, RefreshCw, AlertCircle, X, Layers } from 'lucide-react';
 import api from '../utils/api';
 import { useToast } from '../context/ToastContext';
 
@@ -25,10 +25,13 @@ export default function AssessmentRequests() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
   const [linkingId, setLinkingId] = useState(null);
-  const [linkForm, setLinkForm] = useState({ linkedUserId: '', linkedAssessmentIds: [], status: 'IN_PROGRESS' });
-  const [casUsers, setCasUsers] = useState([]);
-  const [casAssessments, setCasAssessments] = useState([]);
+  const [linkStatus, setLinkStatus] = useState('IN_PROGRESS');
+  const [matchedUser, setMatchedUser] = useState(null);
+  const [userAssessments, setUserAssessments] = useState([]);
+  const [selectedAssessmentIds, setSelectedAssessmentIds] = useState([]);
   const [saving, setSaving] = useState(false);
+  const [creatingCompsId, setCreatingCompsId] = useState(null);
+  const [loadingPanel, setLoadingPanel] = useState(false);
 
   const loadRequests = useCallback(async () => {
     setLoading(true);
@@ -47,33 +50,51 @@ export default function AssessmentRequests() {
 
   const openLinkPanel = async (reqId) => {
     setLinkingId(reqId);
-    setLinkForm({ linkedUserId: '', linkedAssessmentIds: [], status: 'IN_PROGRESS' });
+    setMatchedUser(null);
+    setUserAssessments([]);
+    setSelectedAssessmentIds([]);
+    setLinkStatus('IN_PROGRESS');
+    setLoadingPanel(true);
     try {
-      const [usersRes, assRes] = await Promise.all([
-        api.get('/users?limit=200'),
-        api.get('/assessments?limit=200'),
-      ]);
-      const users = usersRes.data?.data?.users || [];
-      setCasUsers(users);
-      setCasAssessments(assRes.data?.data?.assessments || []);
-
-      // Auto-match user by email from the request
       const req = requests.find(r => r._id === reqId);
-      if (req?.employeeEmail) {
-        const matchedUser = users.find(u => u.email?.toLowerCase() === req.employeeEmail.toLowerCase());
-        if (matchedUser) {
-          setLinkForm(f => ({ ...f, linkedUserId: matchedUser._id }));
+
+      // Step 1: Auto-match user by email
+      const usersRes = await api.get('/users?limit=200');
+      const allUsers = usersRes.data?.data?.users || [];
+      const matched = req?.employeeEmail
+        ? allUsers.find(u => u.email?.toLowerCase() === req.employeeEmail.toLowerCase())
+        : null;
+
+      setMatchedUser(matched || null);
+
+      if (matched) {
+        // Auto-link the user first if not already linked
+        if (!req.linkedUserId) {
+          await api.patch(`/external/assessment-requests/${reqId}`, { linkedUserId: matched._id });
         }
+
+        // Step 2: Fetch assessments where user has completed results
+        const resultsRes = await api.get(`/external/assessment-requests/${reqId}/user-results`);
+        setUserAssessments(resultsRes.data?.data?.assessments || []);
       }
     } catch (err) {
-      show('Failed to load users/assessments.', 'error');
+      show('Failed to load data.', 'error');
+    } finally {
+      setLoadingPanel(false);
     }
   };
 
   const handleLink = async (reqId) => {
+    if (selectedAssessmentIds.length === 0) {
+      show('Select at least one assessment to link.', 'error');
+      return;
+    }
     setSaving(true);
     try {
-      await api.patch(`/external/assessment-requests/${reqId}`, linkForm);
+      await api.patch(`/external/assessment-requests/${reqId}`, {
+        linkedAssessmentIds: selectedAssessmentIds,
+        status: linkStatus,
+      });
       show('Request linked successfully!', 'success');
       setLinkingId(null);
       loadRequests();
@@ -81,6 +102,20 @@ export default function AssessmentRequests() {
       show('Failed to link: ' + (err.response?.data?.message || err.message), 'error');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleCreateCompetencies = async (reqId) => {
+    setCreatingCompsId(reqId);
+    try {
+      const { data } = await api.post(`/external/assessment-requests/${reqId}/create-competencies`);
+      const result = data?.data;
+      show(result?.message || 'Competencies created!', 'success');
+      loadRequests();
+    } catch (err) {
+      show('Failed to create competencies: ' + (err.response?.data?.message || err.message), 'error');
+    } finally {
+      setCreatingCompsId(null);
     }
   };
 
@@ -176,6 +211,9 @@ export default function AssessmentRequests() {
                         <div className="mt-2 flex items-center gap-2 text-xs text-green-700 bg-green-50 px-2.5 py-1.5 rounded-lg inline-flex border border-green-100">
                           <Link2 className="w-3 h-3" />
                           Linked to: {req.linkedUserId?.name || 'User'} ({req.linkedUserId?.email || 'N/A'})
+                          {req.linkedAssessmentIds?.length > 0 && (
+                            <span className="ml-1 font-bold">· {req.linkedAssessmentIds.length} assessment{req.linkedAssessmentIds.length !== 1 ? 's' : ''}</span>
+                          )}
                         </div>
                       )}
                     </div>
@@ -185,7 +223,20 @@ export default function AssessmentRequests() {
                       <span className="text-xs text-gray-400">
                         {new Date(req.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                       </span>
-                      {(req.status === 'PENDING' || req.status === 'IN_PROGRESS') && (
+                      {req.competencies?.length > 0 && (
+                        <button
+                          onClick={() => handleCreateCompetencies(req._id)}
+                          disabled={creatingCompsId === req._id}
+                          className="px-4 py-2 text-xs font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1.5 disabled:opacity-50 shadow-sm"
+                        >
+                          {creatingCompsId === req._id ? (
+                            <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Creating…</>
+                          ) : (
+                            <><Layers className="w-3.5 h-3.5" /> Create Competencies</>
+                          )}
+                        </button>
+                      )}
+                      {req.status !== 'SYNCED' && (
                         <button
                           onClick={() => linkingId === req._id ? setLinkingId(null) : openLinkPanel(req._id)}
                           className="px-4 py-2 text-xs font-semibold bg-brand-red text-white rounded-lg hover:bg-opacity-90 transition-colors flex items-center gap-1.5"
@@ -208,99 +259,134 @@ export default function AssessmentRequests() {
                       </p>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1.5">ZB CAS User (auto-matched)</label>
-                        {(() => {
-                          const matchedUser = casUsers.find(u => u._id === linkForm.linkedUserId);
-                          return matchedUser ? (
-                            <div className="w-full border border-green-200 bg-green-50 rounded-lg px-3 py-2.5 text-sm text-green-800 font-medium">
-                              ✓ {matchedUser.name} ({matchedUser.email})
+                    {loadingPanel ? (
+                      <div className="flex items-center justify-center py-6">
+                        <div className="w-6 h-6 border-3 border-brand-red border-t-transparent rounded-full animate-spin" />
+                        <span className="ml-2 text-sm text-gray-500">Loading user data…</span>
+                      </div>
+                    ) : (
+                      <>
+                        {/* Matched User */}
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1.5">Matched ZB CAS User</label>
+                          {matchedUser ? (
+                            <div className="flex items-center gap-2 px-3 py-2.5 bg-green-50 border border-green-200 rounded-lg">
+                              <Check className="w-4 h-4 text-green-600 flex-shrink-0" />
+                              <span className="text-sm font-medium text-green-800">{matchedUser.name}</span>
+                              <span className="text-xs text-green-600">({matchedUser.email})</span>
                             </div>
                           ) : (
-                            <select
-                              value={linkForm.linkedUserId}
-                              onChange={e => setLinkForm(f => ({ ...f, linkedUserId: e.target.value, linkedAssessmentIds: [] }))}
-                              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-brand-red focus:border-transparent"
-                            >
-                              <option value="">— Select User —</option>
-                              {casUsers.map(u => (
-                                <option key={u._id} value={u._id}>{u.name} ({u.email})</option>
-                              ))}
-                            </select>
-                          );
-                        })()}
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1.5">ZB CAS Assessments (Select one or more) *</label>
-                        <div className="w-full border border-gray-300 rounded-lg p-3 text-sm focus-within:ring-2 focus-within:ring-brand-red focus-within:border-transparent max-h-48 overflow-y-auto bg-white">
-                          {casAssessments.length === 0 ? (
-                            <p className="text-gray-400 italic">No assessments available</p>
-                          ) : (
-                            casAssessments.map(a => {
-                              const isChecked = Array.isArray(linkForm.linkedAssessmentIds) 
-                                ? linkForm.linkedAssessmentIds.includes(a._id) 
-                                : false;
-                              return (
-                                <label key={a._id} className="flex items-start gap-2 mb-2 cursor-pointer hover:bg-gray-50 p-1 rounded">
-                                  <input
-                                    type="checkbox"
-                                    className="mt-0.5 rounded text-brand-red focus:ring-brand-red"
-                                    checked={isChecked}
-                                    onChange={(e) => {
-                                      const checked = e.target.checked;
-                                      setLinkForm(f => {
-                                        const currentIds = Array.isArray(f.linkedAssessmentIds) ? f.linkedAssessmentIds : [];
-                                        const newIds = checked 
-                                          ? [...currentIds, a._id] 
-                                          : currentIds.filter(id => id !== a._id);
-                                        return { ...f, linkedAssessmentIds: newIds };
-                                      });
-                                    }}
-                                  />
-                                  <span>
-                                    {a.competencyId?.name || 'Assessment'} — <span className="text-gray-500 text-xs">{a.status} ({new Date(a.startDate).toLocaleDateString()})</span>
-                                  </span>
-                                </label>
-                              );
-                            })
+                            <div className="px-3 py-2.5 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600">
+                              <AlertCircle className="w-3.5 h-3.5 inline mr-1" />
+                              No matching user found for <strong>{req.employeeEmail}</strong>. Create the user in ZB CAS first.
+                            </div>
                           )}
                         </div>
-                      </div>
-                    </div>
 
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1.5">Update Status</label>
-                      <select
-                        value={linkForm.status}
-                        onChange={e => setLinkForm(f => ({ ...f, status: e.target.value }))}
-                        className="w-48 border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-brand-red focus:border-transparent"
-                      >
-                        <option value="PENDING">PENDING</option>
-                        <option value="IN_PROGRESS">IN PROGRESS</option>
-                        <option value="COMPLETED">COMPLETED</option>
-                      </select>
-                    </div>
-
-                    <div className="flex gap-3 pt-1">
-                      <button
-                        onClick={() => handleLink(req._id)}
-                        disabled={saving || !linkForm.linkedUserId || !linkForm.linkedAssessmentIds || linkForm.linkedAssessmentIds.length === 0}
-                        className="px-5 py-2.5 text-sm font-semibold bg-brand-red text-white rounded-lg disabled:opacity-50 hover:bg-opacity-90 transition-colors flex items-center gap-2"
-                      >
-                        {saving ? (
-                          <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Saving…</>
-                        ) : (
-                          <><Check className="w-3.5 h-3.5" /> Save Link</>
+                        {/* Completed Assessments (Checkboxes) */}
+                        {matchedUser && (
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1.5">
+                              Completed Assessments ({userAssessments.length})
+                            </label>
+                            {userAssessments.length === 0 ? (
+                              <div className="px-3 py-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700">
+                                <Clock className="w-3.5 h-3.5 inline mr-1" />
+                                No completed assessments yet. The user hasn't finished any assessments.
+                              </div>
+                            ) : (
+                              <div className="border border-gray-200 rounded-xl divide-y divide-gray-100 overflow-hidden">
+                                {userAssessments.map(a => {
+                                  const isLinked = a.alreadyLinked;
+                                  const isSelected = selectedAssessmentIds.includes(a._id);
+                                  return (
+                                    <label
+                                      key={a._id}
+                                      className={`flex items-center gap-3 px-4 py-3 transition-colors cursor-pointer ${
+                                        isLinked ? 'bg-gray-50 opacity-60 cursor-default' : isSelected ? 'bg-blue-50' : 'hover:bg-gray-50'
+                                      }`}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={isLinked || isSelected}
+                                        disabled={isLinked}
+                                        onChange={(e) => {
+                                          if (isLinked) return;
+                                          setSelectedAssessmentIds(prev =>
+                                            e.target.checked
+                                              ? [...prev, a._id]
+                                              : prev.filter(id => id !== a._id)
+                                          );
+                                        }}
+                                        className="rounded text-brand-red focus:ring-brand-red w-4 h-4"
+                                      />
+                                      <div className="flex-1 min-w-0">
+                                        <span className="text-sm font-medium text-gray-900">{a.competencyName}</span>
+                                        {a.category && (
+                                          <span className="text-xs text-gray-400 ml-2">{a.category}</span>
+                                        )}
+                                      </div>
+                                      <div className="flex items-center gap-2 flex-shrink-0">
+                                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                                          a.status === 'COMPLETED' || a.status === 'ARCHIVED'
+                                            ? 'bg-green-100 text-green-700'
+                                            : 'bg-blue-100 text-blue-700'
+                                        }`}>
+                                          {a.status}
+                                        </span>
+                                        {isLinked && (
+                                          <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-gray-200 text-gray-500">
+                                            ✓ Sent
+                                          </span>
+                                        )}
+                                      </div>
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
                         )}
-                      </button>
-                      <button
-                        onClick={() => setLinkingId(null)}
-                        className="px-5 py-2.5 text-sm font-semibold bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2"
-                      >
-                        <X className="w-3.5 h-3.5" /> Cancel
-                      </button>
-                    </div>
+
+                        {/* Status + Actions */}
+                        {matchedUser && userAssessments.length > 0 && (
+                          <>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1.5">Update Status</label>
+                              <select
+                                value={linkStatus}
+                                onChange={e => setLinkStatus(e.target.value)}
+                                className="w-48 border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-brand-red focus:border-transparent"
+                              >
+                                <option value="PENDING">PENDING</option>
+                                <option value="IN_PROGRESS">IN PROGRESS</option>
+                                <option value="COMPLETED">COMPLETED</option>
+                              </select>
+                            </div>
+
+                            <div className="flex gap-3 pt-1">
+                              <button
+                                onClick={() => handleLink(req._id)}
+                                disabled={saving || selectedAssessmentIds.length === 0}
+                                className="px-5 py-2.5 text-sm font-semibold bg-brand-red text-white rounded-lg disabled:opacity-50 hover:bg-opacity-90 transition-colors flex items-center gap-2"
+                              >
+                                {saving ? (
+                                  <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Saving…</>
+                                ) : (
+                                  <><Check className="w-3.5 h-3.5" /> Link {selectedAssessmentIds.length} Assessment{selectedAssessmentIds.length !== 1 ? 's' : ''}</>
+                                )}
+                              </button>
+                              <button
+                                onClick={() => setLinkingId(null)}
+                                className="px-5 py-2.5 text-sm font-semibold bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2"
+                              >
+                                <X className="w-3.5 h-3.5" /> Cancel
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </>
+                    )}
                   </div>
                 )}
               </div>

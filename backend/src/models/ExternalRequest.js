@@ -58,11 +58,6 @@ const externalRequestSchema = new mongoose.Schema(
       ref: 'User',
       default: null,
     },
-    linkedAssessmentId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Assessment',
-      default: null,
-    },
     linkedAssessmentIds: [{
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Assessment',

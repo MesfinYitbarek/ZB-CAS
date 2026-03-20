@@ -9,6 +9,7 @@
  */
 import express from 'express';
 import ExternalRequest from '../models/ExternalRequest.js';
+import Competency from '../models/Competency.js';
 import Result from '../models/Result.js';
 import logger from '../utils/logger.js';
 
@@ -79,8 +80,7 @@ router.get('/assessment-requests', async (req, res) => {
 
     const requests = await ExternalRequest.find(filter)
       .populate('linkedUserId', 'name email')
-      .populate('linkedAssessmentId', 'status startDate endDate')
-      .populate('linkedAssessmentIds', 'status startDate endDate')
+      .populate({ path: 'linkedAssessmentIds', select: 'status startDate endDate competencyId', populate: { path: 'competencyId', select: 'name' } })
       .sort({ createdAt: -1 })
       .lean();
 
@@ -99,12 +99,18 @@ router.patch('/assessment-requests/:id', async (req, res) => {
       return res.status(404).json({ status: 'fail', message: 'Request not found.' });
     }
 
-    const oldStatus = request.status;
-    const { status, linkedUserId, linkedAssessmentId, linkedAssessmentIds, notes } = req.body;
+    const { status, linkedUserId, linkedAssessmentIds, notes } = req.body;
     if (status) request.status = status;
     if (linkedUserId) request.linkedUserId = linkedUserId;
-    if (linkedAssessmentId) request.linkedAssessmentId = linkedAssessmentId;
-    if (linkedAssessmentIds) request.linkedAssessmentIds = linkedAssessmentIds;
+    // Merge new assessment IDs without duplicates
+    if (linkedAssessmentIds && Array.isArray(linkedAssessmentIds)) {
+      const existing = (request.linkedAssessmentIds || []).map(id => id.toString());
+      linkedAssessmentIds.forEach(id => {
+        if (!existing.includes(id.toString())) {
+          request.linkedAssessmentIds.push(id);
+        }
+      });
+    }
     if (notes !== undefined) request.notes = notes;
 
     await request.save();
@@ -124,6 +130,54 @@ router.patch('/assessment-requests/:id', async (req, res) => {
   }
 });
 
+// ── GET /api/external/assessment-requests/:id/user-results ──────────────────────
+// Fetch assessments where the matched user has completed results (for checkbox UI)
+router.get('/assessment-requests/:id/user-results', async (req, res) => {
+  try {
+    const request = await ExternalRequest.findById(req.params.id);
+    if (!request) {
+      return res.status(404).json({ status: 'fail', message: 'Request not found.' });
+    }
+    if (!request.linkedUserId) {
+      return res.status(200).json({ status: 'success', data: { assessments: [] } });
+    }
+
+    // Find all results for this user
+    const results = await Result.find({ userId: request.linkedUserId })
+      .populate({ path: 'assessmentId', select: 'status startDate endDate competencyId', populate: { path: 'competencyId', select: 'name category' } })
+      .lean();
+
+    // Group by assessment and get unique assessments
+    const assessmentMap = {};
+    results.forEach(r => {
+      const aId = r.assessmentId?._id?.toString();
+      if (!aId) return;
+      if (!assessmentMap[aId]) {
+        assessmentMap[aId] = {
+          _id: aId,
+          competencyName: r.assessmentId?.competencyId?.name || 'Unknown',
+          category: r.assessmentId?.competencyId?.category || '',
+          status: r.assessmentId?.status,
+          startDate: r.assessmentId?.startDate,
+          endDate: r.assessmentId?.endDate,
+          resultCount: 0,
+        };
+      }
+      assessmentMap[aId].resultCount++;
+    });
+
+    const alreadyLinked = (request.linkedAssessmentIds || []).map(id => id.toString());
+    const assessments = Object.values(assessmentMap).map(a => ({
+      ...a,
+      alreadyLinked: alreadyLinked.includes(a._id),
+    }));
+
+    res.status(200).json({ status: 'success', data: { assessments } });
+  } catch (error) {
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+});
+
 // ── GET /api/external/assessment-results/:id ────────────────────────────────────
 // Return assessment results for a specific external request (called by ZB_SP Sync)
 router.get('/assessment-results/:id', validateApiKey, async (req, res) => {
@@ -136,38 +190,21 @@ router.get('/assessment-results/:id', validateApiKey, async (req, res) => {
       return res.status(404).json({ status: 'fail', message: 'External request not found.' });
     }
 
-    // Combine old string id and new array of ids for backwards compatibility
-    const assessmentIds = request.linkedAssessmentIds?.length > 0 
-      ? request.linkedAssessmentIds 
-      : (request.linkedAssessmentId ? [request.linkedAssessmentId] : []);
-
-    // If assessment not linked yet
-    if (assessmentIds.length === 0) {
+    // If no assessments linked yet
+    if (!request.linkedAssessmentIds || request.linkedAssessmentIds.length === 0) {
       return res.status(200).json({
         status: 'success',
         data: {
           requestStatus: request.status,
-          message: 'Assessment has not been linked yet. ZB CAS Admin is still processing.',
+          message: 'No assessments have been linked yet. ZB CAS Admin is still processing.',
           competencies: [],
         },
       });
     }
 
-    // If status is NOT COMPLETED or SYNCED, return status only — no scores
-    if (request.status !== 'COMPLETED' && request.status !== 'SYNCED') {
-      return res.status(200).json({
-        status: 'success',
-        data: {
-          requestStatus: request.status,
-          message: `Assessment is ${request.status}. Scores will be available once completed.`,
-          competencies: [],
-        },
-      });
-    }
-
-    // ── COMPLETED: fetch actual results from ZB CAS Result model ──
+    // Fetch results from ALL linked assessments
     const results = await Result.find({
-      assessmentId: { $in: assessmentIds },
+      assessmentId: { $in: request.linkedAssessmentIds },
       ...(request.linkedUserId ? { userId: request.linkedUserId } : {}),
     })
       .populate('competencyId', 'name category')
@@ -208,6 +245,76 @@ router.get('/assessment-results/:id', validateApiKey, async (req, res) => {
     });
   } catch (error) {
     logger.error({ event: 'external_results_error', error: error.message });
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+});
+
+// ── POST /api/external/assessment-requests/:id/create-competencies ──────────
+// Auto-create ZB CAS competencies from the request's competency list
+
+const TYPE_TO_CATEGORY = {
+  'TECHNICAL': 'Technical',
+  'LEADERSHIP': 'Leadership',
+  'MANAGERIAL': 'Managerial',
+  'CORE': 'Core-Behavioral',
+  'BEHAVIORAL': 'Core-Behavioral',
+  'PERSONAL': 'Core-Personal effectiveness',
+};
+
+router.post('/assessment-requests/:id/create-competencies', async (req, res) => {
+  try {
+    const request = await ExternalRequest.findById(req.params.id);
+    if (!request) {
+      return res.status(404).json({ status: 'fail', message: 'Request not found.' });
+    }
+
+    if (!request.competencies?.length) {
+      return res.status(400).json({ status: 'fail', message: 'No competencies in this request.' });
+    }
+
+    const created = [];
+    const skipped = [];
+
+    for (const comp of request.competencies) {
+      const category = TYPE_TO_CATEGORY[(comp.type || 'TECHNICAL').toUpperCase()] || 'Technical';
+
+      // Check if competency already exists (by name + category)
+      const existing = await Competency.findOne({ name: comp.name, category });
+      if (existing) {
+        skipped.push(comp.name);
+        continue;
+      }
+
+      try {
+        const newComp = await Competency.create({
+          name: comp.name,
+          category,
+          targetGroups: [{ targetGroup: 'common', description: `Auto-created from ZB SP request for ${request.positionTitle}` }],
+        });
+        created.push(newComp.name);
+      } catch (err) {
+        // Duplicate key or validation error — skip
+        skipped.push(comp.name);
+      }
+    }
+
+    logger.info({
+      event: 'competencies_created_from_request',
+      requestId: request._id,
+      created: created.length,
+      skipped: skipped.length,
+    });
+
+    res.status(201).json({
+      status: 'success',
+      data: {
+        created,
+        skipped,
+        message: `Created ${created.length} competencies. ${skipped.length} already existed.`,
+      },
+    });
+  } catch (error) {
+    logger.error({ event: 'create_competencies_error', error: error.message });
     res.status(500).json({ status: 'error', message: error.message });
   }
 });
