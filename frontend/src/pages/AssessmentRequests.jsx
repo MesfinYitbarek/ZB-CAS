@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Inbox, Link2, Check, Clock, RefreshCw, AlertCircle, X } from 'lucide-react';
+import { Inbox, Link2, Check, Clock, RefreshCw, AlertCircle, CheckCircle2, ChevronDown, ChevronUp, X } from 'lucide-react';
 import api from '../utils/api';
 import { useToast } from '../context/ToastContext';
 
@@ -24,11 +24,10 @@ export default function AssessmentRequests() {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
-  const [linkingId, setLinkingId] = useState(null);
-  const [linkForm, setLinkForm] = useState({ linkedUserId: '', linkedAssessmentId: '', status: 'IN_PROGRESS' });
-  const [casUsers, setCasUsers] = useState([]);
-  const [casAssessments, setCasAssessments] = useState([]);
-  const [saving, setSaving] = useState(false);
+  const [expandedId, setExpandedId] = useState(null);
+  const [expandedResults, setExpandedResults] = useState({});
+  const [loadingResults, setLoadingResults] = useState({});
+  const [markingComplete, setMarkingComplete] = useState(null);
 
   const loadRequests = useCallback(async () => {
     setLoading(true);
@@ -45,32 +44,54 @@ export default function AssessmentRequests() {
 
   useEffect(() => { loadRequests(); }, [loadRequests]);
 
-  const openLinkPanel = async (reqId) => {
-    setLinkingId(reqId);
-    setLinkForm({ linkedUserId: '', linkedAssessmentId: '', status: 'IN_PROGRESS' });
-    try {
-      const [usersRes, assRes] = await Promise.all([
-        api.get('/users?limit=200'),
-        api.get('/assessments?limit=200'),
-      ]);
-      setCasUsers(usersRes.data?.data?.users || []);
-      setCasAssessments(assRes.data?.data?.assessments || []);
-    } catch (err) {
-      show('Failed to load users/assessments.', 'error');
+  const toggleExpand = async (reqId) => {
+    if (expandedId === reqId) {
+      setExpandedId(null);
+      return;
+    }
+    setExpandedId(reqId);
+
+    // Fetch read-only results for this request if not already loaded
+    if (!expandedResults[reqId]) {
+      setLoadingResults(prev => ({ ...prev, [reqId]: true }));
+      try {
+        const res = await api.get(`/external/assessment-requests/${reqId}/user-results`);
+        setExpandedResults(prev => ({ ...prev, [reqId]: res.data?.data?.assessments || [] }));
+      } catch {
+        setExpandedResults(prev => ({ ...prev, [reqId]: [] }));
+      } finally {
+        setLoadingResults(prev => ({ ...prev, [reqId]: false }));
+      }
     }
   };
 
-  const handleLink = async (reqId) => {
-    setSaving(true);
+  const handleMarkComplete = async (reqId) => {
+    setMarkingComplete(reqId);
     try {
-      await api.patch(`/external/assessment-requests/${reqId}`, linkForm);
-      show('Request linked successfully!', 'success');
-      setLinkingId(null);
+      const { data } = await api.patch(`/external/assessment-requests/${reqId}/mark-complete`);
+      show(data?.data?.message || 'Request marked as completed!', 'success');
+      setExpandedId(null);
+      setExpandedResults(prev => { const n = { ...prev }; delete n[reqId]; return n; });
       loadRequests();
     } catch (err) {
-      show('Failed to link: ' + (err.response?.data?.message || err.message), 'error');
+      show(err.response?.data?.message || 'Failed to mark as completed.', 'error');
     } finally {
-      setSaving(false);
+      setMarkingComplete(null);
+    }
+  };
+
+  const [linkingUser, setLinkingUser] = useState(null);
+
+  const handleLinkUser = async (reqId) => {
+    setLinkingUser(reqId);
+    try {
+      const { data } = await api.post(`/external/assessment-requests/${reqId}/link-user`);
+      show(data.message || 'User linked successfully!', 'success');
+      loadRequests();
+    } catch (err) {
+      show(err.response?.data?.message || 'Failed to link user.', 'error');
+    } finally {
+      setLinkingUser(null);
     }
   };
 
@@ -133,6 +154,11 @@ export default function AssessmentRequests() {
         ) : (
           requests.map(req => {
             const SIcon = STATUS_ICON[req.status] || Clock;
+            const isExpanded = expandedId === req._id;
+            const results = expandedResults[req._id] || [];
+            const isLoadingRes = loadingResults[req._id];
+            const canMarkComplete = req.status !== 'SYNCED' && req.status !== 'COMPLETED';
+
             return (
               <div key={req._id} className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden hover:shadow-md transition-all">
                 <div className="p-5">
@@ -161,11 +187,37 @@ export default function AssessmentRequests() {
                         </div>
                       )}
 
-                      {/* Linked info */}
+                      {/* Linked user info */}
                       {req.linkedUserId && (
                         <div className="mt-2 flex items-center gap-2 text-xs text-green-700 bg-green-50 px-2.5 py-1.5 rounded-lg inline-flex border border-green-100">
                           <Link2 className="w-3 h-3" />
                           Linked to: {req.linkedUserId?.name || 'User'} ({req.linkedUserId?.email || 'N/A'})
+                          {req.linkedAssessmentIds?.length > 0 && (
+                            <span className="ml-1 font-bold">· {req.linkedAssessmentIds.length} assessment{req.linkedAssessmentIds.length !== 1 ? 's' : ''} assigned</span>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Warning if no linked user */}
+                      {!req.linkedUserId && (
+                        <div className="mt-2 flex items-center justify-between gap-4 text-xs text-amber-700 bg-amber-50 px-3 py-2 rounded-lg border border-amber-100">
+                          <div className="flex items-center gap-2">
+                            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                            <span>
+                              No matching ZB CAS user found for <strong className="ml-1">{req.employeeEmail}</strong>. Create the user first.
+                            </span>
+                          </div>
+                          <button
+                            onClick={() => handleLinkUser(req._id)}
+                            disabled={linkingUser === req._id}
+                            className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-md font-medium transition-colors disabled:opacity-50 flex items-center gap-1.5 flex-shrink-0 shadow-sm"
+                          >
+                            {linkingUser === req._id ? (
+                              <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Linking...</>
+                            ) : (
+                              <><Link2 className="w-3.5 h-3.5" /> Link User</>
+                            )}
+                          </button>
                         </div>
                       )}
                     </div>
@@ -175,90 +227,98 @@ export default function AssessmentRequests() {
                       <span className="text-xs text-gray-400">
                         {new Date(req.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                       </span>
-                      {(req.status === 'PENDING' || req.status === 'IN_PROGRESS') && (
+
+                      {/* Mark Completed / Update Results button */}
+                      {req.linkedUserId && (
                         <button
-                          onClick={() => linkingId === req._id ? setLinkingId(null) : openLinkPanel(req._id)}
-                          className="px-4 py-2 text-xs font-semibold bg-brand-red text-white rounded-lg hover:bg-opacity-90 transition-colors flex items-center gap-1.5"
+                          onClick={() => handleMarkComplete(req._id)}
+                          disabled={markingComplete === req._id}
+                          className={`px-4 py-2 text-xs font-semibold text-white rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50 shadow-sm ${
+                            (req.status === 'COMPLETED' || req.status === 'SYNCED')
+                              ? 'bg-blue-600 hover:bg-blue-700' // Blue for update
+                              : 'bg-green-600 hover:bg-green-700' // Green for first complete
+                          }`}
                         >
-                          <Link2 className="w-3.5 h-3.5" />
-                          {linkingId === req._id ? 'Cancel' : 'Link & Process'}
+                          {markingComplete === req._id ? (
+                            <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> {(req.status === 'COMPLETED' || req.status === 'SYNCED') ? 'Updating...' : 'Completing...'}</>
+                          ) : (
+                            <><CheckCircle2 className="w-3.5 h-3.5" /> {(req.status === 'COMPLETED' || req.status === 'SYNCED') ? 'Update Results' : 'Mark Completed'}</>
+                          )}
+                        </button>
+                      )}
+
+                      {/* Completed / Synced badge */}
+                      {req.status === 'COMPLETED' && (
+                        <span className="px-3 py-1.5 text-xs font-semibold bg-green-50 text-green-700 border border-green-200 rounded-lg flex items-center gap-1">
+                          <Check className="w-3 h-3" /> Ready to Sync in ZB SP
+                        </span>
+                      )}
+                      
+                      {req.status === 'SYNCED' && (
+                        <span className="px-3 py-1.5 text-xs font-semibold bg-gray-50 text-gray-700 border border-gray-200 rounded-lg flex items-center gap-1">
+                          <Check className="w-3 h-3" /> Synced to ZB SP
+                        </span>
+                      )}
+
+                      {/* Expand/Collapse to view submitted assessments */}
+                      {req.linkedUserId && (
+                        <button
+                          onClick={() => toggleExpand(req._id)}
+                          className="px-3 py-1.5 text-xs font-medium bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors flex items-center gap-1.5 text-gray-600"
+                        >
+                          {isExpanded ? <><ChevronUp className="w-3.5 h-3.5" /> Hide Results</> : <><ChevronDown className="w-3.5 h-3.5" /> View Results</>}
                         </button>
                       )}
                     </div>
                   </div>
                 </div>
 
-                {/* Link Panel */}
-                {linkingId === req._id && (
-                  <div className="border-t border-gray-100 bg-gray-50 p-5 space-y-4">
-                    <div className="flex items-center gap-2">
-                      <Link2 className="w-4 h-4 text-brand-red" />
-                      <p className="text-sm font-semibold text-gray-800">Link to ZB CAS Records</p>
-                    </div>
+                {/* Expandable: Read-only list of submitted assessment results */}
+                {isExpanded && (
+                  <div className="border-t border-gray-100 bg-gray-50 p-5">
+                    <p className="text-xs font-semibold text-gray-600 mb-3 flex items-center gap-1.5">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-green-600" />
+                      Submitted Assessment Results
+                    </p>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1.5">ZB CAS User *</label>
-                        <select
-                          value={linkForm.linkedUserId}
-                          onChange={e => setLinkForm(f => ({ ...f, linkedUserId: e.target.value }))}
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-brand-red focus:border-transparent"
-                        >
-                          <option value="">— Select User —</option>
-                          {casUsers.map(u => (
-                            <option key={u._id} value={u._id}>{u.name} ({u.email})</option>
-                          ))}
-                        </select>
+                    {isLoadingRes ? (
+                      <div className="flex items-center gap-2 py-4 text-sm text-gray-500">
+                        <div className="w-4 h-4 border-2 border-brand-red border-t-transparent rounded-full animate-spin" />
+                        Loading results…
                       </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1.5">ZB CAS Assessment *</label>
-                        <select
-                          value={linkForm.linkedAssessmentId}
-                          onChange={e => setLinkForm(f => ({ ...f, linkedAssessmentId: e.target.value }))}
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-brand-red focus:border-transparent"
-                        >
-                          <option value="">— Select Assessment —</option>
-                          {casAssessments.map(a => (
-                            <option key={a._id} value={a._id}>
-                              {a.competencyId?.name || 'Assessment'} — {a.status} ({new Date(a.startDate).toLocaleDateString()})
-                            </option>
-                          ))}
-                        </select>
+                    ) : results.length === 0 ? (
+                      <div className="px-3 py-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700">
+                        <Clock className="w-3.5 h-3.5 inline mr-1" />
+                        The employee hasn't submitted any assessment results yet.
                       </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1.5">Update Status</label>
-                      <select
-                        value={linkForm.status}
-                        onChange={e => setLinkForm(f => ({ ...f, status: e.target.value }))}
-                        className="w-48 border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-brand-red focus:border-transparent"
-                      >
-                        <option value="PENDING">PENDING</option>
-                        <option value="IN_PROGRESS">IN PROGRESS</option>
-                        <option value="COMPLETED">COMPLETED</option>
-                      </select>
-                    </div>
-
-                    <div className="flex gap-3 pt-1">
-                      <button
-                        onClick={() => handleLink(req._id)}
-                        disabled={saving || !linkForm.linkedUserId || !linkForm.linkedAssessmentId}
-                        className="px-5 py-2.5 text-sm font-semibold bg-brand-red text-white rounded-lg disabled:opacity-50 hover:bg-opacity-90 transition-colors flex items-center gap-2"
-                      >
-                        {saving ? (
-                          <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Saving…</>
-                        ) : (
-                          <><Check className="w-3.5 h-3.5" /> Save Link</>
-                        )}
-                      </button>
-                      <button
-                        onClick={() => setLinkingId(null)}
-                        className="px-5 py-2.5 text-sm font-semibold bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2"
-                      >
-                        <X className="w-3.5 h-3.5" /> Cancel
-                      </button>
-                    </div>
+                    ) : (
+                      <div className="border border-gray-200 rounded-xl divide-y divide-gray-100 overflow-hidden">
+                        {results.map(a => (
+                          <div key={a._id} className="flex items-center justify-between px-4 py-3 bg-white">
+                            <div>
+                              <span className="text-sm font-medium text-gray-900">{a.competencyName}</span>
+                              {a.category && <span className="text-xs text-gray-400 ml-2">{a.category}</span>}
+                            </div>
+                            <div className="flex items-center gap-3">
+                              {a.finalScore != null && (
+                                <span className="text-xs font-bold text-gray-700">Score: {a.finalScore}%</span>
+                              )}
+                              {a.level && (
+                                <span className="text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 font-medium">{a.level}</span>
+                              )}
+                              <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                                a.status === 'COMPLETED' || a.status === 'ARCHIVED'
+                                  ? 'bg-green-100 text-green-700'
+                                  : 'bg-blue-100 text-blue-700'
+                              }`}>
+                                {a.status}
+                              </span>
+                              <Check className="w-4 h-4 text-green-500" />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

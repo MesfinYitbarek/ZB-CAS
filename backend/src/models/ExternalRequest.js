@@ -58,11 +58,10 @@ const externalRequestSchema = new mongoose.Schema(
       ref: 'User',
       default: null,
     },
-    linkedAssessmentId: {
+    linkedAssessmentIds: [{
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Assessment',
-      default: null,
-    },
+    }],
 
     // ── Status tracking ────────────────────────────────────────────────────────
     status: {
