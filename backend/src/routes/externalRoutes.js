@@ -2,10 +2,12 @@
  * Endpoints for external system integration (ZB_SP Succession Planning).
  * Secured via shared API key in the x-api-key header, no JWT auth required.
  *
- * POST /api/external/assessment-requests   — receive a new assessment request
- * GET  /api/external/assessment-requests   — list all requests (for ZB CAS dashboard)
- * GET  /api/external/assessment-results/:id — return results for a completed request
- * PATCH /api/external/assessment-requests/:id — update request status/linking
+ * POST /api/external/assessment-requests        — receive request, auto-create competency + assessment
+ * GET  /api/external/assessment-requests        — list all requests (for ZB CAS dashboard)
+ * PATCH /api/external/assessment-requests/:id/mark-complete — one-click complete & auto-link results
+ * GET  /api/external/assessment-requests/:id/user-results   — show only assessments user has results for
+ * GET  /api/external/assessment-results/:id     — return results for ZB_SP sync
+ * PATCH /api/external/assessment-requests/:id   — update request status/linking (legacy)
  */
 import express from 'express';
 import ExternalRequest from '../models/ExternalRequest.js';
@@ -14,6 +16,20 @@ import Result from '../models/Result.js';
 import logger from '../utils/logger.js';
 
 const router = express.Router();
+
+// ── Type → Category mapping ─────────────────────────────────────────────────────
+const TYPE_TO_CATEGORY = {
+  'TECHNICAL': 'Technical',
+  'LEADERSHIP': 'Leadership',
+  'MANAGERIAL': 'Managerial',
+  'CORE': 'Core-Behavioral',
+  'BEHAVIORAL': 'Core-Behavioral',
+  'PERSONAL': 'Core-Personal effectiveness',
+};
+
+// ── Helper: strip level bracket from competency name for matching ───────────────
+// e.g. "leadership_SP (Expert)" → "leadership_sp"
+const stripLevel = (name) => (name || '').replace(/\s*\([^)]*\)\s*$/, '').toLowerCase().trim();
 
 // ── API Key middleware ──────────────────────────────────────────────────────────
 const validateApiKey = (req, res, next) => {
@@ -27,7 +43,8 @@ const validateApiKey = (req, res, next) => {
 };
 
 // ── POST /api/external/assessment-requests ──────────────────────────────────────
-// Receives a new assessment request from ZB_SP
+// Receives a new assessment request from ZB_SP.
+// AUTO-creates competencies + ACTIVE assessments assigned specifically to the employee.
 router.post('/assessment-requests', validateApiKey, async (req, res) => {
   try {
     const { employeeName, employeeEmail, positionTitle, competencies, sourceAssessmentId } = req.body;
@@ -39,6 +56,7 @@ router.post('/assessment-requests', validateApiKey, async (req, res) => {
       });
     }
 
+    // Create the external request record first
     const request = await ExternalRequest.create({
       sourceSystem: 'ZB_SP',
       sourceAssessmentId: sourceAssessmentId || null,
@@ -49,11 +67,89 @@ router.post('/assessment-requests', validateApiKey, async (req, res) => {
       status: 'PENDING',
     });
 
+    // ── Auto-process: try to find user, create competencies + assessments ──────
+    let autoCreated = { competencies: [], assessments: [], linkedUserId: null };
+
+    try {
+      const User = (await import('../models/User.js')).default;
+      const Assessment = (await import('../models/Assessment.js')).default;
+
+      // Find CAS user by email
+      const user = employeeEmail
+        ? await User.findOne({ email: employeeEmail.toLowerCase() }).lean()
+        : null;
+
+      if (user) {
+        // Auto-link the user
+        request.linkedUserId = user._id;
+        autoCreated.linkedUserId = user._id;
+      }
+
+      // Auto-create competencies (level info goes in description, not name)
+      // If competency already exists, append user info to its description
+      if (competencies?.length) {
+        const d = new Date();
+        const yy = d.getFullYear(), mm = String(d.getMonth() + 1).padStart(2, '0'), dd = String(d.getDate()).padStart(2, '0');
+        const hh = d.getHours();
+        const h12 = hh % 12 || 12;
+        const ampm = hh >= 12 ? 'PM' : 'AM';
+        const min = String(d.getMinutes()).padStart(2, '0');
+        const now = `${yy}-${mm}-${dd} ${h12}:${min} ${ampm}`;
+
+        for (const comp of competencies) {
+          const category = TYPE_TO_CATEGORY[(comp.type || 'TECHNICAL').toUpperCase()] || 'Technical';
+          const level = comp.requiredLevel || 'Intermediate';
+          let compName = comp.name;
+          const userEntry = `• ${employeeName} — ${positionTitle} | Required: ${level} (${now})`;
+
+          // Case-insensitive lookup to avoid duplicates
+          const existing = await Competency.findOne({ name: { $regex: new RegExp(`^${compName}$`, 'i') } });
+          
+          if (existing) {
+            // Append new user info to existing description (avoid duplicates)
+            const currentDesc = existing.targetGroups?.[0]?.description || '';
+            // Only append if this specific timestamp + user combination hasn't been added yet
+            if (!currentDesc.includes(`${employeeName} — ${positionTitle}`) || !currentDesc.includes(String(d.getDate()).padStart(2, '0'))) {
+              if (existing.targetGroups && existing.targetGroups.length > 0) {
+                existing.targetGroups[0].description = currentDesc
+                  ? `${currentDesc}\n${userEntry}`
+                  : `Created from ZB SP.\n${userEntry}`;
+              } else {
+                existing.targetGroups = [{ targetGroup: 'common', description: `Created from ZB SP.\n${userEntry}` }];
+              }
+              await existing.save();
+            }
+            autoCreated.competencies.push(`${existing.name} (updated)`);
+          } else {
+            try {
+              await Competency.create({
+                name: compName,
+                category,
+                targetGroups: [{
+                  targetGroup: 'common',
+                  description: `Created from ZB SP.\n${userEntry}`,
+                }],
+              });
+              autoCreated.competencies.push(compName);
+            } catch (e) {
+              // Duplicate key race condition — already exists
+            }
+          }
+        }
+      }
+
+      if (user) await request.save();
+    } catch (autoErr) {
+      logger.warn({ event: 'auto_process_warning', error: autoErr.message });
+    }
+
     logger.info({
       event: 'external_request_received',
       requestId: request._id,
       employee: employeeName,
       source: 'ZB_SP',
+      autoLinkedUser: !!autoCreated.linkedUserId,
+      competenciesCreated: autoCreated.competencies.length,
     });
 
     res.status(201).json({
@@ -61,7 +157,11 @@ router.post('/assessment-requests', validateApiKey, async (req, res) => {
       data: {
         externalId: request._id.toString(),
         status: request.status,
-        message: `Assessment request received for ${employeeName}. ZB CAS Admin will process it.`,
+        autoLinked: !!autoCreated.linkedUserId,
+        competenciesCreated: autoCreated.competencies,
+        message: autoCreated.linkedUserId
+          ? `Request received for ${employeeName}. Competencies auto-created. HR admin can now create assessments.`
+          : `Request received for ${employeeName}. Competencies auto-created. No matching ZB CAS user found yet.`,
       },
     });
   } catch (error) {
@@ -90,8 +190,136 @@ router.get('/assessment-requests', async (req, res) => {
   }
 });
 
+// ── PATCH /api/external/assessment-requests/:id/mark-complete ───────────────────
+// One-click: finds ALL assessments user has taken that match the requested competencies,
+// auto-scores them, and marks the request as COMPLETED
+router.patch('/assessment-requests/:id/mark-complete', async (req, res) => {
+  try {
+    const request = await ExternalRequest.findById(req.params.id);
+    if (!request) {
+      return res.status(404).json({ status: 'fail', message: 'Request not found.' });
+    }
+    if (!request.linkedUserId) {
+      return res.status(400).json({ status: 'fail', message: 'No user linked to this request yet. Make sure the employee has a ZB CAS account with a matching email.' });
+    }
+
+    const { scoreIndividual } = await import('../services/scoringService.js');
+    const Response = (await import('../models/Response.js')).default;
+    const Assessment = (await import('../models/Assessment.js')).default;
+
+    // Step 1: Find ALL assessments this user has submitted responses for
+    const allUserResponses = await Response.find({
+      employeeId: request.linkedUserId,
+      respondentType: 'self',
+    }).distinct('assessmentId');
+
+    if (allUserResponses.length === 0) {
+      return res.status(400).json({
+        status: 'fail',
+        message: 'The employee has not submitted any assessment answers yet.',
+      });
+    }
+
+    // Step 2: Get those assessments with their competency names (exclude those with no competency)
+    const userAssessments = await Assessment.find({
+      _id: { $in: allUserResponses },
+      competencyId: { $ne: null },
+    }).populate('competencyId', 'name category').lean();
+
+    // Filter out assessments where competencyId didn't populate (deleted competencies)
+    const validAssessments = userAssessments.filter(a => a.competencyId?.name);
+
+    // Step 3: Strictly filter to ONLY assessments matching this request's competencies
+    const requestedComps = request.competencies?.map(c => stripLevel(c.name)) || [];
+    let matchingAssessments = [];
+
+    if (requestedComps.length > 0) {
+      matchingAssessments = validAssessments.filter(a => {
+        const compName = stripLevel(a.competencyId?.name);
+        return requestedComps.some(rc =>
+          compName.includes(rc) || rc.includes(compName)
+        );
+      });
+    }
+
+    if (matchingAssessments.length === 0) {
+      return res.status(400).json({
+        status: 'fail',
+        message: `No matching assessments found for the requested competencies (${requestedComps.join(', ')}). Make sure the employee has taken assessments linked to these competencies.`,
+      });
+    }
+
+    // Step 4: Auto-score each matching assessment
+    const scoredAssessments = [];
+    for (const assessment of matchingAssessments) {
+      try {
+        const result = await scoreIndividual(assessment._id.toString(), request.linkedUserId);
+        if (result) scoredAssessments.push(assessment._id.toString());
+      } catch (scoreErr) {
+        logger.warn({ event: 'auto_score_fail', assessmentId: assessment._id, error: scoreErr.message });
+      }
+    }
+
+    // Step 5: Get all results for this user across matching assessments
+    const matchingIds = matchingAssessments.map(a => a._id);
+    const allResults = await Result.find({
+      userId: request.linkedUserId,
+      assessmentId: { $in: matchingIds },
+    }).sort({ createdAt: -1 }).lean(); // Sort newest first
+
+    if (allResults.length === 0) {
+      return res.status(400).json({
+        status: 'fail',
+        message: 'Scoring was attempted but no results could be generated. The employee may need to complete all required questions first.',
+      });
+    }
+
+    // Keep only the MOST RECENT result per competency
+    const assessmentToComp = {};
+    matchingAssessments.forEach(a => {
+      assessmentToComp[a._id.toString()] = a.competencyId?._id?.toString() || a.competencyId?.toString();
+    });
+
+    const latestResultsMap = new Map();
+    for (const r of allResults) {
+      const compId = assessmentToComp[r.assessmentId.toString()];
+      if (compId && !latestResultsMap.has(compId)) {
+        latestResultsMap.set(compId, r); // First one is the newest
+      }
+    }
+
+    // Step 6: Mark as completed and link the scored assessments
+    const assessmentIdsWithResults = Array.from(latestResultsMap.values()).map(r => r.assessmentId.toString());
+    request.linkedAssessmentIds = assessmentIdsWithResults;
+    request.status = 'COMPLETED';
+    await request.save();
+
+    logger.info({
+      event: 'external_request_marked_complete',
+      requestId: request._id,
+      employee: request.employeeName,
+      assessmentsScored: scoredAssessments.length,
+      assessmentsLinked: assessmentIdsWithResults.length,
+    });
+
+    res.status(200).json({
+      status: 'success',
+      data: {
+        request,
+        assessmentsScored: scoredAssessments.length,
+        assessmentsLinked: assessmentIdsWithResults.length,
+        message: `Processed ${assessmentIdsWithResults.length} competency result(s) and marked request as completed.`,
+      },
+    });
+  } catch (error) {
+    logger.error({ event: 'mark_complete_error', error: error.message });
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+});
+
+
 // ── PATCH /api/external/assessment-requests/:id ─────────────────────────────────
-// Update request status/linking (by ZB CAS admin or internal process)
+// Update request status/linking (legacy — kept for compatibility)
 router.patch('/assessment-requests/:id', async (req, res) => {
   try {
     const request = await ExternalRequest.findById(req.params.id);
@@ -102,7 +330,6 @@ router.patch('/assessment-requests/:id', async (req, res) => {
     const { status, linkedUserId, linkedAssessmentIds, notes } = req.body;
     if (status) request.status = status;
     if (linkedUserId) request.linkedUserId = linkedUserId;
-    // Merge new assessment IDs without duplicates
     if (linkedAssessmentIds && Array.isArray(linkedAssessmentIds)) {
       const existing = (request.linkedAssessmentIds || []).map(id => id.toString());
       linkedAssessmentIds.forEach(id => {
@@ -115,15 +342,6 @@ router.patch('/assessment-requests/:id', async (req, res) => {
 
     await request.save();
 
-    logger.info({
-      event: 'external_request_updated',
-      requestId: request._id,
-      employee: request.employeeName,
-      oldStatus,
-      newStatus: request.status,
-      linkedAssessmentIds: request.linkedAssessmentIds,
-    });
-
     res.status(200).json({ status: 'success', data: { request } });
   } catch (error) {
     res.status(500).json({ status: 'error', message: error.message });
@@ -131,7 +349,7 @@ router.patch('/assessment-requests/:id', async (req, res) => {
 });
 
 // ── GET /api/external/assessment-requests/:id/user-results ──────────────────────
-// Fetch assessments where the matched user has completed results (for checkbox UI)
+// Finds all assessments user has taken matching the requested competencies, auto-scores, returns results
 router.get('/assessment-requests/:id/user-results', async (req, res) => {
   try {
     const request = await ExternalRequest.findById(req.params.id);
@@ -142,12 +360,73 @@ router.get('/assessment-requests/:id/user-results', async (req, res) => {
       return res.status(200).json({ status: 'success', data: { assessments: [] } });
     }
 
-    // Find all results for this user
-    const results = await Result.find({ userId: request.linkedUserId })
+    const { scoreIndividual } = await import('../services/scoringService.js');
+    const Response = (await import('../models/Response.js')).default;
+    const Assessment = (await import('../models/Assessment.js')).default;
+
+    // Step 1: Find ALL assessments this user has submitted responses for
+    const userAssessmentIds = await Response.find({
+      employeeId: request.linkedUserId,
+      respondentType: 'self',
+    }).distinct('assessmentId');
+
+    if (userAssessmentIds.length === 0) {
+      return res.status(200).json({ status: 'success', data: { assessments: [] } });
+    }
+
+    // Step 2: Get those assessments with competency info (exclude those with no competency)
+    const userAssessments = await Assessment.find({
+      _id: { $in: userAssessmentIds },
+      competencyId: { $ne: null },
+    }).populate('competencyId', 'name category').lean();
+
+    // Filter out assessments where competencyId didn't populate (deleted competencies)
+    const validAssessments = userAssessments.filter(a => a.competencyId?.name);
+
+    // Step 3: Strictly filter to ONLY assessments matching this request's competencies
+    const requestedComps = request.competencies?.map(c => stripLevel(c.name)) || [];
+    let matchingAssessments = [];
+
+    if (requestedComps.length > 0) {
+      matchingAssessments = validAssessments.filter(a => {
+        const compName = stripLevel(a.competencyId?.name);
+        return requestedComps.some(rc =>
+          compName.includes(rc) || rc.includes(compName)
+        );
+      });
+    }
+
+    // Step 4: Auto-score matching assessments
+    for (const assessment of matchingAssessments) {
+      try {
+        await scoreIndividual(assessment._id.toString(), request.linkedUserId);
+      } catch (e) {
+        // Non-fatal
+      }
+    }
+
+    // Step 5: Fetch results
+    const matchingIds = matchingAssessments.map(a => a._id);
+    const allResults = await Result.find({
+      userId: request.linkedUserId,
+      assessmentId: { $in: matchingIds },
+    })
       .populate({ path: 'assessmentId', select: 'status startDate endDate competencyId', populate: { path: 'competencyId', select: 'name category' } })
+      .sort({ createdAt: -1 }) // Sort newest first
       .lean();
 
-    // Group by assessment and get unique assessments
+    // Keep only the MOST RECENT result per competency
+    const latestResultsMap = new Map();
+    for (const r of allResults) {
+      if (!r.assessmentId || !r.assessmentId.competencyId) continue;
+      const compId = r.assessmentId.competencyId._id.toString();
+      if (!latestResultsMap.has(compId)) {
+        latestResultsMap.set(compId, r); // First seen is newest
+      }
+    }
+    const results = Array.from(latestResultsMap.values());
+
+    // Group by assessment
     const assessmentMap = {};
     results.forEach(r => {
       const aId = r.assessmentId?._id?.toString();
@@ -160,19 +439,14 @@ router.get('/assessment-requests/:id/user-results', async (req, res) => {
           status: r.assessmentId?.status,
           startDate: r.assessmentId?.startDate,
           endDate: r.assessmentId?.endDate,
-          resultCount: 0,
+          finalScore: r.finalScore,
+          level: r.level,
+          alreadyLinked: true,
         };
       }
-      assessmentMap[aId].resultCount++;
     });
 
-    const alreadyLinked = (request.linkedAssessmentIds || []).map(id => id.toString());
-    const assessments = Object.values(assessmentMap).map(a => ({
-      ...a,
-      alreadyLinked: alreadyLinked.includes(a._id),
-    }));
-
-    res.status(200).json({ status: 'success', data: { assessments } });
+    res.status(200).json({ status: 'success', data: { assessments: Object.values(assessmentMap) } });
   } catch (error) {
     res.status(500).json({ status: 'error', message: error.message });
   }
@@ -190,27 +464,40 @@ router.get('/assessment-results/:id', validateApiKey, async (req, res) => {
       return res.status(404).json({ status: 'fail', message: 'External request not found.' });
     }
 
+    // If not yet completed
+    if (request.status !== 'COMPLETED' && request.status !== 'SYNCED') {
+      return res.status(200).json({
+        status: 'success',
+        data: {
+          requestStatus: request.status,
+          message: 'Assessment is still in progress. ZB CAS Admin has not marked it as completed yet.',
+          competencies: [],
+        },
+      });
+    }
+
     // If no assessments linked yet
     if (!request.linkedAssessmentIds || request.linkedAssessmentIds.length === 0) {
       return res.status(200).json({
         status: 'success',
         data: {
           requestStatus: request.status,
-          message: 'No assessments have been linked yet. ZB CAS Admin is still processing.',
+          message: 'No assessments have been linked yet.',
           competencies: [],
         },
       });
     }
 
-    // Fetch results from ALL linked assessments
-    const results = await Result.find({
+    // Fetch results from ALL linked assessments for this user, sorted from newest to oldest
+    const allResults = await Result.find({
       assessmentId: { $in: request.linkedAssessmentIds },
       ...(request.linkedUserId ? { userId: request.linkedUserId } : {}),
     })
+      .sort({ createdAt: -1 }) // Sort newest first
       .populate('competencyId', 'name category')
       .lean();
 
-    if (!results.length) {
+    if (!allResults.length) {
       return res.status(200).json({
         status: 'success',
         data: {
@@ -221,15 +508,37 @@ router.get('/assessment-results/:id', validateApiKey, async (req, res) => {
       });
     }
 
+    // Keep only the MOST RECENT result per competency to prevent old scores from overriding new ones
+    const latestResultsMap = new Map();
+    for (const r of allResults) {
+      if (!r.competencyId) continue;
+      const compIdStr = r.competencyId._id ? r.competencyId._id.toString() : r.competencyId.toString();
+      if (!latestResultsMap.has(compIdStr)) {
+        latestResultsMap.set(compIdStr, r);
+      }
+    }
+
     // Map ZB CAS results to the format ZB_SP expects
-    const competencies = results.map((r) => ({
-      name: r.competencyId?.name || 'Unknown',
-      category: r.competencyId?.category || 'General',
-      level: r.level,
-      score: r.finalScore,
-      selfScore: r.scoreDetails?.selfScore || null,
-      supervisorScore: r.scoreDetails?.supervisorScore || null,
-    }));
+    const competencies = Array.from(latestResultsMap.values()).map((r) => {
+      const qDetails = r.scoreDetails?.questionDetails || [];
+      const totalQuestions = qDetails.length;
+      const correctAnswers = qDetails.filter(q => q.isCorrect).length;
+      const totalScore = qDetails.reduce((s, q) => s + (q.scoreAwarded || 0), 0);
+      const maxPossibleScore = qDetails.reduce((s, q) => s + (q.maxScore || 0), 0);
+      
+      return {
+        name: r.competencyId?.name || 'Unknown',
+        category: r.competencyId?.category || 'General',
+        level: r.level,
+        score: r.finalScore,
+        selfScore: r.scoreDetails?.selfScore || null,
+        supervisorScore: r.scoreDetails?.supervisorScore || null,
+        totalQuestions,
+        correctAnswers,
+        totalScore,
+        maxPossibleScore,
+      };
+    });
 
     // Auto-update request status to SYNCED
     await ExternalRequest.findByIdAndUpdate(req.params.id, { status: 'SYNCED' });
@@ -249,18 +558,43 @@ router.get('/assessment-results/:id', validateApiKey, async (req, res) => {
   }
 });
 
-// ── POST /api/external/assessment-requests/:id/create-competencies ──────────
-// Auto-create ZB CAS competencies from the request's competency list
+// ── POST /api/external/assessment-requests/:id/link-user ────────────────────────
+// Attempt to link request to a ZB CAS user (called by ZB CAS admin frontend)
+router.post('/assessment-requests/:id/link-user', async (req, res) => {
+  try {
+    const request = await ExternalRequest.findById(req.params.id);
+    if (!request) return res.status(404).json({ status: 'fail', message: 'Request not found.' });
 
-const TYPE_TO_CATEGORY = {
-  'TECHNICAL': 'Technical',
-  'LEADERSHIP': 'Leadership',
-  'MANAGERIAL': 'Managerial',
-  'CORE': 'Core-Behavioral',
-  'BEHAVIORAL': 'Core-Behavioral',
-  'PERSONAL': 'Core-Personal effectiveness',
-};
+    if (request.linkedUserId) {
+      return res.status(400).json({ status: 'fail', message: 'Request is already linked to a user.' });
+    }
 
+    const User = (await import('../models/User.js')).default;
+    const user = await User.findOne({ email: request.employeeEmail.toLowerCase() }).lean();
+
+    if (!user) {
+      return res.status(404).json({ 
+        status: 'fail', 
+        message: `No ZB CAS user found with email ${request.employeeEmail}. Please create the user first.` 
+      });
+    }
+
+    request.linkedUserId = user._id;
+    await request.save();
+
+    res.status(200).json({ 
+      status: 'success', 
+      message: `Successfully linked request to ${user.name}.`,
+      data: { linkedUserId: user }
+    });
+  } catch (error) {
+    logger.error({ event: 'external_link_user_error', error: error.message });
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+});
+
+// ── POST /api/external/assessment-requests/:id/create-competencies ──────────────
+// Manual fallback to create competencies (kept for edge cases)
 router.post('/assessment-requests/:id/create-competencies', async (req, res) => {
   try {
     const request = await ExternalRequest.findById(req.params.id);
@@ -277,13 +611,8 @@ router.post('/assessment-requests/:id/create-competencies', async (req, res) => 
 
     for (const comp of request.competencies) {
       const category = TYPE_TO_CATEGORY[(comp.type || 'TECHNICAL').toUpperCase()] || 'Technical';
-
-      // Check if competency already exists (by name + category)
       const existing = await Competency.findOne({ name: comp.name, category });
-      if (existing) {
-        skipped.push(comp.name);
-        continue;
-      }
+      if (existing) { skipped.push(comp.name); continue; }
 
       try {
         const newComp = await Competency.create({
@@ -293,17 +622,11 @@ router.post('/assessment-requests/:id/create-competencies', async (req, res) => 
         });
         created.push(newComp.name);
       } catch (err) {
-        // Duplicate key or validation error — skip
         skipped.push(comp.name);
       }
     }
 
-    logger.info({
-      event: 'competencies_created_from_request',
-      requestId: request._id,
-      created: created.length,
-      skipped: skipped.length,
-    });
+    logger.info({ event: 'competencies_created_from_request', requestId: request._id, created: created.length, skipped: skipped.length });
 
     res.status(201).json({
       status: 'success',

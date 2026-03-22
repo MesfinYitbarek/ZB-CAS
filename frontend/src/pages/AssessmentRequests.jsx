@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Inbox, Link2, Check, Clock, RefreshCw, AlertCircle, X, Layers } from 'lucide-react';
+import { Inbox, Link2, Check, Clock, RefreshCw, AlertCircle, CheckCircle2, ChevronDown, ChevronUp, X } from 'lucide-react';
 import api from '../utils/api';
 import { useToast } from '../context/ToastContext';
 
@@ -24,14 +24,10 @@ export default function AssessmentRequests() {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
-  const [linkingId, setLinkingId] = useState(null);
-  const [linkStatus, setLinkStatus] = useState('IN_PROGRESS');
-  const [matchedUser, setMatchedUser] = useState(null);
-  const [userAssessments, setUserAssessments] = useState([]);
-  const [selectedAssessmentIds, setSelectedAssessmentIds] = useState([]);
-  const [saving, setSaving] = useState(false);
-  const [creatingCompsId, setCreatingCompsId] = useState(null);
-  const [loadingPanel, setLoadingPanel] = useState(false);
+  const [expandedId, setExpandedId] = useState(null);
+  const [expandedResults, setExpandedResults] = useState({});
+  const [loadingResults, setLoadingResults] = useState({});
+  const [markingComplete, setMarkingComplete] = useState(null);
 
   const loadRequests = useCallback(async () => {
     setLoading(true);
@@ -48,74 +44,54 @@ export default function AssessmentRequests() {
 
   useEffect(() => { loadRequests(); }, [loadRequests]);
 
-  const openLinkPanel = async (reqId) => {
-    setLinkingId(reqId);
-    setMatchedUser(null);
-    setUserAssessments([]);
-    setSelectedAssessmentIds([]);
-    setLinkStatus('IN_PROGRESS');
-    setLoadingPanel(true);
-    try {
-      const req = requests.find(r => r._id === reqId);
-
-      // Step 1: Auto-match user by email
-      const usersRes = await api.get('/users?limit=200');
-      const allUsers = usersRes.data?.data?.users || [];
-      const matched = req?.employeeEmail
-        ? allUsers.find(u => u.email?.toLowerCase() === req.employeeEmail.toLowerCase())
-        : null;
-
-      setMatchedUser(matched || null);
-
-      if (matched) {
-        // Auto-link the user first if not already linked
-        if (!req.linkedUserId) {
-          await api.patch(`/external/assessment-requests/${reqId}`, { linkedUserId: matched._id });
-        }
-
-        // Step 2: Fetch assessments where user has completed results
-        const resultsRes = await api.get(`/external/assessment-requests/${reqId}/user-results`);
-        setUserAssessments(resultsRes.data?.data?.assessments || []);
-      }
-    } catch (err) {
-      show('Failed to load data.', 'error');
-    } finally {
-      setLoadingPanel(false);
-    }
-  };
-
-  const handleLink = async (reqId) => {
-    if (selectedAssessmentIds.length === 0) {
-      show('Select at least one assessment to link.', 'error');
+  const toggleExpand = async (reqId) => {
+    if (expandedId === reqId) {
+      setExpandedId(null);
       return;
     }
-    setSaving(true);
-    try {
-      await api.patch(`/external/assessment-requests/${reqId}`, {
-        linkedAssessmentIds: selectedAssessmentIds,
-        status: linkStatus,
-      });
-      show('Request linked successfully!', 'success');
-      setLinkingId(null);
-      loadRequests();
-    } catch (err) {
-      show('Failed to link: ' + (err.response?.data?.message || err.message), 'error');
-    } finally {
-      setSaving(false);
+    setExpandedId(reqId);
+
+    // Fetch read-only results for this request if not already loaded
+    if (!expandedResults[reqId]) {
+      setLoadingResults(prev => ({ ...prev, [reqId]: true }));
+      try {
+        const res = await api.get(`/external/assessment-requests/${reqId}/user-results`);
+        setExpandedResults(prev => ({ ...prev, [reqId]: res.data?.data?.assessments || [] }));
+      } catch {
+        setExpandedResults(prev => ({ ...prev, [reqId]: [] }));
+      } finally {
+        setLoadingResults(prev => ({ ...prev, [reqId]: false }));
+      }
     }
   };
 
-  const handleCreateCompetencies = async (reqId) => {
-    setCreatingCompsId(reqId);
+  const handleMarkComplete = async (reqId) => {
+    setMarkingComplete(reqId);
     try {
-      const { data } = await api.post(`/external/assessment-requests/${reqId}/create-competencies`);
-      const result = data?.data;
-      show(result?.message || 'Competencies created!', 'success');
+      const { data } = await api.patch(`/external/assessment-requests/${reqId}/mark-complete`);
+      show(data?.data?.message || 'Request marked as completed!', 'success');
+      setExpandedId(null);
+      setExpandedResults(prev => { const n = { ...prev }; delete n[reqId]; return n; });
       loadRequests();
     } catch (err) {
-      show('Failed to create competencies: ' + (err.response?.data?.message || err.message), 'error');
+      show(err.response?.data?.message || 'Failed to mark as completed.', 'error');
     } finally {
-      setCreatingCompsId(null);
+      setMarkingComplete(null);
+    }
+  };
+
+  const [linkingUser, setLinkingUser] = useState(null);
+
+  const handleLinkUser = async (reqId) => {
+    setLinkingUser(reqId);
+    try {
+      const { data } = await api.post(`/external/assessment-requests/${reqId}/link-user`);
+      show(data.message || 'User linked successfully!', 'success');
+      loadRequests();
+    } catch (err) {
+      show(err.response?.data?.message || 'Failed to link user.', 'error');
+    } finally {
+      setLinkingUser(null);
     }
   };
 
@@ -178,6 +154,11 @@ export default function AssessmentRequests() {
         ) : (
           requests.map(req => {
             const SIcon = STATUS_ICON[req.status] || Clock;
+            const isExpanded = expandedId === req._id;
+            const results = expandedResults[req._id] || [];
+            const isLoadingRes = loadingResults[req._id];
+            const canMarkComplete = req.status !== 'SYNCED' && req.status !== 'COMPLETED';
+
             return (
               <div key={req._id} className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden hover:shadow-md transition-all">
                 <div className="p-5">
@@ -206,14 +187,37 @@ export default function AssessmentRequests() {
                         </div>
                       )}
 
-                      {/* Linked info */}
+                      {/* Linked user info */}
                       {req.linkedUserId && (
                         <div className="mt-2 flex items-center gap-2 text-xs text-green-700 bg-green-50 px-2.5 py-1.5 rounded-lg inline-flex border border-green-100">
                           <Link2 className="w-3 h-3" />
                           Linked to: {req.linkedUserId?.name || 'User'} ({req.linkedUserId?.email || 'N/A'})
                           {req.linkedAssessmentIds?.length > 0 && (
-                            <span className="ml-1 font-bold">· {req.linkedAssessmentIds.length} assessment{req.linkedAssessmentIds.length !== 1 ? 's' : ''}</span>
+                            <span className="ml-1 font-bold">· {req.linkedAssessmentIds.length} assessment{req.linkedAssessmentIds.length !== 1 ? 's' : ''} assigned</span>
                           )}
+                        </div>
+                      )}
+
+                      {/* Warning if no linked user */}
+                      {!req.linkedUserId && (
+                        <div className="mt-2 flex items-center justify-between gap-4 text-xs text-amber-700 bg-amber-50 px-3 py-2 rounded-lg border border-amber-100">
+                          <div className="flex items-center gap-2">
+                            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                            <span>
+                              No matching ZB CAS user found for <strong className="ml-1">{req.employeeEmail}</strong>. Create the user first.
+                            </span>
+                          </div>
+                          <button
+                            onClick={() => handleLinkUser(req._id)}
+                            disabled={linkingUser === req._id}
+                            className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-md font-medium transition-colors disabled:opacity-50 flex items-center gap-1.5 flex-shrink-0 shadow-sm"
+                          >
+                            {linkingUser === req._id ? (
+                              <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Linking...</>
+                            ) : (
+                              <><Link2 className="w-3.5 h-3.5" /> Link User</>
+                            )}
+                          </button>
                         </div>
                       )}
                     </div>
@@ -223,169 +227,97 @@ export default function AssessmentRequests() {
                       <span className="text-xs text-gray-400">
                         {new Date(req.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                       </span>
-                      {req.competencies?.length > 0 && (
+
+                      {/* Mark Completed / Update Results button */}
+                      {req.linkedUserId && (
                         <button
-                          onClick={() => handleCreateCompetencies(req._id)}
-                          disabled={creatingCompsId === req._id}
-                          className="px-4 py-2 text-xs font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1.5 disabled:opacity-50 shadow-sm"
+                          onClick={() => handleMarkComplete(req._id)}
+                          disabled={markingComplete === req._id}
+                          className={`px-4 py-2 text-xs font-semibold text-white rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50 shadow-sm ${
+                            (req.status === 'COMPLETED' || req.status === 'SYNCED')
+                              ? 'bg-blue-600 hover:bg-blue-700' // Blue for update
+                              : 'bg-green-600 hover:bg-green-700' // Green for first complete
+                          }`}
                         >
-                          {creatingCompsId === req._id ? (
-                            <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Creating…</>
+                          {markingComplete === req._id ? (
+                            <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> {(req.status === 'COMPLETED' || req.status === 'SYNCED') ? 'Updating...' : 'Completing...'}</>
                           ) : (
-                            <><Layers className="w-3.5 h-3.5" /> Create Competencies</>
+                            <><CheckCircle2 className="w-3.5 h-3.5" /> {(req.status === 'COMPLETED' || req.status === 'SYNCED') ? 'Update Results' : 'Mark Completed'}</>
                           )}
                         </button>
                       )}
-                      {req.status !== 'SYNCED' && (
+
+                      {/* Completed / Synced badge */}
+                      {req.status === 'COMPLETED' && (
+                        <span className="px-3 py-1.5 text-xs font-semibold bg-green-50 text-green-700 border border-green-200 rounded-lg flex items-center gap-1">
+                          <Check className="w-3 h-3" /> Ready to Sync in ZB SP
+                        </span>
+                      )}
+                      
+                      {req.status === 'SYNCED' && (
+                        <span className="px-3 py-1.5 text-xs font-semibold bg-gray-50 text-gray-700 border border-gray-200 rounded-lg flex items-center gap-1">
+                          <Check className="w-3 h-3" /> Synced to ZB SP
+                        </span>
+                      )}
+
+                      {/* Expand/Collapse to view submitted assessments */}
+                      {req.linkedUserId && (
                         <button
-                          onClick={() => linkingId === req._id ? setLinkingId(null) : openLinkPanel(req._id)}
-                          className="px-4 py-2 text-xs font-semibold bg-brand-red text-white rounded-lg hover:bg-opacity-90 transition-colors flex items-center gap-1.5"
+                          onClick={() => toggleExpand(req._id)}
+                          className="px-3 py-1.5 text-xs font-medium bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors flex items-center gap-1.5 text-gray-600"
                         >
-                          <Link2 className="w-3.5 h-3.5" />
-                          {linkingId === req._id ? 'Cancel' : 'Link & Process'}
+                          {isExpanded ? <><ChevronUp className="w-3.5 h-3.5" /> Hide Results</> : <><ChevronDown className="w-3.5 h-3.5" /> View Results</>}
                         </button>
                       )}
                     </div>
                   </div>
                 </div>
 
-                {/* Link Panel */}
-                {linkingId === req._id && (
-                  <div className="border-t border-gray-100 bg-gray-50 p-5 space-y-4">
-                    <div className="flex items-center gap-2">
-                      <Link2 className="w-4 h-4 text-brand-red" />
-                      <p className="text-sm font-semibold text-gray-800">
-                        Link: {req.employeeName} — {req.competencies?.map(c => c.name).join(', ') || 'Assessment'}
-                      </p>
-                    </div>
+                {/* Expandable: Read-only list of submitted assessment results */}
+                {isExpanded && (
+                  <div className="border-t border-gray-100 bg-gray-50 p-5">
+                    <p className="text-xs font-semibold text-gray-600 mb-3 flex items-center gap-1.5">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-green-600" />
+                      Submitted Assessment Results
+                    </p>
 
-                    {loadingPanel ? (
-                      <div className="flex items-center justify-center py-6">
-                        <div className="w-6 h-6 border-3 border-brand-red border-t-transparent rounded-full animate-spin" />
-                        <span className="ml-2 text-sm text-gray-500">Loading user data…</span>
+                    {isLoadingRes ? (
+                      <div className="flex items-center gap-2 py-4 text-sm text-gray-500">
+                        <div className="w-4 h-4 border-2 border-brand-red border-t-transparent rounded-full animate-spin" />
+                        Loading results…
+                      </div>
+                    ) : results.length === 0 ? (
+                      <div className="px-3 py-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700">
+                        <Clock className="w-3.5 h-3.5 inline mr-1" />
+                        The employee hasn't submitted any assessment results yet.
                       </div>
                     ) : (
-                      <>
-                        {/* Matched User */}
-                        <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1.5">Matched ZB CAS User</label>
-                          {matchedUser ? (
-                            <div className="flex items-center gap-2 px-3 py-2.5 bg-green-50 border border-green-200 rounded-lg">
-                              <Check className="w-4 h-4 text-green-600 flex-shrink-0" />
-                              <span className="text-sm font-medium text-green-800">{matchedUser.name}</span>
-                              <span className="text-xs text-green-600">({matchedUser.email})</span>
-                            </div>
-                          ) : (
-                            <div className="px-3 py-2.5 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600">
-                              <AlertCircle className="w-3.5 h-3.5 inline mr-1" />
-                              No matching user found for <strong>{req.employeeEmail}</strong>. Create the user in ZB CAS first.
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Completed Assessments (Checkboxes) */}
-                        {matchedUser && (
-                          <div>
-                            <label className="block text-xs font-medium text-gray-600 mb-1.5">
-                              Completed Assessments ({userAssessments.length})
-                            </label>
-                            {userAssessments.length === 0 ? (
-                              <div className="px-3 py-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700">
-                                <Clock className="w-3.5 h-3.5 inline mr-1" />
-                                No completed assessments yet. The user hasn't finished any assessments.
-                              </div>
-                            ) : (
-                              <div className="border border-gray-200 rounded-xl divide-y divide-gray-100 overflow-hidden">
-                                {userAssessments.map(a => {
-                                  const isLinked = a.alreadyLinked;
-                                  const isSelected = selectedAssessmentIds.includes(a._id);
-                                  return (
-                                    <label
-                                      key={a._id}
-                                      className={`flex items-center gap-3 px-4 py-3 transition-colors cursor-pointer ${
-                                        isLinked ? 'bg-gray-50 opacity-60 cursor-default' : isSelected ? 'bg-blue-50' : 'hover:bg-gray-50'
-                                      }`}
-                                    >
-                                      <input
-                                        type="checkbox"
-                                        checked={isLinked || isSelected}
-                                        disabled={isLinked}
-                                        onChange={(e) => {
-                                          if (isLinked) return;
-                                          setSelectedAssessmentIds(prev =>
-                                            e.target.checked
-                                              ? [...prev, a._id]
-                                              : prev.filter(id => id !== a._id)
-                                          );
-                                        }}
-                                        className="rounded text-brand-red focus:ring-brand-red w-4 h-4"
-                                      />
-                                      <div className="flex-1 min-w-0">
-                                        <span className="text-sm font-medium text-gray-900">{a.competencyName}</span>
-                                        {a.category && (
-                                          <span className="text-xs text-gray-400 ml-2">{a.category}</span>
-                                        )}
-                                      </div>
-                                      <div className="flex items-center gap-2 flex-shrink-0">
-                                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                                          a.status === 'COMPLETED' || a.status === 'ARCHIVED'
-                                            ? 'bg-green-100 text-green-700'
-                                            : 'bg-blue-100 text-blue-700'
-                                        }`}>
-                                          {a.status}
-                                        </span>
-                                        {isLinked && (
-                                          <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-gray-200 text-gray-500">
-                                            ✓ Sent
-                                          </span>
-                                        )}
-                                      </div>
-                                    </label>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Status + Actions */}
-                        {matchedUser && userAssessments.length > 0 && (
-                          <>
+                      <div className="border border-gray-200 rounded-xl divide-y divide-gray-100 overflow-hidden">
+                        {results.map(a => (
+                          <div key={a._id} className="flex items-center justify-between px-4 py-3 bg-white">
                             <div>
-                              <label className="block text-xs font-medium text-gray-600 mb-1.5">Update Status</label>
-                              <select
-                                value={linkStatus}
-                                onChange={e => setLinkStatus(e.target.value)}
-                                className="w-48 border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-brand-red focus:border-transparent"
-                              >
-                                <option value="PENDING">PENDING</option>
-                                <option value="IN_PROGRESS">IN PROGRESS</option>
-                                <option value="COMPLETED">COMPLETED</option>
-                              </select>
+                              <span className="text-sm font-medium text-gray-900">{a.competencyName}</span>
+                              {a.category && <span className="text-xs text-gray-400 ml-2">{a.category}</span>}
                             </div>
-
-                            <div className="flex gap-3 pt-1">
-                              <button
-                                onClick={() => handleLink(req._id)}
-                                disabled={saving || selectedAssessmentIds.length === 0}
-                                className="px-5 py-2.5 text-sm font-semibold bg-brand-red text-white rounded-lg disabled:opacity-50 hover:bg-opacity-90 transition-colors flex items-center gap-2"
-                              >
-                                {saving ? (
-                                  <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Saving…</>
-                                ) : (
-                                  <><Check className="w-3.5 h-3.5" /> Link {selectedAssessmentIds.length} Assessment{selectedAssessmentIds.length !== 1 ? 's' : ''}</>
-                                )}
-                              </button>
-                              <button
-                                onClick={() => setLinkingId(null)}
-                                className="px-5 py-2.5 text-sm font-semibold bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2"
-                              >
-                                <X className="w-3.5 h-3.5" /> Cancel
-                              </button>
+                            <div className="flex items-center gap-3">
+                              {a.finalScore != null && (
+                                <span className="text-xs font-bold text-gray-700">Score: {a.finalScore}%</span>
+                              )}
+                              {a.level && (
+                                <span className="text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 font-medium">{a.level}</span>
+                              )}
+                              <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                                a.status === 'COMPLETED' || a.status === 'ARCHIVED'
+                                  ? 'bg-green-100 text-green-700'
+                                  : 'bg-blue-100 text-blue-700'
+                              }`}>
+                                {a.status}
+                              </span>
+                              <Check className="w-4 h-4 text-green-500" />
                             </div>
-                          </>
-                        )}
-                      </>
+                          </div>
+                        ))}
+                      </div>
                     )}
                   </div>
                 )}
