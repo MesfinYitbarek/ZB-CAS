@@ -92,14 +92,14 @@ export const submitAssessment = asyncHandler(async (req, res, next) => {
   const assessment = await validateAccess(assessmentId, req.user.id, employeeId, 'self');
 
   // Check if all questions are answered
-  const responseCount = await Response.countDocuments({
-    assessmentId,
-    employeeId,
-    respondentType: 'self',
-  });
-  if (responseCount < assessment.questionIds.length) {
-    return next(new AppError('Please answer all questions before submitting.', 400));
-  }
+  // const responseCount = await Response.countDocuments({
+  //   assessmentId,
+  //   employeeId,
+  //   respondentType: 'self',
+  // });
+  // if (responseCount < assessment.questionIds.length) {
+  //   return next(new AppError('Please answer all questions before submitting.', 400));
+  // }
 
   // Mark all responses as submitted
   const now = new Date();
