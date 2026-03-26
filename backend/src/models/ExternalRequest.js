@@ -49,6 +49,11 @@ const externalRequestSchema = new mongoose.Schema(
           enum: ['Basic', 'Intermediate', 'Advanced', 'Expert'], 
           default: 'Intermediate' 
         },
+        targetGroup: {
+          type: String,
+          enum: ['MANAGERIAL', 'NON_MANAGERIAL', 'COMMON'],
+          default: 'COMMON'
+        }
       },
     ],
 

@@ -100,33 +100,42 @@ router.post('/assessment-requests', validateApiKey, async (req, res) => {
           const category = TYPE_TO_CATEGORY[(comp.type || 'TECHNICAL').toUpperCase()] || 'Technical';
           const level = comp.requiredLevel || 'Intermediate';
           let compName = comp.name;
-          const userEntry = `• ${employeeName} — ${positionTitle} | Required: ${level} (${now})`;
+          // IMPORTANT: map MANAGERIAL -> managerial, NON_MANAGERIAL -> non-managerial
+          const targetGroup = (comp.targetGroup || 'COMMON').toLowerCase().replace(/_/g, '-');
+          const displayGroup = (comp.targetGroup || 'COMMON').replace(/_/g, ' ');
+          const userEntry = `• ${employeeName} — ${positionTitle} | Target Group: ${displayGroup} (${now})`;
 
           // Case-insensitive lookup to avoid duplicates
           const existing = await Competency.findOne({ name: { $regex: new RegExp(`^${compName}$`, 'i') } });
-          
+
           if (existing) {
-            // Append new user info to existing description (avoid duplicates)
-            const currentDesc = existing.targetGroups?.[0]?.description || '';
-            // Only append if this specific timestamp + user combination hasn't been added yet
-            if (!currentDesc.includes(`${employeeName} — ${positionTitle}`) || !currentDesc.includes(String(d.getDate()).padStart(2, '0'))) {
-              if (existing.targetGroups && existing.targetGroups.length > 0) {
-                existing.targetGroups[0].description = currentDesc
+            // Check if this specific target group already exists on this competency
+            const tgIndex = existing.targetGroups?.findIndex(t => t.targetGroup === targetGroup);
+
+            if (tgIndex !== -1 && tgIndex !== undefined && existing.targetGroups) {
+              // Target group exists, append to its description
+              const currentDesc = existing.targetGroups[tgIndex].description || '';
+              if (!currentDesc.includes(`${employeeName} — ${positionTitle}`) || !currentDesc.includes(String(d.getDate()).padStart(2, '0'))) {
+                existing.targetGroups[tgIndex].description = currentDesc
                   ? `${currentDesc}\n${userEntry}`
                   : `Created from ZB SP.\n${userEntry}`;
-              } else {
-                existing.targetGroups = [{ targetGroup: 'common', description: `Created from ZB SP.\n${userEntry}` }];
+                await existing.save();
               }
+            } else {
+              // Target group doesn't exist on this competency, add it
+              if (!existing.targetGroups) existing.targetGroups = [];
+              existing.targetGroups.push({ targetGroup, description: `Created from ZB SP.\n${userEntry}` });
               await existing.save();
             }
             autoCreated.competencies.push(`${existing.name} (updated)`);
           } else {
+            // Competency completely brand new
             try {
               await Competency.create({
                 name: compName,
                 category,
                 targetGroups: [{
-                  targetGroup: 'common',
+                  targetGroup,
                   description: `Created from ZB SP.\n${userEntry}`,
                 }],
               });
@@ -525,7 +534,7 @@ router.get('/assessment-results/:id', validateApiKey, async (req, res) => {
       const correctAnswers = qDetails.filter(q => q.isCorrect).length;
       const totalScore = qDetails.reduce((s, q) => s + (q.scoreAwarded || 0), 0);
       const maxPossibleScore = qDetails.reduce((s, q) => s + (q.maxScore || 0), 0);
-      
+
       return {
         name: r.competencyId?.name || 'Unknown',
         category: r.competencyId?.category || 'General',
@@ -573,17 +582,17 @@ router.post('/assessment-requests/:id/link-user', async (req, res) => {
     const user = await User.findOne({ email: request.employeeEmail.toLowerCase() }).lean();
 
     if (!user) {
-      return res.status(404).json({ 
-        status: 'fail', 
-        message: `No ZB CAS user found with email ${request.employeeEmail}. Please create the user first.` 
+      return res.status(404).json({
+        status: 'fail',
+        message: `No ZB CAS user found with email ${request.employeeEmail}. Please create the user first.`
       });
     }
 
     request.linkedUserId = user._id;
     await request.save();
 
-    res.status(200).json({ 
-      status: 'success', 
+    res.status(200).json({
+      status: 'success',
       message: `Successfully linked request to ${user.name}.`,
       data: { linkedUserId: user }
     });
@@ -618,7 +627,10 @@ router.post('/assessment-requests/:id/create-competencies', async (req, res) => 
         const newComp = await Competency.create({
           name: comp.name,
           category,
-          targetGroups: [{ targetGroup: 'common', description: `Auto-created from ZB SP request for ${request.positionTitle}` }],
+          targetGroups: [{
+            targetGroup: (comp.targetGroup || 'COMMON').toLowerCase().replace(/_/g, '-'),
+            description: `Auto-created from ZB SP request for ${request.positionTitle}`
+          }],
         });
         created.push(newComp.name);
       } catch (err) {
@@ -638,6 +650,26 @@ router.post('/assessment-requests/:id/create-competencies', async (req, res) => 
     });
   } catch (error) {
     logger.error({ event: 'create_competencies_error', error: error.message });
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+});
+
+// ── DELETE /api/external/assessment-requests/:id ────────────────────────────────
+// Delete an external request (called by ZB CAS admin frontend)
+router.delete('/assessment-requests/:id', async (req, res) => {
+  try {
+    const request = await ExternalRequest.findById(req.params.id);
+    if (!request) {
+      return res.status(404).json({ status: 'fail', message: 'Request not found.' });
+    }
+
+    await ExternalRequest.findByIdAndDelete(req.params.id);
+
+    logger.info({ event: 'external_request_deleted', requestId: req.params.id });
+
+    res.status(200).json({ status: 'success', message: 'Assessment request deleted successfully.' });
+  } catch (error) {
+    logger.error({ event: 'delete_request_error', error: error.message });
     res.status(500).json({ status: 'error', message: error.message });
   }
 });
