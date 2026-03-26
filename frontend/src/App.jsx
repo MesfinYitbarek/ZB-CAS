@@ -257,7 +257,7 @@ export default function App() {
         <Route
           path="/assessments"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute allowedRoles={['HR_ADMIN', 'EMPLOYEE']}>
               <AppShell><PageSuspense><Assessments /></PageSuspense></AppShell>
             </ProtectedRoute>
           }
@@ -284,7 +284,7 @@ export default function App() {
         <Route
           path="/results"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute allowedRoles={['HR_ADMIN', 'EMPLOYEE']}>
               <AppShell><PageSuspense><Results /></PageSuspense></AppShell>
             </ProtectedRoute>
           }
