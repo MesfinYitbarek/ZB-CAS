@@ -311,6 +311,28 @@ router.patch('/assessment-requests/:id/mark-complete', async (req, res) => {
       assessmentsLinked: assessmentIdsWithResults.length,
     });
 
+    // Fire webhook to ZB SP to generate system emails (ZB SP handles the Nodemailer logic)
+    try {
+      const ZB_SP_URL = process.env.ZB_SP_URL || 'http://localhost:5001';
+      const ZB_SP_API_KEY = process.env.ZB_SP_API_KEY || 'zb-integration-key-2026';
+      await fetch(`${ZB_SP_URL}/api/assessments/webhook/completed`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': ZB_SP_API_KEY
+        },
+        body: JSON.stringify({
+          externalId: request._id,
+          employeeName: request.employeeName,
+          positionTitle: request.positionTitle,
+          event: 'MARKED_COMPLETE'
+        })
+      });
+    } catch (whErr) {
+      logger.error({ event: 'webhook_dispatch_error', error: whErr.message });
+      // We don't fail the CAS request if the webhook to SP fails
+    }
+
     res.status(200).json({
       status: 'success',
       data: {
@@ -350,6 +372,29 @@ router.patch('/assessment-requests/:id', async (req, res) => {
     if (notes !== undefined) request.notes = notes;
 
     await request.save();
+
+    // Fire webhook to ZB SP if it was marked as completed via legacy patch route
+    if (status === 'COMPLETED') {
+      try {
+        const ZB_SP_URL = process.env.ZB_SP_URL || 'http://localhost:5001';
+        const ZB_SP_API_KEY = process.env.ZB_SP_API_KEY || 'zb-integration-key-2026';
+        await fetch(`${ZB_SP_URL}/api/assessments/webhook/completed`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': ZB_SP_API_KEY
+          },
+          body: JSON.stringify({
+            externalId: request._id,
+            employeeName: request.employeeName,
+            positionTitle: request.positionTitle,
+            event: 'RESULTS_UPDATED'
+          })
+        });
+      } catch (whErr) {
+        logger.error({ event: 'webhook_dispatch_error', error: whErr.message });
+      }
+    }
 
     res.status(200).json({ status: 'success', data: { request } });
   } catch (error) {
