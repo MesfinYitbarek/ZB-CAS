@@ -42,8 +42,8 @@ const NAV_ITEMS = [
   // ✅ Activity Log moved to VERY BOTTOM
   // { icon: Activity,   label: 'Activity Log',   path: '/activity-log',   roles: ['HR_ADMIN'] },
 
-  // ── User Manual  ───────────────────────────────────────────
-  { icon: BookMarked, label: 'User Manual', path: '/manual', roles: ['EMPLOYEE', 'HR_ADMIN'] },
+  // ── User Manual (all roles) ───────────────────────────────────────────
+  { icon: BookMarked, label: 'User Manual', path: '/manual', roles: null },
 ];
 
 // Human-readable role labels

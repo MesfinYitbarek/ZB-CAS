@@ -88,6 +88,22 @@ const ROLE_GUIDES = {
     ],
   },
 
+  SUPERVISOR: {
+    label: 'Supervisor',
+    color: '#059669',
+    lightBg: '#F0FDF4',
+    videos: [
+      {
+        id: 'submit-evaluation',
+        title: 'Submit  Evaluation',
+        icon: Users,
+        description: 'Learn how to submit a supervisor evaluation for an employee.',
+        embed: 'https://scribehow.com/embed/How_to_Submit_a_Performance_Evaluation_as_Supervisor__vJMK-XEwTU69ViAa6O6Ksw?as=video',
+        aspect: '16/12',
+      },
+      
+    ],
+  },
 
   EMPLOYEE: {
     label: 'Employee',
