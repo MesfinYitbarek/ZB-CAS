@@ -6,7 +6,7 @@ import {
   LayoutDashboard, Users, BookOpen, ClipboardList, FileText,
   BarChart3, MessageSquare, ChevronLeft, LogOut, Target,
   Lightbulb, Activity, UserCheck, ClipboardCheck, X,
-  RefreshCw, ChevronDown, HelpCircle, Inbox,
+  RefreshCw, ChevronDown, HelpCircle, Inbox, BookMarked,
 } from 'lucide-react';
 import logo from '../image/z.jpg';
 
@@ -41,6 +41,9 @@ const NAV_ITEMS = [
   { icon: HelpCircle, label: 'FAQ Management', path: '/faqs', roles: ['HR_ADMIN'] },
   // ✅ Activity Log moved to VERY BOTTOM
   // { icon: Activity,   label: 'Activity Log',   path: '/activity-log',   roles: ['HR_ADMIN'] },
+
+  // ── User Manual (all roles) ───────────────────────────────────────────
+  { icon: BookMarked, label: 'User Manual', path: '/manual', roles: null },
 ];
 
 // Human-readable role labels

@@ -54,6 +54,9 @@ const FAQs = lazy(() => import('./pages/FAQs'));
 const MyTeam             = lazy(() => import('./pages/MyTeam'));
 const PendingEvaluations = lazy(() => import('./pages/PendingEvaluations'));
 
+// User Manual
+const UserManual = lazy(() => import('./pages/UserManual'));
+
 // ── Suspense wrapper ─────────────────────────────────────────────────────────
 // Wraps every lazy route so a consistent spinner appears while chunks load.
 function PageSuspense({ children }) {
@@ -257,7 +260,7 @@ export default function App() {
         <Route
           path="/assessments"
           element={
-            <ProtectedRoute allowedRoles={['HR_ADMIN', 'EMPLOYEE']}>
+            <ProtectedRoute>
               <AppShell><PageSuspense><Assessments /></PageSuspense></AppShell>
             </ProtectedRoute>
           }
@@ -284,7 +287,7 @@ export default function App() {
         <Route
           path="/results"
           element={
-            <ProtectedRoute allowedRoles={['HR_ADMIN', 'EMPLOYEE']}>
+            <ProtectedRoute>
               <AppShell><PageSuspense><Results /></PageSuspense></AppShell>
             </ProtectedRoute>
           }
@@ -365,6 +368,16 @@ export default function App() {
 
         {/* 404 */}
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
+
+        {/* ── User Manual (all roles) ────────────────────────────────── */}
+        <Route
+          path="/manual"
+          element={
+            <ProtectedRoute>
+              <AppShell><PageSuspense><UserManual /></PageSuspense></AppShell>
+            </ProtectedRoute>
+          }
+        />
 
       </Routes>
     </BrowserRouter>
