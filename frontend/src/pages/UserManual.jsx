@@ -74,7 +74,7 @@ const ROLE_GUIDES = {
         title: 'View Survey Feedback Entries',
         icon: MessageSquare,
         description: 'Access and review employee feedback and ratings per assessment.',
-        embed: 'https://scribehow.com/embed/How_To_Access_And_View_Survey_Feedback_Entries__7mAvnRu0QxiwtXpzqanDzw',
+        embed: 'https://scribehow.com/embed/How_To_Access_And_View_Survey_Feedback_Entries__7mAvnRu0QxiwtXpzqanDzw?as=video',
         aspect: '1/1',
       },
       {
@@ -88,53 +88,6 @@ const ROLE_GUIDES = {
     ],
   },
 
-  SUPERVISOR: {
-    label: 'Supervisor',
-    color: '#059669',
-    lightBg: '#F0FDF4',
-    videos: [
-      {
-        id: 'create-user',
-        title: 'Create a New User Account',
-        icon: Users,
-        description: 'Understand how user accounts are set up on the platform.',
-        embed: 'https://scribehow.com/embed/How_To_Create_A_New_User_Account__AoJMlMkxRJe-ySnMb9fyyA?as=video',
-        aspect: '16/12',
-      },
-      {
-        id: 'create-assessment',
-        title: 'How Assessments Are Created',
-        icon: ClipboardList,
-        description: 'See how HR creates and schedules assessments for your team.',
-        embed: 'https://scribehow.com/embed/Creating_a_New_Assessment__yfeEs6zrQ_SdXiws6q19JA?as=video',
-        aspect: '16/12',
-      },
-      {
-        id: 'filter-results',
-        title: 'Navigate & Filter Competency Results',
-        icon: FileText,
-        description: 'View and filter your team\'s assessment results.',
-        embed: 'https://scribehow.com/embed/How_to_Navigate_and_Filter_Competency_Results__fKx55HXuQky8-OVoVfS0pA?as=video',
-        aspect: '16/12',
-      },
-      {
-        id: 'generate-reports',
-        title: 'Generate Competency Assessment Reports',
-        icon: BarChart3,
-        description: 'Access department and individual performance analytics.',
-        embed: 'https://scribehow.com/embed/How_to_Generate_Competency_Assessment_Reports__zigxVt70RiqQvECD1VpFqQ?as=video',
-        aspect: '16/12',
-      },
-      {
-        id: 'faq-chat',
-        title: 'Access FAQ & Chat with Admins',
-        icon: HelpCircle,
-        description: 'Use the support widget to browse FAQs or message HR admins.',
-        embed: 'https://scribehow.com/embed/How_to_Access_FAQ_and_chat_with_admins_in_the_ZB_CAS_Portal__ra4duhzYSiO-C5luRtHP1g',
-        aspect: '1/1',
-      },
-    ],
-  },
 
   EMPLOYEE: {
     label: 'Employee',
@@ -154,7 +107,7 @@ const ROLE_GUIDES = {
         title: 'Submit Feedback for Your Assessments',
         icon: MessageSquare,
         description: 'Share your experience and star rating for completed assessments.',
-        embed: 'https://scribehow.com/embed/How_to_Submit_Feedback_for_Your_Assessments__-YiQGGM0RpeL7y1pSZ7G9Q',
+        embed: 'https://scribehow.com/embed/How_to_Submit_Feedback_for_Your_Assessments__-YiQGGM0RpeL7y1pSZ7G9Q?as=video',
         aspect: '1/1',
       },
       {
@@ -162,7 +115,7 @@ const ROLE_GUIDES = {
         title: 'Access FAQ & Chat with Admins',
         icon: HelpCircle,
         description: 'Use the support widget to browse FAQs or message HR admins directly.',
-        embed: 'https://scribehow.com/embed/How_to_Access_FAQ_and_chat_with_admins_in_the_ZB_CAS_Portal__ra4duhzYSiO-C5luRtHP1g',
+        embed: 'https://scribehow.com/embed/How_to_Access_FAQ_and_chat_with_admins_in_the_ZB_CAS_Portal__ra4duhzYSiO-C5luRtHP1g?as=video',
         aspect: '1/1',
       },
     ],
