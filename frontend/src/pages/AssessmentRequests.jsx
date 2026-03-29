@@ -28,21 +28,6 @@ export default function AssessmentRequests() {
   const [expandedResults, setExpandedResults] = useState({});
   const [loadingResults, setLoadingResults] = useState({});
   const [markingComplete, setMarkingComplete] = useState(null);
-  const [deletingId, setDeletingId] = useState(null);
-
-  const handleDelete = async (reqId) => {
-    if (!window.confirm('Are you sure you want to delete this assessment request?')) return;
-    setDeletingId(reqId);
-    try {
-      await api.delete(`/external/assessment-requests/${reqId}`);
-      show('Assessment request deleted successfully.', 'success');
-      loadRequests();
-    } catch (err) {
-      show(err.response?.data?.message || 'Failed to delete request.', 'error');
-    } finally {
-      setDeletingId(null);
-    }
-  };
 
   const loadRequests = useCallback(async () => {
     setLoading(true);
@@ -196,7 +181,7 @@ export default function AssessmentRequests() {
                         <div className="flex flex-wrap gap-1.5 mt-2">
                           {req.competencies.map((c, i) => (
                             <span key={i} className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-50 text-blue-700 rounded-lg text-xs font-medium border border-blue-100">
-                              {c.name} <span className="text-blue-400">{c.targetGroup ? c.targetGroup.replace(/_/g, ' ') : 'Common'}</span>
+                              {c.name} <span className="text-blue-400">Lvl {c.requiredLevel}</span>
                             </span>
                           ))}
                         </div>
@@ -275,24 +260,15 @@ export default function AssessmentRequests() {
                         </span>
                       )}
 
-                      {/* Expand/Collapse and Delete */}
-                      <div className="flex items-center gap-2 mt-1">
-                        {req.linkedUserId && (
-                          <button
-                            onClick={() => toggleExpand(req._id)}
-                            className="px-3 py-1.5 text-xs font-medium bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors flex items-center gap-1.5 text-gray-600"
-                          >
-                            {isExpanded ? <><ChevronUp className="w-3.5 h-3.5" /> Hide Results</> : <><ChevronDown className="w-3.5 h-3.5" /> View Results</>}
-                          </button>
-                        )}
+                      {/* Expand/Collapse to view submitted assessments */}
+                      {req.linkedUserId && (
                         <button
-                          onClick={() => handleDelete(req._id)}
-                          disabled={deletingId === req._id}
-                          className="px-3 py-1.5 text-xs font-medium bg-red-50 border border-red-200 text-red-600 rounded-lg hover:bg-red-100 transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                          onClick={() => toggleExpand(req._id)}
+                          className="px-3 py-1.5 text-xs font-medium bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors flex items-center gap-1.5 text-gray-600"
                         >
-                          {deletingId === req._id ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />} Delete
+                          {isExpanded ? <><ChevronUp className="w-3.5 h-3.5" /> Hide Results</> : <><ChevronDown className="w-3.5 h-3.5" /> View Results</>}
                         </button>
-                      </div>
+                      )}
                     </div>
                   </div>
                 </div>
