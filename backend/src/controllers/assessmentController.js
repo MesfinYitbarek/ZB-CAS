@@ -20,6 +20,7 @@ import {
   notifyDeadlineReminder,
 } from '../services/notificationService.js';
 import mongoose from 'mongoose';
+import { scheduleAssessmentTimers, clearAssessmentTimers } from '../services/schedulerService.js';
 
 // ─── AUTO-ACTIVATE HELPER ────────────────────────────────────────────────────
 // Exported so schedulerService can call it on a cron schedule
@@ -257,6 +258,13 @@ export const updateStatus = asyncHandler(async (req, res, next) => {
 
   await assessment.save({ validateBeforeSave: false });
 
+  // Arm / cancel real-time timers
+  if (status === 'SCHEDULED') {
+    scheduleAssessmentTimers(assessment);
+  } else {
+    clearAssessmentTimers(assessment._id);
+  }
+
   if (status === 'SCHEDULED') {
     const employees = await resolveEmployees(assessment);
     employees.forEach((emp) => {
@@ -316,6 +324,7 @@ export const getActiveAssessments = asyncHandler(async (req, res) => {
 export const deleteAssessments = asyncHandler(async (req, res, next) => {
   const assessment = await Assessment.findByIdAndDelete(req.params.id);
   if (!assessment) return next(new AppError('Assessment not found.', 404));
+  clearAssessmentTimers(req.params.id);
   res.status(200).json({ status: 'success', message: 'Assessment deleted.' });
 });
 
