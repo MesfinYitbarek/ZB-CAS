@@ -161,16 +161,7 @@ export const getPendingEvaluations = asyncHandler(async (req, res) => {
 
       const supervisorSubmitted = !!(supervisorResponse?.submittedAt);
 
-      // For Combined: employee must have finished first (unless scheduled)
-      if (assessment.type === 'Combined' && !isScheduled) {
-        const selfDone = await Response.findOne({
-          assessmentId: assessment._id,
-          employeeId: member._id,
-          respondentType: 'self',
-          submittedAt: { $ne: null },
-        }).lean();
-        if (!selfDone) continue;
-      }
+      // Combined is visible to supervisor as soon as it's scheduled/active.
 
       const daysLeft = assessment.endDate
         ? Math.ceil((new Date(assessment.endDate) - now) / (1000 * 60 * 60 * 24))

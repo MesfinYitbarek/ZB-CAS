@@ -410,15 +410,7 @@ const buildPendingEvaluations = async (teamMembers) => {
       // For the pending list page: include already-submitted (so supervisor can update) until COMPLETED
       if (!isScheduled && supervisorSubmitted) continue; // fully done — skip for pending count
 
-      if (assessment.type === 'Combined' && !isScheduled) {
-        const selfDone = await Response.findOne({
-          assessmentId: assessment._id,
-          employeeId: member._id,
-          respondentType: 'self',
-          submittedAt: { $ne: null },
-        }).lean();
-        if (!selfDone) continue; // employee hasn't finished yet
-      }
+      // Combined is visible to supervisor as soon as it's scheduled/active.
 
       const daysLeft = assessment.endDate
         ? Math.ceil((new Date(assessment.endDate) - now) / (1000 * 60 * 60 * 24))
