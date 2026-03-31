@@ -50,7 +50,8 @@ const app = express();
 // Trust the first proxy hop (required on Render, Railway, Heroku, and any
 // platform that sits behind a load-balancer / reverse-proxy).
 // Without this, express-rate-limit sees X-Forwarded-For but Express won't
-// expose req.ip correctly AND throws ERR_ERL_UNEXPECTED_X_FORWARDED_FOR.
+// 
+// // expose req.ip correctly AND throws ERR_ERL_UNEXPECTED_X_FORWARDED_FOR.
 // '1' means "trust exactly one proxy in front of us" — correct for Render.
 app.set('trust proxy', 1);
 

@@ -1,6 +1,6 @@
 /* pages/Users.jsx */
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, Search, Trash2, Edit2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Eye } from 'lucide-react';
+import { Plus, Search, Trash2, Edit2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, UserCheck } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import Modal from '../components/Modal';
 import api from '../utils/api';
@@ -143,6 +143,17 @@ export default function Users() {
     try {
       await api.delete(`/users/${id}`);
       show('User deactivated.', 'success');
+      fetchUsers();
+    } catch (err) {
+      show(err.response?.data?.message || 'Failed.', 'error');
+    }
+  };
+
+  const handleActivate = async (id) => {
+    if (!window.confirm('Activate this user?')) return;
+    try {
+      await api.put(`/users/${id}`, { status: 'ACTIVE' });
+      show('User activated.', 'success');
       fetchUsers();
     } catch (err) {
       show(err.response?.data?.message || 'Failed.', 'error');
@@ -304,6 +315,15 @@ export default function Users() {
                           {u.status === 'ACTIVE' && (
                             <button onClick={() => handleDeactivate(u._id)} className="p-1.5 hover:bg-red-50 rounded transition-colors">
                               <Trash2 className="w-4 h-4 text-red-600" />
+                            </button>
+                          )}
+                          {u.status === 'INACTIVE' && (
+                            <button
+                              onClick={() => handleActivate(u._id)}
+                              className="p-1.5 hover:bg-emerald-50 rounded transition-colors"
+                              title="Activate User"
+                            >
+                              <UserCheck className="w-4 h-4 text-emerald-600" />
                             </button>
                           )}
                         </div>

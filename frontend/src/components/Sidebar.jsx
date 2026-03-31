@@ -40,7 +40,7 @@ const NAV_ITEMS = [
   
   { icon: HelpCircle, label: 'FAQ Management', path: '/faqs', roles: ['HR_ADMIN'] },
   // ✅ Activity Log moved to VERY BOTTOM
-  // { icon: Activity,   label: 'Activity Log',   path: '/activity-log',   roles: ['HR_ADMIN'] },
+  { icon: Activity,   label: 'Activity Log',   path: '/activity-log',   roles: ['HR_ADMIN'] },
 
   // ── User Manual (all roles) ───────────────────────────────────────────
   { icon: BookMarked, label: 'User Manual', path: '/manual', roles: null },

@@ -1070,8 +1070,8 @@ export default function Assessments() {
                             <div className="flex items-center gap-3">
                               <button onClick={() => openDuplicate(a)}
                                 className="text-xs font-semibold text-gray-400 hover:text-brand-red transition-colors flex items-center gap-1"
-                                title="Duplicate as new draft">
-                                <Copy className="w-3 h-3" /> Duplicate
+                                title="Re use as new draft">
+                                <Copy className="w-3 h-3" /> Re Use
                               </button>
                               <button onClick={() => nav(`/assessments/${a._id}`)}
                                 className="text-xs font-semibold text-gray-500 hover:text-brand-red transition-colors flex items-center gap-1">
