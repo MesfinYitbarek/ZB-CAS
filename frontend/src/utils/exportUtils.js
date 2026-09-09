@@ -107,10 +107,10 @@ export const exportToPDF = async (data, filename = 'export.pdf') => {
         doc.text(`${r.finalScore}%`, 100, yPos + 3);
         
         const levelColors = {
-          Basic: [245, 158, 11],
-          Intermediate: [234, 88, 12],
-          Advanced: [37, 99, 235],
-          Expert: [22, 163, 74]
+          Basic: [156, 163, 175],
+          Intermediate: [75, 85, 99],
+          Advanced: [17, 24, 39],
+          Expert: [200, 16, 46]
         };
         const color = levelColors[r.level] || [100, 100, 100];
         doc.setTextColor(color[0], color[1], color[2]);
@@ -251,10 +251,10 @@ export const exportToExcel = async (data, filename = 'export.xlsx') => {
 
         // Colour-code level cell
         const levelColors = {
-          Basic:        'FFF59E0B',
-          Intermediate: 'FFEA580C',
-          Advanced:     'FF2563EB',
-          Expert:       'FF16A34A',
+          Basic:        'FF9CA3AF',
+          Intermediate: 'FF4B5563',
+          Advanced:     'FF111827',
+          Expert:       'FFC8102E',
         };
         const levelCell = row.getCell('level');
         const argb = levelColors[r.level];

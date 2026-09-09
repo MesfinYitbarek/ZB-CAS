@@ -6,11 +6,11 @@ import { Card } from './ui';
 
 const getHeatColor = s => {
   if (!s) return 'bg-gray-100 text-gray-400';
-  if (s >= 80) return 'bg-emerald-500 text-white';
-  if (s >= 65) return 'bg-blue-500 text-white';
-  if (s >= 50) return 'bg-amber-400 text-white';
-  if (s >= 35) return 'bg-orange-500 text-white';
-  return 'bg-red-500 text-white';
+  if (s >= 80) return 'bg-[#C8102E] text-white';
+  if (s >= 65) return 'bg-[#111827] text-white';
+  if (s >= 50) return 'bg-[#4B5563] text-white';
+  if (s >= 35) return 'bg-[#9CA3AF] text-white';
+  return 'bg-[#E5E7EB] text-gray-700';
 };
 
 const Heatmap = ({ heatmap }) => {
@@ -26,7 +26,7 @@ const Heatmap = ({ heatmap }) => {
 
   return (
     <Card title="Competency × Department Heatmap" icon={Layers} subtitle="Average score per competency per department">
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto scrollbar-none">
         <table className="text-xs min-w-max">
           <thead>
             <tr>
@@ -55,7 +55,7 @@ const Heatmap = ({ heatmap }) => {
       </div>
       <div className="flex items-center gap-3 mt-4 flex-wrap">
         <span className="text-xs text-gray-400">Legend:</span>
-        {[['≥80%', 'bg-emerald-500'], ['≥65%', 'bg-blue-500'], ['≥50%', 'bg-amber-400'], ['≥35%', 'bg-orange-500'], ['<35%', 'bg-red-500']].map(([lbl, cls]) => (
+        {[['≥80%', 'bg-[#C8102E]'], ['≥65%', 'bg-[#111827]'], ['≥50%', 'bg-[#4B5563]'], ['≥35%', 'bg-[#9CA3AF]'], ['<35%', 'bg-[#E5E7EB]']].map(([lbl, cls]) => (
           <div key={lbl} className="flex items-center gap-1 text-xs text-gray-600"><div className={`w-3 h-3 rounded ${cls}`} />{lbl}</div>
         ))}
       </div>

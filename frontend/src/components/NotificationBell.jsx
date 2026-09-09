@@ -22,23 +22,23 @@ import api from '../utils/api';
 const TYPE_META = {
   ASSESSMENT_ASSIGNED: {
     icon: ClipboardList,
-    color: 'text-blue-600',
-    bg: 'bg-blue-50',
+    color: 'text-gray-700',
+    bg: 'bg-gray-100',
   },
   RESULT_READY: {
     icon: Award,
-    color: 'text-emerald-600',
-    bg: 'bg-emerald-50',
+    color: 'text-brand-black',
+    bg: 'bg-gray-200',
   },
   SUPERVISOR_REMINDER: {
     icon: UserCheck,
-    color: 'text-violet-600',
-    bg: 'bg-violet-50',
+    color: 'text-gray-700',
+    bg: 'bg-gray-100',
   },
   DEADLINE_REMINDER: {
     icon: Clock,
-    color: 'text-amber-600',
-    bg: 'bg-amber-50',
+    color: 'text-brand-red',
+    bg: 'bg-brand-red/10',
   },
   ACCOUNT_CREATED: {
     icon: Sparkles,
@@ -74,7 +74,7 @@ function NotifRow({ notif, onRead, onDelete }) {
   return (
     <div
       className={`group flex items-start gap-3 px-4 py-3 hover:bg-gray-50 transition-colors cursor-pointer
-        ${!notif.read ? 'bg-blue-50/30' : ''}`}
+        ${!notif.read ? 'bg-gray-100/60' : ''}`}
       onClick={handleClick}
     >
       {/* Unread dot */}

@@ -66,8 +66,8 @@ export default function ResetPassword() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
         <div className="bg-white rounded-2xl shadow-lg p-12 max-w-md text-center">
-          <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
-            <CheckCircle className="w-8 h-8 text-green-600" />
+          <div className="w-16 h-16 rounded-full bg-gray-200 flex items-center justify-center mx-auto mb-4">
+            <CheckCircle className="w-8 h-8 text-gray-700" />
           </div>
           <h2 className="text-2xl  font-bold text-brand-black mb-2">Password Reset Successful</h2>
           <p className="text-gray-500 mb-6">Your password has been successfully reset. Redirecting to login...</p>

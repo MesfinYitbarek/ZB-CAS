@@ -49,7 +49,7 @@ export default function DepartmentTab({ stats, departments, selDept, onSelectDep
         }
       >
         {selDept && Array.isArray(summary) && summary.length > 0 ? (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto scrollbar-none">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>

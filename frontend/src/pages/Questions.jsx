@@ -8,6 +8,7 @@ import {
   GripVertical,
   X,
   Upload,
+  Download,
   FileText,
   Check,
   Eye,
@@ -43,14 +44,14 @@ const TYPE_LABELS = {
 };
 
 const TYPE_BADGES = {
-  MCQ: 'bg-blue-100 text-blue-700',
-  Rating: 'bg-amber-100 text-amber-700',
-  TrueFalse: 'bg-emerald-100 text-emerald-700',
-  MultiSelect: 'bg-cyan-100 text-cyan-700',
-  Matching: 'bg-rose-100 text-rose-700',
-  Ordering: 'bg-orange-100 text-orange-700',
-  ScenarioMCQ: 'bg-indigo-100 text-indigo-700',
-  DragDropClassification: 'bg-teal-100 text-teal-700',
+  MCQ: 'bg-gray-200 text-gray-700',
+  Rating: 'bg-gray-200 text-gray-700',
+  TrueFalse: 'bg-gray-200 text-gray-700',
+  MultiSelect: 'bg-gray-200 text-gray-700',
+  Matching: 'bg-red-100 text-red-700',
+  Ordering: 'bg-gray-200 text-gray-700',
+  ScenarioMCQ: 'bg-gray-200 text-gray-700',
+  DragDropClassification: 'bg-gray-200 text-gray-700',
 };
 
 const TARGET_GROUPS = ['managerial', 'non-managerial', 'common'];
@@ -209,6 +210,22 @@ export default function Questions() {
     setUploadedQuestions(null);
     setUploadProgress(0);
     setModal('upload');
+  };
+
+  const handleDownloadFormat = async () => {
+    try {
+      const res = await api.get('/questions/import/template', { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'text/plain' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'question-upload-format.txt';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch {
+      show('Could not download the format file.', 'error');
+    }
   };
 
   const openEdit = (q) => {
@@ -1182,10 +1199,10 @@ export default function Questions() {
                   : q.correctAnswer === opt;
                 
                 return (
-                  <div key={idx} className={`flex items-center gap-2 p-2 rounded-lg border ${isCorrect ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-100'}`}>
+                  <div key={idx} className={`flex items-center gap-2 p-2 rounded-lg border ${isCorrect ? 'bg-gray-100 border-gray-300' : 'bg-gray-50 border-gray-100'}`}>
                     <span className="text-xs font-medium w-6">{String.fromCharCode(65 + idx)}</span>
                     <span className="text-sm flex-1">{opt}</span>
-                    {isCorrect && <Check className="w-4 h-4 text-green-600" />}
+                    {isCorrect && <Check className="w-4 h-4 text-gray-700" />}
                   </div>
                 );
               })}
@@ -1196,7 +1213,7 @@ export default function Questions() {
         {q.type === 'TrueFalse' && (
           <div>
             <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Correct Answer</p>
-            <div className="p-2 bg-green-50 border border-green-200 rounded-lg">
+            <div className="p-2 bg-gray-100 border border-gray-300 rounded-lg">
               <span className="text-sm font-medium">{q.correctAnswer}</span>
             </div>
           </div>
@@ -1257,7 +1274,7 @@ export default function Questions() {
   };
 
   return (
-    <div className="p-7 h-[calc(100vh-4rem)] flex flex-col">
+    <div className="p-7 h-[calc(100vh-3rem)] flex flex-col">
       {/* Header */}
       <div className="flex justify-between items-start mb-3 flex-shrink-0">
         <div>
@@ -1266,15 +1283,15 @@ export default function Questions() {
         <div className="flex gap-2">
           <button
             onClick={openUpload}
-            className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-300 bg-white text-brand-black rounded-lg font-semibold hover:bg-gray-50 transition-colors"
+            className="flex items-center gap-1.5 px-2 py-1  text-sm border border-gray-300 bg-white text-brand-black rounded-lg font-semibold hover:bg-gray-50 transition-colors"
           >
-            <Upload className="w-3.5 h-3.5" /> Upload
+            <Upload className="w-3 h-3" /> Upload
           </button>
           <button
             onClick={openCreate}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors"
+            className="flex items-center gap-1.5 px-2 py-1 text-sm bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors"
           >
-            <Plus className="w-3.5 h-3.5" /> Add Questions
+            <Plus className="w-3 h-3" /> Add Questions
           </button>
         </div>
       </div>
@@ -1298,7 +1315,7 @@ export default function Questions() {
           <select
             value={filterType}
             onChange={(e) => setFilterType(e.target.value)}
-            className="h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm"
+            className="h-10 px-2 rounded-lg border border-gray-300 focus-brand text-sm"
           >
             <option value="">All Types</option>
             {TYPES.map(t => (
@@ -1315,7 +1332,7 @@ export default function Questions() {
               const lim = Number(e.target.value);
               setPagination(p => ({ ...p, page: 1, limit: lim }));
             }}
-            className="px-3 py-1.5 rounded-lg border border-gray-300 focus-brand text-sm"
+            className="px-2 py-1 rounded-lg border border-gray-300 focus-brand text-sm"
           >
             <option value="10">10 per page</option>
             <option value="20">20 per page</option>
@@ -1345,7 +1362,7 @@ export default function Questions() {
             <div className="w-10 h-10 border-4 border-brand-red border-t-transparent rounded-full animate-spin" />
           </div>
         ) : (
-          <div className="overflow-auto flex-1">
+          <div className="overflow-auto flex-1 scrollbar-none">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-100 sticky top-0 z-10">
                 <tr>
@@ -1396,8 +1413,8 @@ export default function Questions() {
                       <td className="px-4 py-3 text-right text-sm font-medium">{q.score ?? 1}</td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-2">
-                          <button onClick={() => openView(q)} title="View Details" className="p-1.5 hover:bg-blue-50 rounded transition-colors">
-                            <Eye size={16} className="text-blue-600" />
+                          <button onClick={() => openView(q)} title="View Details" className="p-1.5 hover:bg-gray-100 rounded transition-colors">
+                            <Eye size={16} className="text-gray-700" />
                           </button>
                           <button onClick={() => openEdit(q)} title="Edit" className="p-1.5 hover:bg-gray-100 rounded transition-colors">
                             <Edit2 size={16} className="text-gray-500" />
@@ -1514,7 +1531,7 @@ export default function Questions() {
               </label>
 
               {targetGroupsForComp.length === 0 ? (
-                <div className="p-2 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-xs">
+                <div className="p-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-700 text-xs">
                   No target groups defined
                 </div>
               ) : (
@@ -1676,12 +1693,12 @@ export default function Questions() {
         <div className="space-y-4">
 
           {/* ── Supported formats ──────────────────────────────────────────── */}
-          <div className="rounded-lg border border-blue-100 bg-blue-50 p-4 space-y-3">
-            <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Supported File Formats</p>
+          <div className="rounded-lg border border-gray-200 bg-gray-100 p-4 space-y-3">
+            <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Supported File Formats</p>
 
             <div className="grid grid-cols-3 gap-2">
               {/* PDF */}
-              <div className="bg-white rounded-md border border-blue-100 p-2.5 text-center">
+              <div className="bg-white rounded-md border border-gray-200 p-2.5 text-center">
                 <div className="w-8 h-8 mx-auto mb-1.5 rounded bg-red-100 flex items-center justify-center">
                   <FileText className="w-4 h-4 text-red-500" />
                 </div>
@@ -1689,15 +1706,15 @@ export default function Questions() {
                 <p className="text-[10px] text-gray-400 mt-0.5">Text-based PDFs<br/>(not scanned images)</p>
               </div>
               {/* DOCX */}
-              <div className="bg-white rounded-md border border-blue-100 p-2.5 text-center">
-                <div className="w-8 h-8 mx-auto mb-1.5 rounded bg-blue-100 flex items-center justify-center">
-                  <FileText className="w-4 h-4 text-blue-500" />
+              <div className="bg-white rounded-md border border-gray-200 p-2.5 text-center">
+                <div className="w-8 h-8 mx-auto mb-1.5 rounded bg-gray-200 flex items-center justify-center">
+                  <FileText className="w-4 h-4 text-gray-700" />
                 </div>
                 <p className="text-xs font-semibold text-gray-700">.DOCX</p>
                 <p className="text-[10px] text-gray-400 mt-0.5">Word 2007+<br/>documents</p>
               </div>
               {/* TXT */}
-              <div className="bg-white rounded-md border border-blue-100 p-2.5 text-center">
+              <div className="bg-white rounded-md border border-gray-200 p-2.5 text-center">
                 <div className="w-8 h-8 mx-auto mb-1.5 rounded bg-gray-100 flex items-center justify-center">
                   <FileText className="w-4 h-4 text-gray-500" />
                 </div>
@@ -1708,11 +1725,11 @@ export default function Questions() {
 
             {/* Format guide */}
             <details className="group">
-              <summary className="cursor-pointer text-xs font-medium text-blue-600 hover:text-blue-800 list-none flex items-center gap-1 select-none">
+              <summary className="cursor-pointer text-xs font-medium text-gray-700 hover:text-gray-700 list-none flex items-center gap-1 select-none">
                 <span className="group-open:rotate-90 transition-transform inline-block">▶</span>
                 Required document format
               </summary>
-              <div className="mt-2 rounded-md bg-white border border-blue-100 p-3 text-[11px] text-gray-600 font-mono leading-relaxed overflow-auto max-h-52">
+              <div className="mt-2 rounded-md bg-white border border-gray-200 p-3 text-[11px] text-gray-600 font-mono leading-relaxed overflow-auto max-h-52">
                 <p className="font-semibold text-gray-500 mb-1 not-italic font-sans text-[10px] uppercase">MCQ example:</p>
                 <pre className="whitespace-pre-wrap">{`Type: MCQ
 Question 1: What does RAM stand for?
@@ -1748,6 +1765,13 @@ Question 5: Order the OSI model layers (bottom up).
                 <p className="mt-2 text-[10px] text-gray-400 not-italic font-sans">Mark the correct MCQ option with * or (correct) after the text. Multiple types can exist in the same file.</p>
               </div>
             </details>
+
+            <button
+              onClick={handleDownloadFormat}
+              className="flex items-center gap-2 text-brand-red font-semibold text-sm hover:text-brand-red-dark transition-colors"
+            >
+              <Download className="w-4 h-4" /> Download format file
+            </button>
           </div>
 
           {/* ── Drop zone ──────────────────────────────────────────────────── */}
@@ -1788,16 +1812,16 @@ Question 5: Order the OSI model layers (bottom up).
 
           {/* ── Success / Review ───────────────────────────────────────────── */}
           {uploadedQuestions && (
-            <div className="flex items-center justify-between bg-green-50 border border-green-200 rounded-lg px-4 py-3">
+            <div className="flex items-center justify-between bg-gray-100 border border-gray-300 rounded-lg px-4 py-3">
               <div className="flex items-center gap-2">
-                <Check className="w-4 h-4 text-green-600 flex-shrink-0" />
-                <span className="text-sm text-green-800 font-medium">
+                <Check className="w-4 h-4 text-gray-700 flex-shrink-0" />
+                <span className="text-sm text-gray-700 font-medium">
                   {uploadedQuestions.questionGroups.reduce((sum, g) => sum + g.questions.length, 0)} question(s) extracted
                 </span>
               </div>
               <button
                 onClick={useUploadedQuestions}
-                className="px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 text-xs font-medium transition"
+                className="px-3 py-1.5 bg-brand-black text-white rounded-lg hover:bg-gray-700 text-xs font-medium transition"
               >
                 Review &amp; Save →
               </button>

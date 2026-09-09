@@ -2,6 +2,7 @@ import prisma from '../config/prisma.js';
 import AppError from '../utils/AppError.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import { logActivity } from '../services/activityService.js';
+import { denormalizeTargetGroup } from '../utils/targetGroup.js';
 
 const feedbackInclude = {
   user: { select: { id: true, name: true, email: true, department: true, position: true, employeeId: true } },
@@ -148,7 +149,7 @@ export const getFeedbackSummaryByAssessment = asyncHandler(async (req, res) => {
       assessmentDescription: a.description,
       competencyName: compMap[a.competencyId]?.name || 'N/A',
       competencyCategory: compMap[a.competencyId]?.category || 'N/A',
-      targetGroup: a.targetGroup,
+      targetGroup: denormalizeTargetGroup(a.targetGroup),
       purpose: a.purpose,
       avgRating: agg.rated ? Math.round((agg.sum / agg.rated) * 100) / 100 : null,
       totalFeedbacks: agg.total,
@@ -255,7 +256,7 @@ export const getEligibleAssessmentsForFeedback = asyncHandler(async (req, res) =
     competencyId: a.competency,
     type: a.type,
     status: a.status,
-    targetGroup: a.targetGroup,
+    targetGroup: denormalizeTargetGroup(a.targetGroup),
     purpose: a.purpose,
     createdAt: a.createdAt,
     alreadySubmitted: existingIds.includes(a.id),

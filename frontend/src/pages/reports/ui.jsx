@@ -1,10 +1,10 @@
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 export const LEVEL_COLORS = {
-  Basic: '#F59E0B',
-  Intermediate: '#EA580C',
-  Advanced: '#2563EB',
-  Expert: '#16A34A',
+  Basic: '#9CA3AF',
+  Intermediate: '#4B5563',
+  Advanced: '#111827',
+  Expert: '#C8102E',
 };
 
 export const LEVELS = ['Basic', 'Intermediate', 'Advanced', 'Expert'];
@@ -49,7 +49,7 @@ export const SectionHeader = ({ title, count, action }) => (
 
 // ─── Score widgets ────────────────────────────────────────────────────────────
 export const scoreColor = (s) =>
-  s >= 80 ? '#16A34A' : s >= 60 ? '#2563EB' : s >= 40 ? '#F59E0B' : '#ef4444';
+  s >= 80 ? '#C8102E' : s >= 60 ? '#111827' : s >= 40 ? '#6B7280' : '#9CA3AF';
 
 export const ScoreBar = ({ score }) => {
   const s = Number(score) || 0;
@@ -65,18 +65,18 @@ export const ScoreBar = ({ score }) => {
 
 export const ScoreBadge = ({ score }) => {
   const s = Number(score) || 0;
-  const cls = s >= 80 ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
-    : s >= 60 ? 'bg-blue-50 text-blue-700 ring-blue-200'
-    : s >= 40 ? 'bg-amber-50 text-amber-700 ring-amber-200'
+  const cls = s >= 80 ? 'bg-gray-100 text-gray-700 ring-gray-300'
+    : s >= 60 ? 'bg-gray-100 text-gray-700 ring-gray-300'
+    : s >= 40 ? 'bg-gray-100 text-gray-700 ring-gray-300'
     : 'bg-red-50 text-red-600 ring-red-200';
   return <span className={`inline-flex px-2 py-0.5 rounded-lg text-xs font-bold ring-1 ${cls}`}>{s.toFixed(1)}%</span>;
 };
 
 export const LevelBadge = ({ level }) => {
   const cls = {
-    Expert: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-    Advanced: 'bg-blue-50 text-blue-700 border-blue-200',
-    Intermediate: 'bg-amber-50 text-amber-700 border-amber-200',
+    Expert: 'bg-gray-100 text-gray-700 border-gray-300',
+    Advanced: 'bg-gray-100 text-gray-700 border-gray-300',
+    Intermediate: 'bg-gray-100 text-gray-700 border-gray-300',
     Basic: 'bg-red-50 text-red-700 border-red-200',
   };
   return (
@@ -90,7 +90,7 @@ export const LevelBadge = ({ level }) => {
 export const TableShell = ({ header, children, footer }) => (
   <div className="bg-white rounded-xl border border-gray-100 shadow-card overflow-hidden">
     {header}
-    <div className="overflow-x-auto">{children}</div>
+    <div className="overflow-x-auto scrollbar-none">{children}</div>
     {footer}
   </div>
 );

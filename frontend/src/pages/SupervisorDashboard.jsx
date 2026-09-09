@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Users, AlertCircle, RefreshCw, Award, 
+  Users, AlertCircle, RefreshCw, Award,
   AlertTriangle, BarChart2, ChevronRight,
   Clock, User, Calendar, Star
 } from 'lucide-react';
@@ -10,11 +10,11 @@ import { useToast } from '../context/ToastContext';
 import api from '../utils/api';
 
 const PERIOD_OPTIONS = [
-  { key: 'monthly',   label: '1M',  full: 'Last Month' },
-  { key: 'quarterly', label: '3M',  full: 'Last Quarter' },
-  { key: 'semi',      label: '6M',  full: 'Last 6 Months' },
-  { key: 'yearly',    label: '1Y',  full: 'Last Year' },
-  { key: 'all',       label: 'All', full: 'All Time' },
+  { key: 'monthly', label: '1M', full: 'Last Month' },
+  { key: 'quarterly', label: '3M', full: 'Last Quarter' },
+  { key: 'semi', label: '6M', full: 'Last 6 Months' },
+  { key: 'yearly', label: '1Y', full: 'Last Year' },
+  { key: 'all', label: 'All', full: 'All Time' },
 ];
 
 
@@ -61,11 +61,11 @@ export default function SupervisorDashboard() {
   const sortedMembers = [...teamMembers].sort((a, b) => (b.avgScore || 0) - (a.avgScore || 0));
 
   return (
-    <div className="h-[calc(100vh-4rem)] flex flex-col bg-[#f8f9fb] overflow-hidden">
+    <div className="h-[calc(100vh-4rem)] flex flex-col bg-gray-50 overflow-hidden">
       {/* Ambient glow - fixed */}
       <div className="fixed inset-0 pointer-events-none">
         <div className="absolute -top-24 -right-24 w-72 h-72 bg-brand-red/4 rounded-full blur-3xl" />
-        <div className="absolute bottom-20 -left-16 w-56 h-56 bg-emerald-500/4 rounded-full blur-3xl" />
+        <div className="absolute bottom-20 -left-16 w-56 h-56 bg-gray-500/4 rounded-full blur-3xl" />
       </div>
 
       {/* Scrollable Content Area */}
@@ -73,7 +73,7 @@ export default function SupervisorDashboard() {
         <div className="p-6 lg:p-8 space-y-5 max-w-screen-xl mx-auto">
 
           {/* Sticky Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 sticky top-0 bg-[#f8f9fb] z-10 pb-2">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 sticky top-0 bg-gray-50 z-10 pb-2">
             <div>
               <div className="flex items-center gap-2.5 mb-1">
                 <h1 className="text-xl  font-bold text-brand-black">
@@ -100,8 +100,8 @@ export default function SupervisorDashboard() {
                   </button>
                 ))}
               </div>
-              <button 
-                onClick={() => load(period, true)} 
+              <button
+                onClick={() => load(period, true)}
                 className="w-9 h-9 bg-white border border-gray-200 rounded-xl flex items-center justify-center text-gray-400 hover:text-gray-600 shadow-sm"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
@@ -116,7 +116,7 @@ export default function SupervisorDashboard() {
               <p className="text-sm text-red-700 font-medium">
                 {highPriority} evaluation{highPriority > 1 ? 's' : ''} require urgent attention — deadline within 48 hours
               </p>
-              <button 
+              <button
                 onClick={() => nav('/supervisor/pending')}
                 className="ml-auto text-xs font-semibold text-red-600 hover:text-red-700 hover:underline flex items-center gap-1"
               >
@@ -128,28 +128,28 @@ export default function SupervisorDashboard() {
           {/* KPI CARDS */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
-              { icon: Users,       label: 'Team Members',     value: stats.teamSize || 0,             sub: 'Active employees',   color: 'text-blue-600',    bg: 'bg-blue-50', link: '/my-team' },
-              { icon: AlertCircle, label: 'Pending Evals',    value: stats.pendingEvaluations || 0,   sub: `${highPriority} urgent`, color: 'text-orange-600',  bg: 'bg-orange-50', urgent: highPriority > 0, link: '/evaluations' },
-              { icon: Award,       label: 'Team Avg Score',   value: `${stats.teamAvgScore || 0}%`,   sub: periodLabel,     color: 'text-emerald-600', bg: 'bg-emerald-50' },
-              
+              { icon: Users, label: 'Team Members', value: stats.teamSize || 0, sub: 'Active employees', color: 'text-gray-700', bg: 'bg-gray-100', link: '/my-team' },
+              { icon: AlertCircle, label: 'Pending Evals', value: stats.pendingEvaluations || 0, sub: `${highPriority} urgent`, color: 'text-gray-700', bg: 'bg-gray-100', urgent: highPriority > 0, link: '/evaluations' },
+              { icon: Award, label: 'Team Avg Score', value: `${stats.teamAvgScore || 0}%`, sub: periodLabel, color: 'text-gray-700', bg: 'bg-gray-100' },
+
             ].map(({ icon: Icon, label, value, sub, color, bg, urgent, link }) => (
-              <div 
-                key={label} 
+              <div
+                key={label}
                 onClick={link ? () => nav(link) : undefined}
-                className={`bg-white rounded-2xl p-4 border shadow-sm transition-all
+                className={`bg-white rounded-2xl p-3 border shadow-sm transition-all
                   ${link ? 'cursor-pointer hover:-translate-y-0.5 hover:shadow-md' : ''}
-                  ${urgent ? 'border-orange-200' : 'border-gray-100/80'}`}
+                  ${urgent ? 'border-gray-300' : 'border-gray-100/80'}`}
               >
-                {urgent && <div className="h-0.5 bg-gradient-to-r from-orange-400 to-red-400 -mx-4 -mt-4 mb-4 rounded-t-2xl" />}
+                {urgent && <div className="h-0.5 bg-brand-red -mx-4 -mt-4 mb-4 rounded-t-2xl" />}
                 <div className="flex items-start justify-between mb-3">
-                  <div className={`w-10 h-10 ${bg} rounded-xl flex items-center justify-center`}>
-                    <Icon className={`w-5 h-5 ${color}`} />
+                  <div>
+                    <div className="text-2xl  font-bold text-brand-black tracking-tight mb-0.5">{value}</div>
+                    <div className="text-xs font-semibold text-gray-700">{label}</div>
+                    <div className="text-xs text-gray-400 mt-0.5">{sub}</div>
                   </div>
                   {link && <ChevronRight className="w-4 h-4 text-gray-300" />}
                 </div>
-                <div className="text-2xl  font-bold text-brand-black tracking-tight mb-0.5">{value}</div>
-                <div className="text-xs font-semibold text-gray-700">{label}</div>
-                <div className="text-xs text-gray-400 mt-0.5">{sub}</div>
+
               </div>
             ))}
           </div>

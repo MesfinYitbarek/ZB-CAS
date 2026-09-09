@@ -11,6 +11,7 @@ import { scoreFullAssessment, scoreIndividual } from '../services/scoringService
 import { sendResultsEmail } from '../services/emailService.js';
 import { notifyResultReady } from '../services/notificationService.js';
 import { logActivity } from '../services/activityService.js';
+import { normalizeTargetGroup, denormalizeTargetGroup } from '../utils/targetGroup.js';
 import logger from '../utils/logger.js';
 
 // ─── OWNERSHIP HELPER ─────────────────────────────────────────────────────────
@@ -59,7 +60,7 @@ const processResultRow = (r) => ({
   formattedDate: new Date(r.createdAt).toLocaleDateString(),
   hasBoth: r.scoreDetails?.selfScore !== null && r.scoreDetails?.supervisorScore !== null,
   isCombined: r.assessment?.type === 'Combined',
-  targetGroup: r.assessment?.targetGroup || 'N/A',
+  targetGroup: denormalizeTargetGroup(r.assessment?.targetGroup) || 'N/A',
   purpose: r.assessment?.purpose || 'N/A',
 });
 
@@ -441,7 +442,7 @@ export const getFilteredResults = asyncHandler(async (req, res) => {
   if (department)     filtered = filtered.filter(r => r.user?.department === department);
   if (position)       filtered = filtered.filter(r => r.user?.position?.toLowerCase().includes(position.toLowerCase()));
   if (gender)         filtered = filtered.filter(r => r.user?.gender === gender);
-  if (targetGroup)    filtered = filtered.filter(r => r.assessment?.targetGroup === targetGroup);
+  if (targetGroup)    filtered = filtered.filter(r => normalizeTargetGroup(r.assessment?.targetGroup) === normalizeTargetGroup(targetGroup));
   if (purpose)        filtered = filtered.filter(r => r.assessment?.purpose === purpose);
   if (assessmentType) filtered = filtered.filter(r => r.assessment?.type === assessmentType);
   if (search) {

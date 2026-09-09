@@ -258,6 +258,7 @@ model Assessment {
   startDate           DateTime
   endDate             DateTime
   timeLimit           Int?
+  maxAttempts         Int?
   type                AssessmentType
   selfWeight          Int             @default(20)
   supervisorWeight    Int             @default(80)
@@ -530,6 +531,7 @@ model SecurityViolation {
   userId       String
   violations   Json?
   totalViolations Int    @default(0)
+  attemptCount Int    @default(0)
   tabSwitches  Int       @default(0)
   copyAttempts Int       @default(0)
   rightClickAttempts Int @default(0)

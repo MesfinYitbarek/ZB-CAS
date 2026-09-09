@@ -56,12 +56,12 @@ export function IndividualReportsTable({ reports = [], onDetail, pagination, onP
                   <p className="text-sm font-medium text-gray-800 max-w-[180px] truncate" title={names}>{names}</p>
                 </Td>
                 <Td>
-                  <span className="text-xs bg-violet-50 text-violet-700 px-2 py-0.5 rounded capitalize font-medium">
+                  <span className="text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded capitalize font-medium">
                     {r.assessment?.targetGroup || '—'}
                   </span>
                 </Td>
                 <Td>
-                  <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded font-medium">
+                  <span className="text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded font-medium">
                     {r.assessment?.purpose || '—'}
                   </span>
                 </Td>
@@ -113,12 +113,12 @@ export function AllReportsTable({ reports = [], onDetail, pagination, onPage, to
                   <p className="text-sm font-medium text-gray-800 max-w-[160px] truncate" title={names}>{names}</p>
                 </Td>
                 <Td>
-                  <span className="text-xs bg-violet-50 text-violet-700 px-2 py-0.5 rounded capitalize font-medium whitespace-nowrap">
+                  <span className="text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded capitalize font-medium whitespace-nowrap">
                     {r.assessment?.targetGroup || '—'}
                   </span>
                 </Td>
                 <Td>
-                  <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded font-medium whitespace-nowrap">
+                  <span className="text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded font-medium whitespace-nowrap">
                     {r.assessment?.purpose || '—'}
                   </span>
                 </Td>

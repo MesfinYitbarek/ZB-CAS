@@ -40,7 +40,7 @@ function Avatar({ name, size = 'md', online = false }) {
       <div className={`${dims} rounded-full bg-gradient-to-br from-red-400 to-brand-red flex items-center justify-center font-semibold text-white`}>
         {getInitials(name) || <User className="w-4 h-4" />}
       </div>
-      {online && <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-white rounded-full" />}
+      {online && <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-brand-black border-2 border-white rounded-full" />}
     </div>
   );
 }
@@ -77,7 +77,7 @@ function MessageBubble({ msg, isMe, isFirst, isLast }) {
           <span>{formatTime(msg.createdAt || new Date())}</span>
           {isMe && (
             isOpt ? <Circle className="w-2.5 h-2.5 opacity-50" />
-            : msg.read ? <CheckCheck className="w-3 h-3 text-sky-300" />
+            : msg.read ? <CheckCheck className="w-3 h-3 text-white" />
             : <Check className="w-3 h-3" />
           )}
         </div>
@@ -220,7 +220,7 @@ function ChatView({ partner, onBack, socket, connected, currentUserId, onlineUse
               : isOnline ? 'Online' : partner.position || 'HR Admin'}
           </p>
         </div>
-        <div className={`w-2 h-2 rounded-full flex-shrink-0 ${connected ? 'bg-green-500' : 'bg-orange-400'}`} />
+        <div className={`w-2 h-2 rounded-full flex-shrink-0 ${connected ? 'bg-brand-black' : 'bg-gray-400'}`} />
       </div>
 
       {/* Messages */}
@@ -376,8 +376,8 @@ function ChatTab({ socket, connected }) {
 // ─── FAQ ──────────────────────────────────────────────────────────────────────
 
 const CAT_DOT = {
-  GENERAL: 'bg-gray-400', ASSESSMENT: 'bg-blue-400', TECHNICAL: 'bg-purple-400',
-  HR: 'bg-rose-400', POLICY: 'bg-amber-400', OTHER: 'bg-teal-400',
+  GENERAL: 'bg-gray-400', ASSESSMENT: 'bg-gray-500', TECHNICAL: 'bg-gray-500',
+  HR: 'bg-red-400', POLICY: 'bg-gray-500', OTHER: 'bg-gray-500',
 };
 
 function FAQItem({ faq }) {
@@ -495,6 +495,64 @@ export default function SupportWidget() {
   const [unread, setUnread] = useState(0);
   const [token, setToken] = useState(null);
 
+  // ── Draggable floating button (position persisted per browser) ─────────────
+  const [pos, setPos] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('support-widget-pos'));
+      if (saved && typeof saved.x === 'number' && typeof saved.y === 'number') return saved;
+    } catch { /* ignore */ }
+    return null; // null = default bottom-right corner
+  });
+  const [dragging, setDragging] = useState(false);
+  const dragRef = useRef({ on: false, moved: false, startX: 0, startY: 0, origX: 0, origY: 0 });
+  const BTN = 56; // w-14/h-14 button size
+
+  const clampPos = (x, y) => ({
+    x: Math.min(Math.max(x, 8), Math.max(window.innerWidth - BTN - 8, 8)),
+    y: Math.min(Math.max(y, 8), Math.max(window.innerHeight - BTN - 8, 8)),
+  });
+
+  // Keep the button on-screen when the viewport resizes
+  useEffect(() => {
+    const onResize = () => setPos(p => (p ? clampPos(p.x, p.y) : p));
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  const onBtnPointerDown = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    dragRef.current = {
+      on: true, moved: false,
+      startX: e.clientX, startY: e.clientY,
+      origX: pos ? pos.x : rect.left,
+      origY: pos ? pos.y : rect.top,
+    };
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+  };
+
+  const onBtnPointerMove = (e) => {
+    const d = dragRef.current;
+    if (!d.on) return;
+    if (Math.abs(e.clientX - d.startX) + Math.abs(e.clientY - d.startY) > 5) {
+      if (!d.moved) { d.moved = true; setDragging(true); }
+      const next = clampPos(d.origX + (e.clientX - d.startX), d.origY + (e.clientY - d.startY));
+      setPos(next);
+      try { localStorage.setItem('support-widget-pos', JSON.stringify(next)); } catch { /* ignore */ }
+    }
+  };
+
+  const endBtnDrag = () => {
+    if (!dragRef.current.on) return;
+    dragRef.current.on = false;
+    setDragging(false);
+  };
+
+  const onBtnClick = () => {
+    // A drag ending on the button also fires click — swallow it
+    if (dragRef.current.moved) { dragRef.current.moved = false; return; }
+    setIsOpen(v => !v);
+  };
+
   useEffect(() => { if (getAccessToken) setToken(getAccessToken()); }, [getAccessToken, user]);
   const { socket, connected } = useSocket(token);
 
@@ -519,14 +577,23 @@ export default function SupportWidget() {
 
   return (
     <>
-      {/* Floating button */}
-      <button onClick={() => setIsOpen(v => !v)}
-        className={`fixed bottom-6 right-6 w-14 h-14 rounded-full shadow-lg z-50 flex items-center justify-center transition-all duration-300 ${
+      {/* Floating button — draggable, click toggles */}
+      <button
+        onPointerDown={onBtnPointerDown}
+        onPointerMove={onBtnPointerMove}
+        onPointerUp={endBtnDrag}
+        onPointerCancel={endBtnDrag}
+        onClick={onBtnClick}
+        title="Drag to move · Click to open support"
+        style={pos ? { left: pos.x, top: pos.y, transition: dragging ? 'none' : undefined } : undefined}
+        className={`fixed ${pos ? '' : 'bottom-6 right-6 '}w-14 h-14 rounded-full shadow-lg z-50 flex items-center justify-center touch-none select-none ${
+          dragging ? 'cursor-grabbing scale-105' : 'cursor-grab'
+        } transition-all duration-300 ${
           isOpen ? 'bg-gray-700 text-white rotate-90 scale-95' : 'bg-brand-red text-white hover:scale-110 hover:shadow-xl'
         }`}>
         {isOpen ? <X className="w-6 h-6" /> : <HelpCircle className="w-7 h-7" />}
         {!isOpen && unread > 0 && (
-          <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-yellow-400 text-gray-900 text-[10px] font-bold flex items-center justify-center shadow">
+          <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-brand-black text-white text-[10px] font-bold flex items-center justify-center shadow">
             {unread > 9 ? '9+' : unread}
           </span>
         )}
@@ -547,8 +614,8 @@ export default function SupportWidget() {
               <p className="font-semibold text-sm leading-tight">Support Center</p>
               <p className="text-[10px] text-white/70 flex items-center gap-1">
                 {connected
-                  ? <><span className="w-1.5 h-1.5 bg-green-400 rounded-full inline-block" />Live</>
-                  : <><span className="w-1.5 h-1.5 bg-orange-300 rounded-full inline-block animate-pulse" />Connecting…</>
+                  ? <><span className="w-1.5 h-1.5 bg-white rounded-full inline-block" />Live</>
+                  : <><span className="w-1.5 h-1.5 bg-white/50 rounded-full inline-block animate-pulse" />Connecting…</>
                 }
               </p>
             </div>

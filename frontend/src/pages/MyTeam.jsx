@@ -10,11 +10,6 @@ const avatar = (name = '') =>
 
 const DEPT_COLORS = [
   'from-red-500 to-red-700',
-  // 'from-violet-500 to-violet-700',
-  // 'from-blue-500 to-blue-700',
-  // 'from-emerald-500 to-emerald-700',
-  // 'from-amber-500 to-amber-700',
-  // 'from-cyan-500 to-cyan-700',
 ];
 
 export default function MyTeam() {
@@ -131,7 +126,7 @@ export default function MyTeam() {
 
                   {/* Footer */}
                   <div className="mt-3 pt-3 border-t border-gray-50 flex items-center justify-between">
-                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${m.status === 'ACTIVE' ? 'bg-green-50 text-green-600' : 'bg-gray-100 text-gray-500'}`}>
+                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${m.status === 'ACTIVE' ? 'bg-gray-100 text-gray-700' : 'bg-gray-100 text-gray-500'}`}>
                       {m.status}
                     </span>
                     <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-brand-red transition-colors" />

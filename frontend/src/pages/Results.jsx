@@ -35,20 +35,20 @@ const formatAnswer = (answer, questionType) => {
 };
 
 const LEVEL_COLORS = {
-  Basic: 'bg-amber-100 text-amber-700 border-amber-200',
-  Intermediate: 'bg-orange-100 text-orange-700 border-orange-200',
-  Advanced: 'bg-blue-100 text-blue-700 border-blue-200',
-  Expert: 'bg-green-100 text-green-700 border-green-200',
+  Basic: 'bg-gray-100 text-gray-600 border-gray-300',
+  Intermediate: 'bg-gray-200 text-gray-800 border-gray-400',
+  Advanced: 'bg-brand-black text-white border-brand-black',
+  Expert: 'bg-brand-red text-white border-brand-red',
 };
 const TYPE_COLORS = {
-  SelfAssessment: 'bg-blue-100 text-blue-700',
-  SupervisorOnly: 'bg-orange-100 text-orange-700',
-  Combined: 'bg-purple-100 text-purple-700',
+  SelfAssessment: 'bg-gray-200 text-gray-800',
+  SupervisorOnly: 'bg-brand-black text-white',
+  Combined: 'bg-brand-red text-white',
 };
 const PURPOSE_COLORS = [
-  'bg-indigo-50 text-indigo-700', 'bg-cyan-50 text-cyan-700',
-  'bg-teal-50 text-teal-700', 'bg-rose-50 text-rose-700',
-  'bg-violet-50 text-violet-700', 'bg-fuchsia-50 text-fuchsia-700',
+  'bg-gray-100 text-gray-700', 'bg-gray-100 text-gray-700',
+  'bg-gray-100 text-gray-700', 'bg-red-50 text-red-700',
+  'bg-gray-100 text-gray-700', 'bg-gray-100 text-gray-700',
 ];
 
 // â”€â”€â”€ small components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -64,7 +64,7 @@ const TypeBadge = ({ type }) => {
 };
 
 const ScoreBar = ({ score, type }) => {
-  const color = type === 'Combined' ? 'bg-purple-500' : type === 'SupervisorOnly' ? 'bg-orange-500' : 'bg-brand-red';
+  const color = type === 'Combined' ? 'bg-brand-red' : type === 'SupervisorOnly' ? 'bg-gray-500' : 'bg-brand-red';
   return (
     <div className="flex items-center gap-2">
       <div className="w-16 bg-gray-100 rounded-full h-1.5">
@@ -186,7 +186,7 @@ export default function Results() {
   // RENDER â€” fixed outer shell, scrollable rows only
   // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   return (
-    <div className="p-7 h-[calc(100vh-4rem)] flex flex-col">
+    <div className="p-7 h-[calc(100vh-3rem)] flex flex-col">
 
       {/* ── Sticky Header ── */}
       <div className="flex justify-between items-start mb-3 flex-shrink-0">
@@ -198,9 +198,9 @@ export default function Results() {
         <div className="flex items-center gap-2 flex-shrink-0">
           <button
             onClick={() => { setPendingFilters({ ...filters }); setShowFilters(v => !v); }}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border font-semibold text-sm transition-colors ${showFilters || activeFilterCount > 0 ? 'border-brand-red bg-brand-red/10 text-brand-red' : 'border-gray-300 bg-white text-brand-black hover:bg-gray-50'}`}
+            className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border font-semibold text-sm transition-colors ${showFilters || activeFilterCount > 0 ? 'border-brand-red bg-brand-red/10 text-brand-red' : 'border-gray-300 bg-white text-brand-black hover:bg-gray-50'}`}
           >
-            <SlidersHorizontal className="w-3.5 h-3.5" />
+            <SlidersHorizontal className="w-3 h-3" />
             Filters
             {activeFilterCount > 0 && <span className="w-5 h-5 rounded-full bg-brand-red text-white text-xs flex items-center justify-center">{activeFilterCount}</span>}
           </button>
@@ -219,7 +219,7 @@ export default function Results() {
             <span className="text-sm text-gray-600">Show:</span>
             <select value={pagination.limit}
               onChange={e => setPagination(prev => ({ ...prev, limit: parseInt(e.target.value), page: 1 }))}
-              className="px-3 py-1.5 rounded-lg border border-gray-300 focus-brand text-sm">
+              className="px-2 py-1 rounded-lg border border-gray-300 focus-brand text-sm">
               {[10, 20, 30, 50, 100].map(n => <option key={n} value={n}>{n} per page</option>)}
             </select>
           </div>
@@ -355,8 +355,8 @@ export default function Results() {
             )}
 
             <div className="flex justify-end gap-3 mt-5 pt-4 border-t border-gray-100">
-              <button onClick={clearFilters} className="px-4 py-2 text-sm font-semibold text-gray-600 hover:text-red-600 transition-colors">Clear All</button>
-              <button onClick={applyFilters} className="px-5 py-2 bg-brand-red text-white rounded-lg text-sm font-semibold hover:bg-brand-red-dark transition-colors">Apply Filters</button>
+              <button onClick={clearFilters} className="px-3 py-1 text-sm font-semibold text-gray-600 hover:text-red-600 transition-colors">Clear All</button>
+              <button onClick={applyFilters} className="px-3 py-1 bg-brand-red text-white rounded-lg text-sm font-semibold hover:bg-brand-red-dark transition-colors">Apply Filters</button>
             </div>
           </div>
         )}
@@ -369,7 +369,7 @@ export default function Results() {
           </div>
         ) : (
           <>
-            <div className="overflow-auto flex-1" ref={tableContainerRef}>
+            <div className="overflow-auto flex-1 scrollbar-none" ref={tableContainerRef}>
               <table className="w-full text-sm">
                 {/* Sticky column headers - now sticky within the scrollable container */}
                 <thead className="bg-gray-50 border-b border-gray-100 sticky top-0 z-10">
@@ -401,7 +401,7 @@ export default function Results() {
                   {results.map(result => (
                     <tr key={result._id} className="hover:bg-gray-50 transition-colors">
                       {isAdmin && <>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-2">
                           <div className="flex items-center gap-3">
                             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-brand-red to-red-700 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
                               {(result.userName || '?').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()}
@@ -410,32 +410,32 @@ export default function Results() {
                           </div>
                         </td>
                       </>}
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-2">
                         <div className="font-medium text-sm text-gray-900 whitespace-nowrap">{result.competencyName}</div>
                       </td>
-                      <td className="px-4 py-3">
-                        <div className="flex flex-col gap-1">
-                          <TypeBadge type={result.assessmentType} />
+                      <td className="px-4 py-2">
+                        <div className="flex gap-1">
+                          {result.assessmentType}  /
                           {result.targetGroup && result.targetGroup !== 'N/A' && (
                             <span className="text-xs text-gray-400 capitalize whitespace-nowrap">{result.targetGroup.replace('-', ' ')}</span>
                           )}
                         </div>
                       </td>
-                      <td className="px-4 py-3">
-                        <ScoreBar score={result.finalScore} type={result.assessmentType} />
+                      <td className="px-4 py-2">
+                        <div className="font-medium text-sm text-gray-900 whitespace-nowrap">{result.finalScore}%</div>
                       </td>
-                      <td className="px-4 py-3"><LevelBadge level={result.level} /></td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-2">{result.level}</td>
+                      <td className="px-4 py-2">
                         <div className="flex items-center gap-1.5 text-xs text-gray-500 whitespace-nowrap">
                           <Calendar className="w-3.5 h-3.5" />
                           {result.formattedDate}
                         </div>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-2">
                         <div className="flex items-center justify-end gap-2 whitespace-nowrap">
                           <button onClick={() => openDetail(result)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors">
-                            <Eye className="w-3.5 h-3.5" /> View Result
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors">
+                            <Eye className="w-3.5 h-3.5" /> View Detail
                           </button>
                         </div>
                       </td>

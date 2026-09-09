@@ -32,20 +32,20 @@ const formatAnswer = (answer, questionType) => {
 };
 
 const LEVEL_COLORS = {
-  Basic: 'bg-amber-100 text-amber-700 border-amber-200',
-  Intermediate: 'bg-orange-100 text-orange-700 border-orange-200',
-  Advanced: 'bg-blue-100 text-blue-700 border-blue-200',
-  Expert: 'bg-green-100 text-green-700 border-green-200',
+  Basic: 'bg-gray-100 text-gray-600 border-gray-300',
+  Intermediate: 'bg-gray-200 text-gray-800 border-gray-400',
+  Advanced: 'bg-brand-black text-white border-brand-black',
+  Expert: 'bg-brand-red text-white border-brand-red',
 };
 const TYPE_COLORS = {
-  SelfAssessment: 'bg-blue-100 text-blue-700',
-  SupervisorOnly: 'bg-orange-100 text-orange-700',
-  Combined: 'bg-purple-100 text-purple-700',
+  SelfAssessment: 'bg-gray-200 text-gray-800',
+  SupervisorOnly: 'bg-brand-black text-white',
+  Combined: 'bg-brand-red text-white',
 };
 const PURPOSE_COLORS = [
-  'bg-indigo-50 text-indigo-700', 'bg-cyan-50 text-cyan-700',
-  'bg-teal-50 text-teal-700', 'bg-rose-50 text-rose-700',
-  'bg-violet-50 text-violet-700', 'bg-fuchsia-50 text-fuchsia-700',
+  'bg-gray-100 text-gray-700', 'bg-gray-100 text-gray-700',
+  'bg-gray-100 text-gray-700', 'bg-red-50 text-red-700',
+  'bg-gray-100 text-gray-700', 'bg-gray-100 text-gray-700',
 ];
 
 const LevelBadge = ({ level }) => (
@@ -70,29 +70,29 @@ const formatViolationType = (type) => ({
 }[type] || type.replace(/_/g, ' '));
 
 const getViolationStyle = (type) => ({
-  'FULLSCREEN_EXIT': { bg: 'bg-orange-100', text: 'text-orange-700', dot: 'bg-orange-500' },
-  'TAB_SWITCH': { bg: 'bg-yellow-100', text: 'text-yellow-700', dot: 'bg-yellow-500' },
-  'WINDOW_BLUR': { bg: 'bg-blue-100', text: 'text-blue-700', dot: 'bg-blue-500' },
+  'FULLSCREEN_EXIT': { bg: 'bg-gray-100', text: 'text-gray-700', dot: 'bg-gray-500' },
+  'TAB_SWITCH': { bg: 'bg-gray-100', text: 'text-gray-700', dot: 'bg-gray-500' },
+  'WINDOW_BLUR': { bg: 'bg-gray-100', text: 'text-gray-700', dot: 'bg-gray-500' },
   'RIGHT_CLICK': { bg: 'bg-red-100', text: 'text-red-700', dot: 'bg-red-500' },
-  'COPY_ATTEMPT': { bg: 'bg-purple-100', text: 'text-purple-700', dot: 'bg-purple-500' },
-  'PRINT_ATTEMPT': { bg: 'bg-indigo-100', text: 'text-indigo-700', dot: 'bg-indigo-500' },
-  'DEV_TOOLS': { bg: 'bg-pink-100', text: 'text-pink-700', dot: 'bg-pink-500' },
+  'COPY_ATTEMPT': { bg: 'bg-gray-100', text: 'text-gray-700', dot: 'bg-gray-500' },
+  'PRINT_ATTEMPT': { bg: 'bg-gray-100', text: 'text-gray-700', dot: 'bg-gray-500' },
+  'DEV_TOOLS': { bg: 'bg-gray-100', text: 'text-gray-700', dot: 'bg-gray-500' },
 }[type] || { bg: 'bg-gray-100', text: 'text-gray-700', dot: 'bg-gray-400' });
 
 // ─── Question detail row (expandable) ────────────────────────────────────────
 const QuestionDetailRow = ({ detail, isExpanded, onToggle }) => {
-  const scoreColor = detail.isCorrect ? 'text-green-700' : detail.isPartial ? 'text-yellow-700' : detail.isUnanswered ? 'text-gray-400' : 'text-red-700';
+  const scoreColor = detail.isCorrect ? 'text-brand-black' : detail.isPartial ? 'text-gray-500' : detail.isUnanswered ? 'text-gray-400' : 'text-red-700';
   return (
     <div className="border border-gray-200 rounded-xl overflow-hidden bg-white">
       <button onClick={onToggle} className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-gray-50 transition-colors text-left">
         <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
-          detail.isCorrect ? 'bg-green-100 text-green-700' : detail.isPartial ? 'bg-yellow-100 text-yellow-700' : detail.isUnanswered ? 'bg-gray-100 text-gray-500' : 'bg-red-100 text-red-700'
+          detail.isCorrect ? 'bg-gray-200 text-brand-black' : detail.isPartial ? 'bg-gray-200 text-gray-700' : detail.isUnanswered ? 'bg-gray-100 text-gray-500' : 'bg-red-100 text-red-700'
         }`}>{detail.questionNumber || '?'}</div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium text-gray-900 truncate">{detail.questionText}</p>
           <div className="flex items-center gap-2 mt-1">
-            <span className="text-[11px] bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded">{detail.questionType}</span>
-            <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${detail.isUnanswered ? 'bg-gray-100 text-gray-600' : detail.isCorrect ? 'bg-green-100 text-green-700' : detail.isPartial ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>
+            <span className="text-[11px] bg-gray-100 text-gray-700 px-2 py-0.5 rounded">{detail.questionType}</span>
+            <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${detail.isUnanswered ? 'bg-gray-100 text-gray-600' : detail.isCorrect ? 'bg-gray-200 text-brand-black' : detail.isPartial ? 'bg-gray-100 text-gray-700' : 'bg-red-100 text-red-700'}`}>
               {detail.isUnanswered ? 'Unanswered' : detail.isCorrect ? 'Correct' : detail.isPartial ? 'Partial' : 'Incorrect'}
             </span>
           </div>
@@ -108,20 +108,20 @@ const QuestionDetailRow = ({ detail, isExpanded, onToggle }) => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Answer Given</p>
-              <div className={`text-sm p-3 rounded-lg border ${detail.isUnanswered ? 'bg-gray-50 border-gray-200 text-gray-400 italic' : detail.isCorrect ? 'bg-green-50 border-green-200 text-green-800' : detail.isPartial ? 'bg-yellow-50 border-yellow-200 text-yellow-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
+              <div className={`text-sm p-3 rounded-lg border ${detail.isUnanswered ? 'bg-gray-50 border-gray-200 text-gray-400 italic' : detail.isCorrect ? 'bg-gray-100 border-gray-300 text-gray-800' : detail.isPartial ? 'bg-gray-100 border-gray-300 text-gray-700' : 'bg-red-50 border-red-200 text-red-800'}`}>
                 {detail.isUnanswered ? 'No answer provided' : formatAnswer(detail.userAnswer, detail.questionType)}
               </div>
             </div>
             <div>
               <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Correct Answer</p>
-              <div className="text-sm p-3 rounded-lg border bg-blue-50 border-blue-200 text-blue-800">
+              <div className="text-sm p-3 rounded-lg border bg-gray-100 border-gray-300 text-gray-700">
                 {formatAnswer(detail.correctAnswer, detail.questionType)}
               </div>
             </div>
           </div>
           <div className="mt-4">
             <div className="w-full bg-gray-100 rounded-full h-2">
-              <div className={`h-2 rounded-full ${detail.isCorrect ? 'bg-green-500' : detail.isPartial ? 'bg-yellow-500' : detail.isUnanswered ? 'bg-gray-300' : 'bg-red-500'}`}
+              <div className={`h-2 rounded-full ${detail.isCorrect ? 'bg-brand-red' : detail.isPartial ? 'bg-gray-500' : detail.isUnanswered ? 'bg-gray-300' : 'bg-red-500'}`}
                 style={{ width: `${detail.scorePercentage ?? 0}%` }} />
             </div>
           </div>
@@ -146,15 +146,15 @@ const QuestionDetailsSection = ({ questionDetails, summary, loading }) => {
   return (
     <div className="bg-gray-50/70 rounded-2xl p-5">
       <div className="flex items-center justify-between mb-4">
-        <h4 className="text-xs font-bold text-gray-600 uppercase tracking-wider flex items-center gap-2"><ListChecks className="w-4 h-4 text-indigo-600" />Question Breakdown</h4>
+        <h4 className="text-xs font-bold text-gray-600 uppercase tracking-wider flex items-center gap-2"><ListChecks className="w-4 h-4 text-gray-700" />Question Breakdown</h4>
         <button onClick={() => setExpanded(prev => Object.keys(prev).some(k => prev[k]) ? {} : Object.fromEntries(questionDetails.map((_, i) => [i, true])))}
-          className="text-xs text-indigo-600 font-semibold hover:underline">
+          className="text-xs text-gray-700 font-semibold hover:underline">
           {Object.values(expanded).some(Boolean) ? 'Collapse All' : 'Expand All'}
         </button>
       </div>
       {summary && (
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-4">
-          {[['Total', summary.totalQuestions, 'text-gray-700'], ['Correct', summary.fullyCorrect, 'text-green-700'], ['Partial', summary.partialCredit, 'text-yellow-700'], ['Wrong', summary.incorrect, 'text-red-700'], ['Skipped', summary.unanswered, 'text-gray-400']].map(([label, val, cls]) => (
+          {[['Total', summary.totalQuestions, 'text-gray-700'], ['Correct', summary.fullyCorrect, 'text-brand-black'], ['Partial', summary.partialCredit, 'text-gray-500'], ['Wrong', summary.incorrect, 'text-red-700'], ['Skipped', summary.unanswered, 'text-gray-400']].map(([label, val, cls]) => (
             <div key={label} className="bg-white rounded-xl p-3 text-center border border-gray-200">
               <p className={`text-lg font-black ${cls}`}>{val}</p>
               <p className="text-[11px] text-gray-500">{label}</p>
@@ -165,7 +165,7 @@ const QuestionDetailsSection = ({ questionDetails, summary, loading }) => {
       <div className="flex gap-1.5 flex-wrap mb-3">
         {[['all', 'All'], ['correct', 'Correct'], ['partial', 'Partial'], ['incorrect', 'Incorrect'], ['unanswered', 'Skipped']].map(([k, label]) => (
           <button key={k} onClick={() => setFilterType(k)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${filterType === k ? 'bg-indigo-600 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`}>
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${filterType === k ? 'bg-brand-black text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`}>
             {label}
           </button>
         ))}
@@ -188,7 +188,7 @@ const SecuritySection = ({ securityData, loading }) => {
     <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
       <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between px-5 py-4 hover:bg-gray-50 transition-colors">
         <div className="flex items-center gap-2.5">
-          <span className="p-1.5 rounded-lg bg-orange-50"><Shield className="w-4 h-4 text-orange-500" /></span>
+          <span className="p-1.5 rounded-lg bg-gray-100"><Shield className="w-4 h-4 text-gray-700" /></span>
           <div className="text-left">
             <p className="text-sm font-bold text-gray-800">Security Monitoring</p>
             <p className="text-xs text-gray-400">Assessment conduct &amp; violation log</p>
@@ -224,7 +224,7 @@ const SecuritySection = ({ securityData, loading }) => {
             })}
           </div>
         ) : (
-          <div className="border-t border-gray-100 px-5 py-4 flex items-center gap-2 text-green-600">
+          <div className="border-t border-gray-100 px-5 py-4 flex items-center gap-2 text-brand-black">
             <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
             <p className="text-xs font-semibold">No violations detected</p>
           </div>
@@ -293,8 +293,8 @@ export default function ResultDetail() {
   }
   if (!result) return null;
 
-  const scoreColor = result.finalScore >= 75 ? 'text-green-600' : result.finalScore >= 50 ? 'text-amber-600' : 'text-red-600';
-  const scoreBarColor = result.assessmentType === 'Combined' ? 'bg-purple-500' : result.assessmentType === 'SupervisorOnly' ? 'bg-orange-500' : 'bg-brand-red';
+  const scoreColor = result.finalScore >= 75 ? 'text-brand-black' : result.finalScore >= 50 ? 'text-gray-500' : 'text-red-600';
+  const scoreBarColor = result.assessmentType === 'Combined' ? 'bg-brand-red' : result.assessmentType === 'SupervisorOnly' ? 'bg-gray-500' : 'bg-brand-red';
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -321,7 +321,7 @@ export default function ResultDetail() {
       <div className="max-w-6xl mx-auto px-6 py-6 space-y-6">
         {/* ── Hero: Employee + Score ── */}
         <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
-          <div className={`h-1.5 bg-gradient-to-r ${scoreColor === 'text-green-600' ? 'from-green-500 to-emerald-500' : scoreColor === 'text-amber-600' ? 'from-amber-500 to-orange-500' : 'from-red-500 to-rose-500'}`} />
+          <div className={`h-1.5 bg-gradient-to-r ${scoreColor === 'text-brand-black' ? 'from-brand-red to-red-700' : scoreColor === 'text-gray-500' ? 'from-gray-400 to-gray-600' : 'from-red-500 to-red-700'}`} />
           <div className="p-6 grid grid-cols-1 md:grid-cols-[1fr_auto] items-center gap-6">
             <div className="flex items-center gap-4 min-w-0">
               <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-brand-red to-red-700 flex items-center justify-center text-white text-lg font-black flex-shrink-0">
@@ -353,10 +353,10 @@ export default function ResultDetail() {
 
         {/* ── Stat mini cards ── */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <MiniCard icon={Target} label="Purpose" value={result.purpose && result.purpose !== 'N/A' ? result.purpose : '—'} accent="text-indigo-600 bg-indigo-50" />
-          <MiniCard icon={Users} label="Target Group" value={result.targetGroup && result.targetGroup !== 'N/A' ? result.targetGroup.replace('-', ' ') : '—'} accent="text-purple-600 bg-purple-50" />
-          <MiniCard icon={Clock} label="Completed" value={new Date(result.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })} accent="text-blue-600 bg-blue-50" />
-          <MiniCard icon={Award} label="Level" value={result.level || '—'} accent="text-green-600 bg-green-50" />
+          <MiniCard icon={Target} label="Purpose" value={result.purpose && result.purpose !== 'N/A' ? result.purpose : '—'} accent="text-gray-700 bg-gray-100" />
+          <MiniCard icon={Users} label="Target Group" value={result.targetGroup && result.targetGroup !== 'N/A' ? result.targetGroup.replace('-', ' ') : '—'} accent="text-gray-700 bg-gray-100" />
+          <MiniCard icon={Clock} label="Completed" value={new Date(result.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })} accent="text-gray-700 bg-gray-100" />
+          <MiniCard icon={Award} label="Level" value={result.level || '—'} accent="text-brand-black bg-gray-200" />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -383,14 +383,14 @@ export default function ResultDetail() {
             {/* Score breakdown */}
             <div className="bg-white rounded-2xl border border-gray-200">
               <div className="px-5 py-4 border-b border-gray-100">
-                <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2"><Scale className="w-4 h-4 text-orange-500" /> Score Breakdown</h3>
+                <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2"><Scale className="w-4 h-4 text-gray-700" /> Score Breakdown</h3>
               </div>
               <div className="p-5 space-y-4">
                 {result.selfScore !== null && result.selfScore !== undefined && (
                   <ScoreRow icon={User} label="Self Assessment" value={result.selfScore} color="bg-brand-red" />
                 )}
                 {result.supervisorScore !== null && result.supervisorScore !== undefined && (
-                  <ScoreRow icon={Users} label="Supervisor" value={result.supervisorScore} color="bg-purple-500" />
+                  <ScoreRow icon={Users} label="Supervisor" value={result.supervisorScore} color="bg-brand-red" />
                 )}
                 {!result.hasBoth && (
                   <p className="text-xs text-gray-400">
@@ -407,12 +407,12 @@ export default function ResultDetail() {
 
             {/* Recommendation */}
             {result.recommendation && (
-              <div className="rounded-2xl border border-blue-200 bg-blue-50 overflow-hidden">
-                <div className="px-5 py-3 border-b border-blue-200 flex items-center gap-2">
-                  <Info className="w-4 h-4 text-blue-600" />
-                  <h3 className="text-sm font-bold text-blue-800">Development Recommendation</h3>
+              <div className="rounded-2xl border border-gray-300 bg-gray-100 overflow-hidden">
+                <div className="px-5 py-3 border-b border-gray-200 flex items-center gap-2">
+                  <Info className="w-4 h-4 text-gray-700" />
+                  <h3 className="text-sm font-bold text-gray-800">Development Recommendation</h3>
                 </div>
-                <p className="px-5 py-4 text-sm text-blue-900 leading-relaxed">{result.recommendation}</p>
+                <p className="px-5 py-4 text-sm text-gray-700 leading-relaxed">{result.recommendation}</p>
               </div>
             )}
           </div>
@@ -426,7 +426,7 @@ export default function ResultDetail() {
               </>
             ) : (
               <div className="bg-white rounded-2xl border border-gray-200 min-h-64 flex flex-col items-center justify-center text-center p-8">
-                <CheckCircle2 className="w-12 h-12 text-green-200 mb-3" />
+                <CheckCircle2 className="w-12 h-12 text-gray-300 mb-3" />
                 <p className="text-sm text-gray-600">No answer breakdown available for your role.</p>
                 <p className="text-xs text-gray-400 mt-1">Detailed question review is available to HR administrators and supervisors.</p>
               </div>

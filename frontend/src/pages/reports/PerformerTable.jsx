@@ -6,8 +6,8 @@ export default function PerformerTable({ title, data = [], type = 'top', onDetai
   return (
     <div className="bg-white rounded-xl border border-gray-100 shadow-card overflow-hidden">
       <div className="flex items-center gap-3 px-5 py-3 border-b border-gray-100 bg-gray-50">
-        <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 ${isTop ? 'bg-emerald-100' : 'bg-red-100'}`}>
-          {isTop ? <Medal className="w-4 h-4 text-emerald-600" /> : <AlertTriangle className="w-4 h-4 text-red-500" />}
+        <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 ${isTop ? 'bg-gray-200' : 'bg-red-100'}`}>
+          {isTop ? <Medal className="w-4 h-4 text-gray-700" /> : <AlertTriangle className="w-4 h-4 text-red-500" />}
         </div>
         <div>
           <h3 className="text-sm font-bold text-gray-900">{title}</h3>
@@ -27,7 +27,7 @@ export default function PerformerTable({ title, data = [], type = 'top', onDetai
         ) : data.map((row, i) => (
           <div key={i} className="grid grid-cols-[24px_1fr_60px_72px_36px] gap-3 px-5 py-2.5 items-center hover:bg-gray-50 transition-colors group">
             <span className={`w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center
-              ${isTop ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'}`}>{i + 1}</span>
+              ${isTop ? 'bg-gray-200 text-gray-700' : 'bg-red-100 text-red-600'}`}>{i + 1}</span>
             <div className="min-w-0">
               <p className="text-sm font-semibold text-gray-800 truncate">{row.name || '—'}</p>
               {row.department && <p className="text-[11px] text-gray-400 truncate">{row.department}</p>}

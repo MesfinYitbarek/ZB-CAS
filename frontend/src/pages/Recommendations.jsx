@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Plus, Edit2, Trash2, Lightbulb,
   ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Search, Copy,
+  Upload, Download, FileSpreadsheet, Loader2, AlertTriangle, CheckCircle2,
 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import Modal from '../components/Modal';
@@ -10,17 +11,17 @@ import api from '../utils/api';
 const LEVELS = ['Basic', 'Intermediate', 'Advanced', 'Expert'];
 
 const LEVEL_STYLES = {
-  Basic:        'bg-sky-50 text-sky-600 ring-1 ring-sky-200',
-  Intermediate: 'bg-emerald-50 text-emerald-600 ring-1 ring-emerald-200',
-  Advanced:     'bg-violet-50 text-violet-600 ring-1 ring-violet-200',
-  Expert:       'bg-amber-50 text-amber-600 ring-1 ring-amber-200',
+  Basic:        'bg-gray-100 text-gray-600 border border-gray-300',
+  Intermediate: 'bg-gray-200 text-gray-800 border border-gray-400',
+  Advanced:     'bg-brand-black text-white border border-brand-black',
+  Expert:       'bg-brand-red text-white border border-brand-red',
 };
 
 const LEVEL_DOT = {
-  Basic:        'bg-sky-400',
-  Intermediate: 'bg-emerald-400',
-  Advanced:     'bg-violet-400',
-  Expert:       'bg-amber-400',
+  Basic:        'bg-gray-400',
+  Intermediate: 'bg-gray-600',
+  Advanced:     'bg-brand-black',
+  Expert:       'bg-brand-red',
 };
 
 export default function Recommendations() {
@@ -39,6 +40,78 @@ export default function Recommendations() {
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
 
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 0 });
+
+  // ── Bulk import ────────────────────────────────────────────────────────────
+  const [showImport, setShowImport] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState(null);
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef(null);
+
+  const resetImport = () => {
+    setSelectedFile(null);
+    setImportResult(null);
+    setDragOver(false);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const openImport = () => {
+    resetImport();
+    setShowImport(true);
+  };
+
+  const onDropFile = (e) => {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer?.files?.[0];
+    if (file) setSelectedFile(file);
+  };
+
+  const formatBytes = (b) => {
+    if (!b) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB'];
+    const i = Math.floor(Math.log(b) / Math.log(k));
+    return `${parseFloat((b / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+  };
+
+  const handleDownloadTemplate = async () => {
+    try {
+      const res = await api.get('/recommendations/import/template', { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'recommendation-import-template.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch {
+      show('Could not download the template.', 'error');
+    }
+  };
+
+  const runImport = async () => {
+    if (!selectedFile) { show('Please choose a file first.', 'error'); return; }
+    setImporting(true);
+    setImportResult(null);
+    try {
+      const fd = new FormData();
+      fd.append('file', selectedFile);
+      const { data } = await api.post('/recommendations/import', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      setImportResult(data.data);
+      show(`Import complete: ${data.data.summary.imported} imported, ${data.data.summary.failed} failed.`,
+        data.data.summary.failed > 0 ? 'info' : 'success');
+      if (data.data.summary.imported > 0) fetchItems();
+    } catch (err) {
+      show(err.response?.data?.message || 'Import failed.', 'error');
+    } finally {
+      setImporting(false);
+    }
+  };
 
   const initForm = () => ({
     competencyId: '',
@@ -230,12 +303,20 @@ export default function Recommendations() {
         <div>
           <h1 className="text-xl font-bold text-brand-black">Recommendations</h1>
         </div>
-        <button
-          onClick={openCreate}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors"
-        >
-          <Plus className="w-3.5 h-3.5" /> Add New
-        </button>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <button
+            onClick={openImport}
+            className="flex items-center gap-1.5 px-2 py-1 text-sm border border-gray-300 bg-white text-brand-black rounded-lg font-semibold hover:bg-gray-50 transition-colors"
+          >
+            <Upload className="w-3 h-3" /> Import
+          </button>
+          <button
+            onClick={openCreate}
+            className="flex items-center gap-1.5 px-2 py-1 text-sm bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors"
+          >
+            <Plus className="w-3 h-3" /> Add New
+          </button>
+        </div>
       </div>
 
       <div className="flex justify-between items-center gap-3 mb-5 flex-wrap flex-shrink-0">
@@ -256,7 +337,7 @@ export default function Recommendations() {
           <select
             value={pagination.limit}
             onChange={(e) => setPagination((p) => ({ ...p, limit: parseInt(e.target.value), page: 1 }))}
-            className="px-3 py-1.5 rounded-lg border border-gray-300 focus-brand text-sm"
+            className="px-2 py-1 rounded-lg border border-gray-300 focus-brand text-sm"
           >
             {[10, 20, 50].map((n) => <option key={n} value={n}>{n} per page</option>)}
           </select>
@@ -264,7 +345,7 @@ export default function Recommendations() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar min-h-0">
+      <div className="flex-1 overflow-y-auto scrollbar-none min-h-0">
         {loading ? (
           <div className="flex items-center justify-center p-16">
             <div className="w-10 h-10 border-4 border-brand-red border-t-transparent rounded-full animate-spin" />
@@ -532,6 +613,155 @@ export default function Recommendations() {
             {modal === 'create' ? 'Save All' : 'Update'}
           </button>
         </div>
+      </Modal>
+
+      {/* Bulk import modal */}
+      <Modal open={showImport} onClose={() => setShowImport(false)} title="Bulk Import Recommendations" large>
+        {!importResult ? (
+          <div className="space-y-4">
+            <div
+              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={onDropFile}
+              onClick={() => fileInputRef.current?.click()}
+              className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors ${
+                dragOver ? 'border-brand-red bg-brand-red-muted' : 'border-gray-300 hover:border-brand-red hover:bg-gray-50'
+              }`}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx,.xls,.csv,.txt"
+                className="hidden"
+                onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+              />
+              <FileSpreadsheet className="w-10 h-10 mx-auto text-gray-400 mb-3" />
+              {selectedFile ? (
+                <div>
+                  <p className="font-semibold text-brand-black break-all">{selectedFile.name}</p>
+                  <p className="text-xs text-gray-500 mt-1">{formatBytes(selectedFile.size)} · click to change</p>
+                </div>
+              ) : (
+                <div>
+                  <p className="font-semibold text-brand-black">Drag & drop a file here, or click to browse</p>
+                  <p className="text-xs text-gray-500 mt-1">Supported: .xlsx, .xls, .csv</p>
+                </div>
+              )}
+            </div>
+
+            <p className="text-xs text-gray-500">
+              Columns: <code className="font-mono bg-gray-100 px-1 rounded">competency</code>,{' '}
+              <code className="font-mono bg-gray-100 px-1 rounded">category</code> (only needed when names repeat),{' '}
+              <code className="font-mono bg-gray-100 px-1 rounded">targetGroup</code>,{' '}
+              <code className="font-mono bg-gray-100 px-1 rounded">level</code> (Basic / Intermediate / Advanced / Expert),{' '}
+              <code className="font-mono bg-gray-100 px-1 rounded">recommendation</code>,{' '}
+              <code className="font-mono bg-gray-100 px-1 rounded">description</code> (optional).
+              Existing rows are updated.
+            </p>
+
+            <button
+              onClick={handleDownloadTemplate}
+              className="flex items-center gap-2 text-brand-red font-semibold text-sm hover:text-brand-red-dark transition-colors"
+            >
+              <Download className="w-4 h-4" /> Download Excel template
+            </button>
+
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                onClick={() => setShowImport(false)}
+                className="px-4 py-2 border border-gray-300 rounded-lg font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={runImport}
+                disabled={importing || !selectedFile}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {importing && <Loader2 className="w-4 h-4 animate-spin" />}
+                {importing ? 'Importing...' : 'Import Recommendations'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-5">
+            <div className="grid grid-cols-3 gap-3">
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-center">
+                <p className="text-2xl font-bold text-brand-black">{importResult.summary.total}</p>
+                <p className="text-xs text-gray-500 mt-1">Total Rows</p>
+              </div>
+              <div className="bg-gray-100 border border-gray-300 rounded-lg p-4 text-center">
+                <p className="text-2xl font-bold text-gray-700">{importResult.summary.imported}</p>
+                <p className="text-xs text-gray-700 mt-1">Imported</p>
+              </div>
+              <div className={`${importResult.failed.length ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200'} border rounded-lg p-4 text-center`}>
+                <p className={`text-2xl font-bold ${importResult.failed.length ? 'text-brand-red' : 'text-gray-500'}`}>{importResult.summary.failed}</p>
+                <p className={`text-xs mt-1 ${importResult.failed.length ? 'text-brand-red' : 'text-gray-500'}`}>Failed</p>
+              </div>
+            </div>
+
+            {importResult.imported.length > 0 && (
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <div className="bg-gray-50 px-4 py-2 flex items-center gap-2 text-sm font-semibold text-gray-700">
+                  <CheckCircle2 className="w-4 h-4 text-gray-700" /> Imported Recommendations
+                </div>
+                <div className="max-h-52 overflow-y-auto custom-scrollbar">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 text-left text-xs text-gray-500">
+                      <tr>
+                        <th className="px-4 py-2">Competency</th>
+                        <th className="px-4 py-2">Target Group</th>
+                        <th className="px-4 py-2">Level</th>
+                        <th className="px-4 py-2">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {importResult.imported.map((r) => (
+                        <tr key={r._id}>
+                          <td className="px-4 py-2 font-medium">{r.competency}</td>
+                          <td className="px-4 py-2 capitalize">{r.targetGroup}</td>
+                          <td className="px-4 py-2">{r.level}</td>
+                          <td className="px-4 py-2 text-gray-500">{r.updated ? 'Updated' : 'Created'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {importResult.failed.length > 0 && (
+              <div className="border border-red-200 bg-red-50/30 rounded-lg overflow-hidden">
+                <div className="bg-red-50 px-4 py-2 flex items-center gap-2 text-sm font-semibold text-brand-red">
+                  <AlertTriangle className="w-4 h-4" /> Failed Rows ({importResult.failed.length})
+                </div>
+                <div className="max-h-52 overflow-y-auto custom-scrollbar divide-y divide-red-100">
+                  {importResult.failed.map((f, i) => (
+                    <div key={i} className="px-4 py-2 flex items-start gap-3 text-sm">
+                      <span className="text-xs font-mono bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded flex-shrink-0 mt-0.5">Row {f.row}</span>
+                      <span className="text-gray-700">{f.message}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => { resetImport(); }}
+                className="px-4 py-2 border border-gray-300 rounded-lg font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                Import More
+              </button>
+              <button
+                onClick={() => { resetImport(); setShowImport(false); }}
+                className="px-4 py-2 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );

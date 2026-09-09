@@ -18,8 +18,8 @@ const ROLE_LABELS = {
 
 const ROLE_COLORS = {
   HR_ADMIN:   'bg-red-100 text-red-700 border-red-200',
-  SUPERVISOR: 'bg-blue-100 text-blue-700 border-blue-200',
-  EMPLOYEE:   'bg-green-100 text-green-700 border-green-200',
+  SUPERVISOR: 'bg-gray-200 text-gray-700 border-gray-300',
+  EMPLOYEE:   'bg-gray-200 text-gray-700 border-gray-300',
 };
 
 const GENDER_LABELS = {
@@ -75,7 +75,7 @@ export default function UserProfile() {
   const roles = user.roles ?? (user.role ? [user.role] : ['EMPLOYEE']);
 
   return (
-    <div className="h-[calc(100vh-4rem)] flex flex-col bg-[#f8f9fb] overflow-hidden">
+    <div className="h-[calc(100vh-4rem)] flex flex-col bg-gray-50 overflow-hidden">
       {/* Sticky Header */}
       <div className="flex-shrink-0 bg-white border-b  border-gray-200 shadow-xlz-10">
         <div className="max-w-4xl mx-auto px-4 py-3">

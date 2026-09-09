@@ -112,7 +112,7 @@ export default function FilterDrawer(props) {
 
       <div className="p-4 space-y-3">
         {isAdmin && (
-          <FilterSection title="Employee / User" icon={UserIcon} color="bg-blue-100 text-blue-600">
+          <FilterSection title="Employee / User" icon={UserIcon} color="bg-gray-200 text-gray-700">
             <FF label="Department">
               <select value={filters.department} onChange={e => setDepartment(e.target.value)} className={sCls}>
                 <option value="">All Departments</option>
@@ -137,7 +137,7 @@ export default function FilterDrawer(props) {
           </FilterSection>
         )}
 
-        <FilterSection title="Competency & Assessment" icon={Layers} color="bg-emerald-100 text-emerald-600">
+        <FilterSection title="Competency & Assessment" icon={Layers} color="bg-gray-200 text-gray-700">
           <FF label="Competency">
             <select value={filters.competencyId} onChange={e => setCompetencyId(e.target.value)} className={sCls}>
               <option value="">All Competencies</option>
@@ -178,7 +178,7 @@ export default function FilterDrawer(props) {
           </FF>
         </FilterSection>
 
-        <FilterSection title="Score Ranges" icon={Sliders} color="bg-amber-100 text-amber-600" defaultOpen={false}>
+        <FilterSection title="Score Ranges" icon={Sliders} color="bg-gray-200 text-gray-700" defaultOpen={false}>
           <FF label="Overall Score Min (%)"><input type="number" min="0" max="100" value={filters.scoreMin} onChange={e => setScoreMin(e.target.value)} placeholder="0" className={iCls} /></FF>
           <FF label="Overall Score Max (%)"><input type="number" min="0" max="100" value={filters.scoreMax} onChange={e => setScoreMax(e.target.value)} placeholder="100" className={iCls} /></FF>
           <FF label="Self Score Min (%)"><input type="number" min="0" max="100" value={filters.selfScoreMin} onChange={e => setSelfScoreMin(e.target.value)} placeholder="0" className={iCls} /></FF>

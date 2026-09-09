@@ -20,6 +20,12 @@ function shuffle(arr) {
 export function applyQuestionDefaults(data) {
   const obj = { ...data };
 
+  // Normalize target-group spelling (hyphen/underscore/case) to the enum
+  if (obj.targetGroup !== undefined && obj.targetGroup !== null) {
+    const s = String(obj.targetGroup).trim().toLowerCase().replace(/[-\s]+/g, '_');
+    obj.targetGroup = (s === 'non_managerial' || s === 'nonmanagerial') ? 'non_managerial' : s;
+  }
+
   // Force TrueFalse options
   if (obj.type === 'TrueFalse') {
     obj.options = ['True', 'False'];

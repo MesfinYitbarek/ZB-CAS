@@ -32,19 +32,19 @@ const AGG_OPTIONS = [
   { id: 'sum',   label: 'Sum' },
 ];
 
-const LEVEL_COLOR = { Expert: '#16A34A', Advanced: '#2563EB', Intermediate: '#EA580C', Basic: '#F59E0B' };
+const LEVEL_COLOR = { Expert: '#C8102E', Advanced: '#111827', Intermediate: '#4B5563', Basic: '#9CA3AF' };
 
 function scoreStyle(val, valueField) {
   if (val === null || val === undefined) return {};
   if (valueField === 'count') {
     const intensity = Math.min(val / 20, 1);
-    return { background: `rgba(59,130,246,${0.08 + intensity * 0.22})`, color: '#1e40af', fontWeight: 600 };
+    return { background: `rgba(17,24,39,${0.08 + intensity * 0.22})`, color: '#111827', fontWeight: 600 };
   }
-  if (val >= 80) return { background: 'rgba(16,185,129,0.1)', color: '#065f46', fontWeight: 600 };
-  if (val >= 65) return { background: 'rgba(59,130,246,0.1)', color: '#1e40af', fontWeight: 600 };
-  if (val >= 50) return { background: 'rgba(245,158,11,0.12)', color: '#92400e', fontWeight: 600 };
-  if (val >= 35) return { background: 'rgba(234,88,12,0.1)', color: '#7c2d12', fontWeight: 600 };
-  return { background: 'rgba(239,68,68,0.1)', color: '#991b1b', fontWeight: 600 };
+  if (val >= 80) return { background: 'rgba(200,16,46,0.1)', color: '#C8102E', fontWeight: 600 };
+  if (val >= 65) return { background: 'rgba(17,24,39,0.1)', color: '#111827', fontWeight: 600 };
+  if (val >= 50) return { background: 'rgba(107,114,128,0.12)', color: '#6B7280', fontWeight: 600 };
+  if (val >= 35) return { background: 'rgba(156,163,175,0.15)', color: '#9CA3AF', fontWeight: 600 };
+  return { background: 'rgba(156,163,175,0.15)', color: '#9CA3AF', fontWeight: 600 };
 }
 
 function FieldPill({ field, zone, onDrop, children }) {
@@ -139,7 +139,7 @@ export default function CustomReportBuilder({ filterParams }) {
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium cursor-grab active:cursor-grabbing transition-all select-none
                   ${dragging === f.id ? 'opacity-40' : ''}
                   ${rowField === f.id ? 'border-brand-red bg-brand-red/10 text-brand-red' :
-                    colField === f.id ? 'border-blue-500 bg-blue-50 text-blue-700' :
+                    colField === f.id ? 'border-gray-700 bg-gray-100 text-gray-700' :
                     'border-gray-300 bg-white text-gray-700 hover:border-gray-400'}`}
               >
                 <GripVertical className="w-3 h-3 opacity-40" />
@@ -169,13 +169,13 @@ export default function CustomReportBuilder({ filterParams }) {
 
           <div>
             <p className="text-xs font-semibold text-gray-600 mb-1.5 flex items-center gap-1">
-              <span className="w-4 h-4 rounded bg-blue-100 text-blue-700 text-[9px] font-bold flex items-center justify-center">C</span>
+              <span className="w-4 h-4 rounded bg-gray-200 text-gray-700 text-[9px] font-bold flex items-center justify-center">C</span>
               Column field <span className="text-[10px] text-gray-400 font-normal">(optional)</span>
             </p>
             <FieldPill field={colField} zone="col" onDrop={handleDrop}>
               {colField && (
                 <div className="flex items-center gap-1.5 w-full">
-                  <span className="text-xs font-semibold text-blue-700">{fieldLabel(colField)}</span>
+                  <span className="text-xs font-semibold text-gray-700">{fieldLabel(colField)}</span>
                   <button onClick={() => setColField('')} className="ml-auto text-gray-400 hover:text-red-500"><X className="w-3 h-3" /></button>
                 </div>
               )}
@@ -212,7 +212,7 @@ export default function CustomReportBuilder({ filterParams }) {
               className="flex items-center gap-2 px-4 py-2.5 border border-gray-300 bg-white rounded-lg text-sm font-semibold text-brand-black hover:bg-gray-50 disabled:opacity-50 transition-colors">
               {exporting
                 ? <><Loader2 className="w-4 h-4 animate-spin" />Exporting…</>
-                : <><FileSpreadsheet className="w-4 h-4 text-green-600" />Export Excel</>}
+                : <><FileSpreadsheet className="w-4 h-4 text-gray-700" />Export Excel</>}
             </button>
           )}
 
@@ -248,7 +248,7 @@ export default function CustomReportBuilder({ filterParams }) {
             </div>
           </div>
 
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto scrollbar-none">
             <table className="w-full text-sm min-w-max">
               <thead className="border-b border-gray-100 bg-gray-50 sticky top-0">
                 <tr>

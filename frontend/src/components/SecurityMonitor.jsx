@@ -7,17 +7,17 @@ export default function SecurityMonitor({ violations, isHighRisk }) {
 
   return (
     <div className={`fixed bottom-6 right-6 w-80 rounded-xl shadow-2xl border-2 z-50 ${
-      isHighRisk ? 'bg-red-50 border-red-500' : 'bg-yellow-50 border-yellow-500'
+      isHighRisk ? 'bg-red-50 border-red-500' : 'bg-gray-50 border-gray-400'
     }`}>
       <div className={`px-4 py-3 border-b flex items-center gap-3 ${
-        isHighRisk ? 'bg-red-100 border-red-200' : 'bg-yellow-100 border-yellow-200'
+        isHighRisk ? 'bg-red-100 border-red-200' : 'bg-gray-200 border-gray-300'
       }`}>
-        <Shield className={`w-5 h-5 ${isHighRisk ? 'text-red-600' : 'text-yellow-600'}`} />
-        <span className={`font-bold text-sm ${isHighRisk ? 'text-red-900' : 'text-yellow-900'}`}>
+        <Shield className={`w-5 h-5 ${isHighRisk ? 'text-red-600' : 'text-gray-700'}`} />
+        <span className={`font-bold text-sm ${isHighRisk ? 'text-red-900' : 'text-gray-900'}`}>
           Security Monitor
         </span>
         <span className={`ml-auto px-2 py-0.5 rounded-full text-xs font-bold ${
-          isHighRisk ? 'bg-red-200 text-red-900' : 'bg-yellow-200 text-yellow-900'
+          isHighRisk ? 'bg-red-200 text-red-900' : 'bg-gray-300 text-gray-800'
         }`}>
           {violations.length} events
         </span>

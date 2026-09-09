@@ -3,8 +3,8 @@ export default function StatusBadge({ status, type = 'assessment' }) {
     if (type === 'assessment') {
       const configs = {
         DRAFT: { bg: 'bg-gray-100', text: 'text-gray-600', label: 'Draft' },
-        SCHEDULED: { bg: 'bg-blue-100', text: 'text-blue-600', label: 'Scheduled' },
-        ACTIVE: { bg: 'bg-green-100', text: 'text-green-600', label: 'Active' },
+        SCHEDULED: { bg: 'bg-gray-200', text: 'text-gray-700', label: 'Scheduled' },
+        ACTIVE: { bg: 'bg-brand-black', text: 'text-white', label: 'Active' },
         COMPLETED: { bg: 'bg-brand-red-muted', text: 'text-brand-red', label: 'Completed' },
         ARCHIVED: { bg: 'bg-gray-200', text: 'text-gray-500', label: 'Archived' },
       };
@@ -13,25 +13,25 @@ export default function StatusBadge({ status, type = 'assessment' }) {
 
     if (type === 'result') {
       const configs = {
-        PENDING: { bg: 'bg-yellow-100', text: 'text-yellow-700', label: 'Pending' },
-        FINAL: { bg: 'bg-green-100', text: 'text-green-600', label: 'Final' },
+        PENDING: { bg: 'bg-gray-100', text: 'text-gray-700', label: 'Pending' },
+        FINAL: { bg: 'bg-brand-black', text: 'text-white', label: 'Final' },
       };
       return configs[status] || configs.PENDING;
     }
 
     if (type === 'level') {
       const configs = {
-        Basic: { bg: 'bg-yellow-100', text: 'text-yellow-700', label: 'Basic' },
-        Intermediate: { bg: 'bg-orange-100', text: 'text-orange-600', label: 'Intermediate' },
-        Advanced: { bg: 'bg-blue-100', text: 'text-blue-600', label: 'Advanced' },
-        Expert: { bg: 'bg-green-100', text: 'text-green-600', label: 'Expert' },
+        Basic: { bg: 'bg-gray-100', text: 'text-gray-600', label: 'Basic' },
+        Intermediate: { bg: 'bg-gray-200', text: 'text-gray-800', label: 'Intermediate' },
+        Advanced: { bg: 'bg-brand-black', text: 'text-white', label: 'Advanced' },
+        Expert: { bg: 'bg-brand-red', text: 'text-white', label: 'Expert' },
       };
       return configs[status] || configs.Basic;
     }
 
     if (type === 'user') {
       const configs = {
-        ACTIVE: { bg: 'bg-green-100', text: 'text-green-600', label: 'Active' },
+        ACTIVE: { bg: 'bg-brand-black', text: 'text-white', label: 'Active' },
         INACTIVE: { bg: 'bg-gray-200', text: 'text-gray-500', label: 'Inactive' },
       };
       return configs[status] || configs.ACTIVE;

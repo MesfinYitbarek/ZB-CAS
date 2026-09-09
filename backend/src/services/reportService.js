@@ -1,5 +1,6 @@
 import logger from '../utils/logger.js';
 import prisma from '../config/prisma.js';
+import { denormalizeTargetGroup } from '../utils/targetGroup.js';
 
 export const generateReportsForAssessment = async (assessmentId) => {
 
@@ -70,7 +71,7 @@ export const generateReportsForAssessment = async (assessmentId) => {
         assessment_description: assessment.description || '',
         assessment_type: assessment.type || '',
         assessment_purpose: assessment.purpose || '',
-        assessment_targetGroup: assessment.targetGroup || '',
+        assessment_targetGroup: denormalizeTargetGroup(assessment.targetGroup) || '',
         assessment_startDate: assessment.startDate || null,
         assessment_endDate: assessment.endDate || null,
         overallScore,
@@ -88,7 +89,7 @@ export const generateReportsForAssessment = async (assessmentId) => {
         assessment_description: assessment.description || '',
         assessment_type: assessment.type || '',
         assessment_purpose: assessment.purpose || '',
-        assessment_targetGroup: assessment.targetGroup || '',
+        assessment_targetGroup: denormalizeTargetGroup(assessment.targetGroup) || '',
         assessment_startDate: assessment.startDate || null,
         assessment_endDate: assessment.endDate || null,
         overallScore,

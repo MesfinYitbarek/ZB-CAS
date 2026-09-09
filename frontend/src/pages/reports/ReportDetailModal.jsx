@@ -83,8 +83,8 @@ export default function ReportDetailModal({ report, onClose }) {
           </div>
 
           {assessment?.description && (
-            <div className="px-6 py-3 border-b border-gray-100 bg-blue-50/40">
-              <p className="text-xs text-blue-700 italic">&quot;{assessment.description}&quot;</p>
+            <div className="px-6 py-3 border-b border-gray-100 bg-gray-100/40">
+              <p className="text-xs text-gray-700 italic">&quot;{assessment.description}&quot;</p>
             </div>
           )}
 
@@ -156,7 +156,7 @@ export default function ReportDetailModal({ report, onClose }) {
               {assessment?.endDate && <span>End: {new Date(assessment.endDate).toLocaleDateString()}</span>}
               {status && (
                 <span className={`ml-auto px-2.5 py-0.5 rounded-full font-semibold text-[10px]
-                  ${status === 'COMPLETE' ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
+                  ${status === 'COMPLETE' ? 'bg-brand-black text-white' : 'bg-gray-100 text-gray-500'}`}>
                   {status}
                 </span>
               )}

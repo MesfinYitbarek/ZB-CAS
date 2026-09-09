@@ -50,7 +50,8 @@ export const getAdminDashboardStats = asyncHandler(async (req, res) => {
     totalUsers, activeUsers, totalCompetencies, assessments,
     totalResults, pendingResults, recentActivity,
     competencyCategories, assessmentStatusDist, trendData,
-    levelDist, deptPerformanceResults, scoreStatsResults, questionsRaw, allTimeResults
+    levelDist, deptPerformanceResults, scoreStatsResults, questionsRaw, allTimeResults,
+    totalQuestions
   ] = await Promise.all([
     prisma.user.count(),
     prisma.user.count({ where: { status: 'ACTIVE' } }),
@@ -86,6 +87,7 @@ export const getAdminDashboardStats = asyncHandler(async (req, res) => {
       include: { competency: { select: { name: true, category: true } } },
     }),
     prisma.result.count(),
+    prisma.question.count(),
   ]);
 
   // Department performance: group in JS
@@ -147,7 +149,7 @@ export const getAdminDashboardStats = asyncHandler(async (req, res) => {
       stats: {
         totalUsers, activeUsers, totalCompetencies,
         activeAssessments, completedAssessments, draftAssessments, scheduledAssessments,
-        pendingResults, totalResults, allTimeResults,
+        pendingResults, totalResults, allTimeResults, totalQuestions,
         avgScore: scores.avgScore ? Math.round(scores.avgScore) : 0,
         maxScore: scores.maxScore || 0,
         minScore: scores.minScore || 0,

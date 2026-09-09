@@ -8,6 +8,7 @@ const router = express.Router();
 router.use(protect);
 
 router.get('/', qCtrl.getQuestions);
+router.get('/import/template', authorize('HR_ADMIN'), qCtrl.downloadQuestionTemplate);
 router.get('/:id', qCtrl.getQuestion);
 
 router.post('/', authorize('HR_ADMIN'), qCtrl.createQuestion);

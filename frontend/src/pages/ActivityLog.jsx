@@ -25,16 +25,16 @@ const ENTITY_FILTERS = [
 ];
 
 const ENTITY_META = {
-  User:                 { icon: User,            color: 'text-blue-600 bg-blue-100' },
+  User:                 { icon: User,            color: 'text-gray-700 bg-gray-200' },
   Assessment:           { icon: ClipboardList,   color: 'text-brand-red bg-brand-red/10' },
-  Result:               { icon: FileText,        color: 'text-green-600 bg-green-100' },
-  Feedback:             { icon: MessageSquare,   color: 'text-orange-600 bg-orange-100' },
-  Competency:           { icon: Target,          color: 'text-indigo-600 bg-indigo-100' },
-  Question:             { icon: HelpCircle,      color: 'text-purple-600 bg-purple-100' },
-  Recommendation:       { icon: Lightbulb,       color: 'text-amber-600 bg-amber-100' },
-  FAQ:                  { icon: BookOpen,        color: 'text-cyan-600 bg-cyan-100' },
-  SupervisorEvaluation: { icon: ClipboardCheck,  color: 'text-sky-600 bg-sky-100' },
-  Response:             { icon: CheckCircle,     color: 'text-emerald-600 bg-emerald-100' },
+  Result:               { icon: FileText,        color: 'text-gray-700 bg-gray-200' },
+  Feedback:             { icon: MessageSquare,   color: 'text-gray-700 bg-gray-200' },
+  Competency:           { icon: Target,          color: 'text-gray-700 bg-gray-200' },
+  Question:             { icon: HelpCircle,      color: 'text-gray-700 bg-gray-200' },
+  Recommendation:       { icon: Lightbulb,       color: 'text-gray-700 bg-gray-200' },
+  FAQ:                  { icon: BookOpen,        color: 'text-gray-700 bg-gray-200' },
+  SupervisorEvaluation: { icon: ClipboardCheck,  color: 'text-gray-700 bg-gray-200' },
+  Response:             { icon: CheckCircle,     color: 'text-gray-700 bg-gray-200' },
 };
 
 const DEFAULT_META = { icon: Activity, color: 'text-gray-600 bg-gray-100' };
@@ -126,7 +126,7 @@ export default function ActivityLog() {
   const currentMeta = (entity) => ENTITY_META[entity] || DEFAULT_META;
 
   return (
-    <div className="h-[calc(100vh-4rem)] flex flex-col p-7">
+    <div className="h-[calc(100vh-2rem)] flex flex-col p-7">
       {/* Sticky Header */}
       <div className="flex justify-between items-start mb-3 flex-shrink-0">
         <div>
@@ -135,9 +135,9 @@ export default function ActivityLog() {
         <button
           onClick={handleExport}
           disabled={activities.length === 0}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex items-center gap-1.5 px-2 py-1 text-sm bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          <Download className="w-3.5 h-3.5" /> Export Log
+          <Download className="w-3 h-3" /> Export Log
         </button>
       </div>
 
@@ -195,7 +195,7 @@ export default function ActivityLog() {
       </div>
 
       {/* Scrollable Activity Timeline */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar bg-white rounded-xl shadow-card border border-gray-100">
+      <div className="flex-1 overflow-y-auto scrollbar-none bg-white rounded-xl shadow-card border border-gray-100">
         {loading ? (
           <div className="flex items-center justify-center p-16">
             <div className="w-10 h-10 border-4 border-brand-red border-t-transparent rounded-full animate-spin" />

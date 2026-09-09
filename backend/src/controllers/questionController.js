@@ -4,6 +4,7 @@ import AppError from '../utils/AppError.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import { applyQuestionDefaults } from '../utils/questionValidation.js';
 import { logActivity } from '../services/activityService.js';
+import { normalizeTargetGroup, denormalizeTargetGroup } from '../utils/targetGroup.js';
 
 // ───────────────────────── GET LIST ─────────────────────────
 export const getQuestions = asyncHandler(async (req, res) => {
@@ -11,7 +12,7 @@ export const getQuestions = asyncHandler(async (req, res) => {
 
   const where = {};
   if (competencyId) where.competencyId = competencyId;
-  if (targetGroup)  where.targetGroup  = targetGroup;
+  if (targetGroup)  where.targetGroup  = normalizeTargetGroup(targetGroup);
   if (type)         where.type         = type;
 
   const skip = (Number(page) - 1) * Number(limit);
@@ -33,6 +34,7 @@ export const getQuestions = asyncHandler(async (req, res) => {
       questions: questions.map((q) => ({
         ...q,
         _id: q.id,
+        targetGroup: denormalizeTargetGroup(q.targetGroup),
         competencyId: q.competency,
       })),
       pagination: { total, page: +page, limit: +limit },
@@ -189,4 +191,50 @@ export const bulkDeleteQuestions = asyncHandler(async (req, res, next) => {
     status: 'success',
     message: `${result.count} question(s) deleted.`,
   });
+});
+
+// ─── DOWNLOAD UPLOAD FORMAT GUIDE (.txt sample) ─────────────────────────────
+// The document upload parses plain-text question files — this sample shows the
+// exact format the parser expects. Mark the correct MCQ option with *.
+const QUESTION_FORMAT_SAMPLE = `Type: MCQ
+Question 1: What does RAM stand for?
+a) Read Access Memory
+b) Random Access Memory *
+c) Rapid Access Module
+d) Read Anywhere Memory
+Score: 2
+
+Type: TrueFalse
+Question 2: The CPU is the brain of the computer.
+Answer: True
+
+Type: MultiSelect
+Question 3: Which are programming languages?
+a) Python *
+b) HTML *
+c) Photoshop
+d) JavaScript *
+
+Type: Matching
+Question 4: Match the term to its definition.
+CPU -> Processes instructions
+RAM -> Temporary memory
+HDD -> Permanent storage
+
+Type: Ordering
+Question 5: Order the OSI model layers (bottom up).
+1. Physical
+2. Data Link
+3. Network
+4. Transport
+
+Type: Rating
+Question 6: Rate your communication skills.
+`;
+
+export const downloadQuestionTemplate = asyncHandler(async (req, res) => {
+  const buf = Buffer.from(QUESTION_FORMAT_SAMPLE, 'utf8');
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="question-upload-format.txt"');
+  res.send(buf);
 });

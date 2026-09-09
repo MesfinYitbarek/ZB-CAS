@@ -65,26 +65,35 @@
     @apply bg-gray-300 rounded hover:bg-gray-400;
   }
 
+  /* Hidden scrollbar — keeps scrolling, hides the bar (sidebar, pill rows) */
+  .scrollbar-none {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+
   /* Badge variants for status/role/level */
   .badge {
     @apply inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold uppercase tracking-wider;
   }
   .badge-draft { @apply bg-gray-100 text-gray-600; }
-  .badge-scheduled { @apply bg-blue-100 text-blue-600; }
-  .badge-active { @apply bg-green-100 text-green-600; }
+  .badge-scheduled { @apply bg-gray-200 text-gray-700; }
+  .badge-active { @apply bg-brand-black text-white; }
   .badge-completed { @apply bg-brand-red-muted text-brand-red; }
   .badge-archived { @apply bg-gray-200 text-gray-500; }
-  .badge-pending { @apply bg-yellow-100 text-yellow-700; }
-  .badge-final { @apply bg-green-100 text-green-600; }
+  .badge-pending { @apply bg-gray-100 text-gray-700; }
+  .badge-final { @apply bg-brand-black text-white; }
   
   .badge-hr_admin { @apply bg-brand-red-muted text-brand-red; }
-  .badge-supervisor { @apply bg-blue-100 text-blue-600; }
+  .badge-supervisor { @apply bg-gray-200 text-gray-800; }
   .badge-employee { @apply bg-gray-100 text-gray-600; }
   
-  .badge-basic { @apply bg-yellow-100 text-yellow-700; }
-  .badge-intermediate { @apply bg-orange-100 text-orange-600; }
-  .badge-advanced { @apply bg-blue-100 text-blue-600; }
-  .badge-expert { @apply bg-green-100 text-green-600; }
+  .badge-basic { @apply bg-gray-100 text-gray-600 border border-gray-300; }
+  .badge-intermediate { @apply bg-gray-200 text-gray-800 border border-gray-400; }
+  .badge-advanced { @apply bg-brand-black text-white; }
+  .badge-expert { @apply bg-brand-red text-white; }
 
   /* Card hover effect */
   .card-hover {

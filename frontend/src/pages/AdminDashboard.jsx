@@ -13,15 +13,15 @@ import api from '../utils/api';
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const PERIOD_OPTIONS = [
-  { key: 'monthly',   label: '1M',  full: 'Last Month' },
-  { key: 'quarterly', label: '3M',  full: 'Last Quarter' },
-  { key: 'semi',      label: '6M',  full: 'Last 6 Months' },
-  { key: 'yearly',    label: '1Y',  full: 'Last Year' },
-  { key: 'all',       label: 'All', full: 'All Time' },
+  { key: 'monthly', label: '1M', full: 'Last Month' },
+  { key: 'quarterly', label: '3M', full: 'Last Quarter' },
+  { key: 'semi', label: '6M', full: 'Last 6 Months' },
+  { key: 'yearly', label: '1Y', full: 'Last Year' },
+  { key: 'all', label: 'All', full: 'All Time' },
 ];
 
-const STATUS_COLORS = { ACTIVE: '#10b981', COMPLETED: '#3b82f6', DRAFT: '#94a3b8', SCHEDULED: '#f59e0b' };
-const CHART_COLORS = ['#C8102E', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899'];
+const STATUS_COLORS = { ACTIVE: '#059669', COMPLETED: '#C8102E', DRAFT: '#94a3b8', SCHEDULED: '#D97706', ARCHIVED: '#dad2c8ff' };
+const CHART_COLORS = ['#C8102E', '#2563EB', '#059669', '#D97706', '#7C3AED', '#64748B'];
 
 const ChartTooltip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null;
@@ -41,11 +41,11 @@ const ChartTooltip = ({ active, payload, label }) => {
 
 // ─── Category colors matching the competency model categories ─────────────────
 const CAT_META = {
-  'Core-Personal effectiveness': { color: '#C8102E', bg: 'bg-red-50',     text: 'text-red-600',    bar: '#C8102E' },
-  'Core-Behavioral':             { color: '#f59e0b', bg: 'bg-amber-50',   text: 'text-amber-600',  bar: '#f59e0b' },
-  'Managerial':                  { color: '#3b82f6', bg: 'bg-blue-50',    text: 'text-blue-600',   bar: '#3b82f6' },
-  'Leadership':                  { color: '#8b5cf6', bg: 'bg-violet-50',  text: 'text-violet-600', bar: '#8b5cf6' },
-  'Technical':                   { color: '#10b981', bg: 'bg-emerald-50', text: 'text-emerald-600', bar: '#10b981' },
+  'Core-Personal effectiveness': { color: '#C8102E', bg: 'bg-red-50', text: 'text-red-600', bar: '#C8102E' },
+  'Core-Behavioral': { color: '#2563EB', bg: 'bg-gray-100', text: 'text-gray-700', bar: '#2563EB' },
+  'Managerial': { color: '#7C3AED', bg: 'bg-gray-100', text: 'text-gray-700', bar: '#7C3AED' },
+  'Leadership': { color: '#D97706', bg: 'bg-gray-100', text: 'text-gray-700', bar: '#D97706' },
+  'Technical': { color: '#059669', bg: 'bg-gray-100', text: 'text-gray-700', bar: '#059669' },
 };
 const DEFAULT_CAT = { color: '#94a3b8', bg: 'bg-gray-50', text: 'text-gray-500', bar: '#94a3b8' };
 
@@ -90,9 +90,8 @@ function QuestionBankInsight({ data = [] }) {
         <div className="flex flex-wrap gap-1 justify-end">
           <button
             onClick={() => setViewMode('all')}
-            className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all ${
-              viewMode === 'all' ? 'bg-brand-black text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-            }`}
+            className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all ${viewMode === 'all' ? 'bg-brand-black text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+              }`}
           >All</button>
           {categories.map(cat => {
             const meta = CAT_META[cat] || DEFAULT_CAT;
@@ -101,9 +100,8 @@ function QuestionBankInsight({ data = [] }) {
               <button
                 key={cat}
                 onClick={() => setViewMode(viewMode === cat ? 'all' : cat)}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all ${
-                  viewMode === cat ? 'text-white' : `${meta.bg} ${meta.text} hover:opacity-80`
-                }`}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all ${viewMode === cat ? 'text-white' : `${meta.bg} ${meta.text} hover:opacity-80`
+                  }`}
                 style={viewMode === cat ? { background: meta.color } : {}}
               >{short}</button>
             );
@@ -111,10 +109,10 @@ function QuestionBankInsight({ data = [] }) {
         </div>
       </div>
 
-      <div className="flex-1 space-y-1.5 overflow-y-auto" style={{ maxHeight: 268 }}>
+      <div className="flex-1 space-y-1.5 overflow-y-auto scrollbar-none" style={{ maxHeight: 268 }}>
         {filtered.map((item, i) => {
-          const meta  = CAT_META[item.category] || DEFAULT_CAT;
-          const pct   = Math.round((item.total / maxTotal) * 100);
+          const meta = CAT_META[item.category] || DEFAULT_CAT;
+          const pct = Math.round((item.total / maxTotal) * 100);
           const isHov = hovered === i;
           const topTypes = Object.entries(item.types || {}).sort((a, b) => b[1] - a[1]).slice(0, 3);
           return (
@@ -228,19 +226,19 @@ export default function AdminDashboard() {
 
 
   return (
-    <div className="h-[calc(100vh-4rem)] flex flex-col bg-[#f8f9fb] overflow-hidden">
+    <div className="h-[calc(100vh-4rem)] flex flex-col bg-gray-50 overflow-hidden">
       {/* Subtle ambient glow - fixed */}
       <div className="fixed inset-0 pointer-events-none">
         <div className="absolute -top-32 -right-32 w-80 h-80 bg-red-500/5 rounded-full blur-3xl" />
-        <div className="absolute bottom-0 -left-16 w-64 h-64 bg-blue-500/4 rounded-full blur-3xl" />
+        <div className="absolute bottom-0 -left-16 w-64 h-64 bg-gray-500/4 rounded-full blur-3xl" />
       </div>
 
       {/* Scrollable Content Area */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar">
+      <div className="flex-1 overflow-y-auto scrollbar-none">
         <div className="p-6 lg:p-8 space-y-5 max-w-screen-2xl mx-auto">
 
           {/* Sticky Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 sticky top-0 bg-[#f8f9fb] z-10 pb-2">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 sticky top-0 bg-gray-50 z-10 pb-2">
             <div>
               <div className="flex items-center gap-2.5 mb-1">
                 <h1 className="text-xl  font-bold text-brand-black">Admin Dashboard</h1>
@@ -277,16 +275,16 @@ export default function AdminDashboard() {
             return pending > 0 ? (
               <button
                 onClick={() => nav('/assessment-requests')}
-                className="w-full flex items-center gap-2 bg-orange-50 rounded-lg border border-orange-200/80 px-3 py-2 hover:bg-orange-100 transition-all text-left group"
+                className="w-full flex items-center gap-2 bg-gray-100 rounded-lg border border-gray-300 px-3 py-2 hover:bg-gray-200 transition-all text-left group"
               >
-                <AlertCircle className="w-4 h-4 text-orange-500 flex-shrink-0" />
+                <AlertCircle className="w-4 h-4 text-gray-500 flex-shrink-0" />
                 <span className="text-xs font-medium text-gray-700 flex-1">
-                  <span className="font-bold text-orange-700">{pending}</span> pending assessment request{pending !== 1 ? 's' : ''} from ZB Succession Planning
+                  <span className="font-bold text-gray-700">{pending}</span> pending assessment request{pending !== 1 ? 's' : ''} from ZB Succession Planning
                 </span>
-                <span className="px-2 py-0.5 bg-orange-200 text-orange-800 rounded-full text-[10px] font-bold flex-shrink-0">
+                <span className="px-2 py-0.5 bg-gray-300 text-gray-700 rounded-full text-[10px] font-bold flex-shrink-0">
                   View
                 </span>
-                <ChevronRight className="w-3.5 h-3.5 text-orange-400 group-hover:translate-x-0.5 transition-transform flex-shrink-0" />
+                <ChevronRight className="w-3.5 h-3.5 text-gray-500 group-hover:translate-x-0.5 transition-transform flex-shrink-0" />
               </button>
             ) : null;
           })()}
@@ -294,27 +292,28 @@ export default function AdminDashboard() {
           {/* PRIMARY KPIs */}
           <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3">
             {[
-              { icon: Users,      label: 'Total Users',    value: stats.totalUsers    || 0, sub: `${stats.activeUsers || 0} active`,      color: 'text-blue-600',   bg: 'bg-blue-50',      link: '/users' },
-              { icon: Target,     label: 'Competencies',   value: stats.totalCompetencies || 0, sub: 'All categories', color: 'text-violet-600', bg: 'bg-violet-50',    link: '/competencies' },
-              { icon: Zap,        label: 'Active',         value: stats.activeAssessments || 0, sub: `${stats.scheduledAssessments || 0} scheduled`, color: 'text-emerald-600', bg: 'bg-emerald-50', link: '/assessments' },
-              { icon: ClipboardList, label: 'Total Results', value: stats.totalResults  || 0, sub: periodLabel, color: 'text-brand-red',  bg: 'bg-brand-red/10' },
+              { icon: Users, label: 'Total Users', value: stats.totalUsers || 0, sub: `${stats.activeUsers || 0} active`, color: 'text-gray-700', bg: 'bg-gray-100', link: '/users' },
+              { icon: Target, label: 'Competencies', value: stats.totalCompetencies || 0, sub: 'All categories', color: 'text-gray-700', bg: 'bg-gray-100', link: '/competencies' },
+              { icon: Zap, label: 'Active', value: stats.activeAssessments || 0, sub: `${stats.scheduledAssessments || 0} scheduled`, color: 'text-gray-700', bg: 'bg-gray-100', link: '/assessments' },
+              { icon: ClipboardList, label: 'Total Questions', value: stats.totalQuestions || 0, sub: 'Question bank', color: 'text-brand-red', bg: 'bg-brand-red/10', link: '/questions' },
             ].map(({ icon: Icon, label, value, sub, color, bg, link }) => (
               <div
                 key={label}
                 onClick={link ? () => nav(link) : undefined}
-                className={`bg-white rounded-2xl p-4 border shadow-sm transition-all duration-200
+                className={`bg-white rounded-2xl px-4 py-2 border shadow-sm transition-all duration-200
                   ${link ? 'cursor-pointer hover:-translate-y-0.5 hover:shadow-md' : ''}
                   border-gray-100/80`}
               >
-                <div className="flex items-start justify-between mb-3">
-                  <div className={`w-10 h-10 ${bg} rounded-xl flex items-center justify-center`}>
-                    <Icon className={`w-5 h-5 ${color}`} />
+
+                <div className='flex items-start justify-between '>
+                  <div >
+                    <div className="text-2xl  font-bold text-brand-black tracking-tight mb-0.5">{value}</div>
+                    <div className="text-xs font-semibold text-gray-700">{label}</div>
+                    <div className="text-xs text-gray-400 mt-0.5">{sub}</div>
                   </div>
                   {link && <ChevronRight className="w-4 h-4 text-gray-300" />}
                 </div>
-                <div className="text-2xl  font-bold text-brand-black tracking-tight mb-0.5">{value}</div>
-                <div className="text-xs font-semibold text-gray-700">{label}</div>
-                <div className="text-xs text-gray-400 mt-0.5">{sub}</div>
+
               </div>
             ))}
           </div>
@@ -330,23 +329,23 @@ export default function AdminDashboard() {
                   <p className="text-xs text-gray-400 mt-0.5">Assessments created · {periodLabel}</p>
                 </div>
                 <div className="flex items-center gap-3 text-xs text-gray-400">
-                  <div className="flex items-center gap-1"><div className="w-3 h-0.5 bg-blue-400" /><span>Assessments</span></div>
+                  <div className="flex items-center gap-1"><div className="w-3 h-0.5 bg-[#C8102E]" /><span>Assessments</span></div>
                 </div>
               </div>
               <div className="flex-1">
                 <ResponsiveContainer width="100%" height={250}>
                   <AreaChart data={charts.trend || []} margin={{ top: 5, right: 5, bottom: 0, left: -25 }}>
                     <defs>
-                      <linearGradient id="gBlue" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.15} />
-                        <stop offset="100%" stopColor="#3b82f6" stopOpacity={0} />
+                      <linearGradient id="gBrand" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#C8102E" stopOpacity={0.15} />
+                        <stop offset="100%" stopColor="#C8102E" stopOpacity={0} />
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
                     <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
                     <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
                     <Tooltip content={<ChartTooltip />} />
-                    <Area type="monotone" dataKey="assessments" stroke="#3b82f6" strokeWidth={2} fill="url(#gBlue)" dot={false} activeDot={{ r: 4 }} />
+                    <Area type="monotone" dataKey="assessments" stroke="#C8102E" strokeWidth={2} fill="url(#gBrand)" dot={false} activeDot={{ r: 4 }} />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>

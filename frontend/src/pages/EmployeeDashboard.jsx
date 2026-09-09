@@ -22,23 +22,23 @@ const PERIOD_OPTIONS = [
 ];
 
 const LEVEL_CONFIG = {
-  Expert:       { color: '#10b981', bg: 'bg-emerald-500', badge: 'bg-emerald-50 text-emerald-700 border-emerald-200', stars: 4 },
-  Advanced:     { color: '#3b82f6', bg: 'bg-blue-500',    badge: 'bg-blue-50 text-blue-700 border-blue-200',          stars: 3 },
-  Intermediate: { color: '#f59e0b', bg: 'bg-amber-500',   badge: 'bg-amber-50 text-amber-700 border-amber-200',        stars: 2 },
-  Basic:        { color: '#ef4444', bg: 'bg-red-500',     badge: 'bg-red-50 text-red-700 border-red-200',              stars: 1 },
+  Expert:       { color: '#C8102E', bg: 'bg-brand-red',   badge: 'bg-brand-red text-white border-brand-red',       stars: 4 },
+  Advanced:     { color: '#111827', bg: 'bg-brand-black', badge: 'bg-brand-black text-white border-brand-black',   stars: 3 },
+  Intermediate: { color: '#4B5563', bg: 'bg-gray-200',    badge: 'bg-gray-200 text-gray-800 border-gray-400',      stars: 2 },
+  Basic:        { color: '#9CA3AF', bg: 'bg-gray-100',    badge: 'bg-gray-100 text-gray-600 border-gray-300',      stars: 1 },
 };
 
 const CATEGORY_COLORS = {
   'Leadership':    '#C8102E',
-  'Technical':     '#3b82f6',
-  'Communication': '#10b981',
-  'Management':    '#f59e0b',
-  'Innovation':    '#8b5cf6',
+  'Technical':     '#4B5563',
+  'Communication': '#111827',
+  'Management':    '#6B7280',
+  'Innovation':    '#9CA3AF',
 };
 
 const ScoreBar = ({ value, max = 100 }) => {
   const pct = Math.round((value / max) * 100);
-  const color = pct >= 80 ? '#10b981' : pct >= 60 ? '#3b82f6' : pct >= 40 ? '#f59e0b' : '#ef4444';
+  const color = pct >= 80 ? '#111827' : pct >= 60 ? '#4B5563' : pct >= 40 ? '#6B7280' : '#C8102E';
   return (
     <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
       <div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, background: color }} />
@@ -99,11 +99,11 @@ export default function EmployeeDashboard() {
     : 'flat';
 
   return (
-    <div className="h-[calc(100vh-4rem)] flex flex-col bg-[#f8f9fb] overflow-hidden">
+    <div className="h-[calc(100vh-4rem)] flex flex-col bg-gray-50 overflow-hidden">
       {/* Ambient glow - fixed */}
       <div className="fixed inset-0 pointer-events-none">
         <div className="absolute -top-20 -right-20 w-72 h-72 bg-brand-red/4 rounded-full blur-3xl" />
-        <div className="absolute top-1/3 -left-10 w-48 h-48 bg-blue-500/4 rounded-full blur-3xl" />
+        <div className="absolute top-1/3 -left-10 w-48 h-48 bg-gray-500/4 rounded-full blur-3xl" />
       </div>
 
       {/* Scrollable Content Area */}
@@ -111,7 +111,7 @@ export default function EmployeeDashboard() {
         <div className="p-6 lg:p-8 space-y-5 max-w-screen-xl mx-auto">
 
           {/* Sticky Header */}
-          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 sticky top-0 bg-[#f8f9fb] z-10 pb-2">
+          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 sticky top-0 bg-gray-50 z-10 pb-2">
             <div>
               {/* Welcome */}
               <div className="flex items-center gap-2.5 mb-1">
@@ -151,9 +151,9 @@ export default function EmployeeDashboard() {
           {/* Deadline Banner - Sticky but scrolls */}
           {nextDeadline && nextDeadline.daysLeft <= 3 && (
             <div className={`rounded-xl px-4 py-3 flex items-center gap-3 border
-              ${nextDeadline.daysLeft <= 0 ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200'}`}>
-              <Clock className={`w-4 h-4 flex-shrink-0 ${nextDeadline.daysLeft <= 0 ? 'text-red-500' : 'text-amber-500'}`} />
-              <p className={`text-sm font-medium ${nextDeadline.daysLeft <= 0 ? 'text-red-700' : 'text-amber-700'}`}>
+              ${nextDeadline.daysLeft <= 0 ? 'bg-red-50 border-red-200' : 'bg-gray-100 border-gray-300'}`}>
+              <Clock className={`w-4 h-4 flex-shrink-0 ${nextDeadline.daysLeft <= 0 ? 'text-red-500' : 'text-gray-500'}`} />
+              <p className={`text-sm font-medium ${nextDeadline.daysLeft <= 0 ? 'text-red-700' : 'text-gray-700'}`}>
                 {nextDeadline.daysLeft <= 0
                   ? `Overdue: "${nextDeadline.name}" — submit as soon as possible`
                   : `"${nextDeadline.name}" is due in ${nextDeadline.daysLeft} day${nextDeadline.daysLeft !== 1 ? 's' : ''}`
@@ -171,21 +171,15 @@ export default function EmployeeDashboard() {
           {/* KPI CARDS */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
-              <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center mb-3">
-                <ClipboardList className="w-5 h-5 text-blue-600" />
-              </div>
               <div className="text-2xl  font-bold text-brand-black tracking-tight mb-0.5">{stats.pendingAssessments || 0}</div>
               <div className="text-xs font-semibold text-gray-700">Pending</div>
               <div className="text-xs text-gray-400 mt-0.5">{stats.completedAssessments || 0} completed</div>
             </div>
 
             <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
-              <div className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center mb-3">
-                <Award className="w-5 h-5 text-emerald-600" />
-              </div>
               <div className="flex items-center gap-1.5 mb-0.5">
                 <div className="text-2xl  font-bold text-brand-black tracking-tight">{stats.avgScore || 0}%</div>
-                {trendDir === 'up' && <TrendingUp className="w-4 h-4 text-emerald-500" />}
+                {trendDir === 'up' && <TrendingUp className="w-4 h-4 text-gray-700" />}
                 {trendDir === 'down' && <TrendingDown className="w-4 h-4 text-red-400" />}
               </div>
               <div className="text-xs font-semibold text-gray-700">Avg Score</div>
@@ -193,18 +187,12 @@ export default function EmployeeDashboard() {
             </div>
 
             <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
-              <div className="w-10 h-10 bg-violet-50 rounded-xl flex items-center justify-center mb-3">
-                <Target className="w-5 h-5 text-violet-600" />
-              </div>
               <div className="text-2xl  font-bold text-brand-black tracking-tight mb-0.5">{stats.competenciesAssessed || 0}</div>
               <div className="text-xs font-semibold text-gray-700">Competencies</div>
               <div className="text-xs text-gray-400 mt-0.5">Assessed overall</div>
             </div>
 
             <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
-              <div className="w-10 h-10 bg-amber-50 rounded-xl flex items-center justify-center mb-3">
-                <Calendar className="w-5 h-5 text-amber-600" />
-              </div>
               <div className="text-2xl  font-bold text-brand-black tracking-tight mb-0.5">{stats.periodResultCount || 0}</div>
               <div className="text-xs font-semibold text-gray-700">Completed</div>
               <div className="text-xs text-gray-400 mt-0.5">{periodLabel}</div>
@@ -229,7 +217,7 @@ export default function EmployeeDashboard() {
               
               {pendingAssessments.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-8 gap-3">
-                  <CheckCircle className="w-12 h-12 text-emerald-300" />
+                  <CheckCircle className="w-12 h-12 text-gray-400" />
                   <p className="text-sm text-gray-500">All caught up! No pending assessments.</p>
                   
                 </div>
@@ -251,7 +239,7 @@ export default function EmployeeDashboard() {
                               {a.description || a.competencyId?.name || 'Assessment'}
                             </p>
                             <div className="flex items-center gap-2 mt-1">
-                              <span className="text-xs px-2 py-0.5 bg-blue-50 text-blue-600 rounded-full">
+                              <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-700 rounded-full">
                                 {a.type}
                               </span>
                               {a.endDate && (

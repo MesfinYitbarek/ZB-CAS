@@ -9,8 +9,8 @@ import { useSocket } from '../hooks/useSocket';
 // Human-readable label + colour for each role
 const ROLE_META = {
   HR_ADMIN:   { label: 'HR Admin',   color: 'text-red-500' },
-  SUPERVISOR: { label: 'Supervisor', color: 'text-blue-500' },
-  EMPLOYEE:   { label: 'Employee',   color: 'text-green-500' },
+  SUPERVISOR: { label: 'Supervisor', color: 'text-gray-600' },
+  EMPLOYEE:   { label: 'Employee',   color: 'text-brand-black' },
 };
 
 // Breadcrumb mapping

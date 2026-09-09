@@ -17,8 +17,8 @@ const fmtDate = (iso) =>
   new Date(iso).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 
 const ratingTone = (r) => {
-  if (r >= 4) return { badge: 'bg-green-50 text-green-700 border-green-200', bar: 'bg-green-500' };
-  if (r >= 3) return { badge: 'bg-amber-50 text-amber-700 border-amber-200', bar: 'bg-amber-500' };
+  if (r >= 4) return { badge: 'bg-gray-200 text-gray-800 border-gray-300', bar: 'bg-gray-700' };
+  if (r >= 3) return { badge: 'bg-gray-100 text-gray-700 border-gray-300', bar: 'bg-gray-500' };
   return { badge: 'bg-red-50 text-red-600 border-red-200', bar: 'bg-red-500' };
 };
 
@@ -34,8 +34,8 @@ function StarRating({ value, onChange, size = 'md' }) {
           className={onChange ? 'cursor-pointer transition-transform hover:scale-110' : 'cursor-default'}>
           <Star
             className={sz}
-            fill={value >= v ? '#EA580C' : 'none'}
-            color={value >= v ? '#EA580C' : '#CBD5E1'}
+            fill={value >= v ? '#C8102E' : 'none'}
+            color={value >= v ? '#C8102E' : '#CBD5E1'}
           />
         </button>
       ))}
@@ -45,7 +45,7 @@ function StarRating({ value, onChange, size = 'md' }) {
 
 // ─── RatingDistribution ───────────────────────────────────────────────────────
 
-function RatingDistribution({ summary, accent = 'bg-orange-400' }) {
+function RatingDistribution({ summary, accent = 'bg-brand-red' }) {
   const { ratedCount } = summary;
   return (
     <div className="space-y-1.5">
@@ -55,7 +55,7 @@ function RatingDistribution({ summary, accent = 'bg-orange-400' }) {
         return (
           <div key={star} className="flex items-center gap-2 text-xs">
             <span className="w-3 text-right text-gray-400 tabular-nums font-medium">{star}</span>
-            <Star className="w-2.5 h-2.5 text-orange-400 flex-shrink-0" fill="#FB923C" color="#FB923C" />
+            <Star className="w-2.5 h-2.5 text-brand-red flex-shrink-0" fill="#C8102E" color="#C8102E" />
             <div className="flex-1 bg-gray-100 rounded-full h-1.5">
               <div className={`${accent} h-1.5 rounded-full transition-all duration-300`} style={{ width: `${pct}%` }} />
             </div>
@@ -71,9 +71,9 @@ function RatingDistribution({ summary, accent = 'bg-orange-400' }) {
 
 const BADGES = {
   gray:   'bg-gray-100 text-gray-600',
-  indigo: 'bg-indigo-50 text-indigo-600',
-  teal:   'bg-teal-50 text-teal-600',
-  orange: 'bg-orange-50 text-orange-600',
+  indigo: 'bg-gray-100 text-gray-700',
+  teal:   'bg-gray-100 text-gray-700',
+  orange: 'bg-gray-100 text-gray-700',
 };
 
 function Badge({ children, tone = 'gray' }) {
@@ -278,8 +278,8 @@ export default function Feedback() {
             <button
               onClick={() => { setForm({ assessmentId: '', content: '', rating: 0 }); setModal(true); }}
               disabled={pending.length === 0}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-transform hover:scale-105 disabled:opacity-40 disabled:cursor-not-allowed">
-              <Plus className="w-3.5 h-3.5" /> New Feedback
+              className="flex items-center gap-1.5 px-2 py-1 text-sm bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-transform hover:scale-105 disabled:opacity-40 disabled:cursor-not-allowed">
+              <Plus className="w-3 h-3" /> New Feedback
             </button>
           }
         />
@@ -497,11 +497,11 @@ export default function Feedback() {
         <StatCard label="Total Feedback" value={totalFeedbacks}
           accent="bg-brand-red/10 text-brand-red" Icon={MessageSquare} />
         <StatCard label="Avg Rating" value={avgOverall ? `${avgOverall.toFixed(1)}/5` : '—'}
-          accent="bg-orange-50 text-orange-600" Icon={Star} />
+          accent="bg-gray-100 text-gray-700" Icon={Star} />
         <StatCard label="Rated Responses" value={totalRated}
-          accent="bg-blue-50 text-blue-600" Icon={BarChart3} />
+          accent="bg-gray-100 text-gray-700" Icon={BarChart3} />
         <StatCard label="Assessments" value={summaries.length}
-          accent="bg-green-50 text-green-600" Icon={ClipboardList} />
+          accent="bg-gray-100 text-gray-700" Icon={ClipboardList} />
       </div>
 
       {/* Filter bar — single row */}

@@ -98,6 +98,17 @@ export const submitAssessment = asyncHandler(async (req, res, next) => {
 
   const assessment = await validateAccess(assessmentId, req.user.id, employeeId, 'self');
 
+  // ─── Enforce max attempts ───────────────────────────────────────────────
+  // attemptCount tracks submits; pre-feature submissions (submittedAt set but
+  // attemptCount 0) count as one used attempt.
+  const existingSec = await prisma.securityViolation.findUnique({
+    where: { assessmentId_userId: { assessmentId, userId: employeeId } },
+  });
+  const attemptsUsed = Math.max(existingSec?.attemptCount || 0, existingSec?.submittedAt ? 1 : 0);
+  if (assessment.maxAttempts != null && attemptsUsed >= assessment.maxAttempts) {
+    return next(new AppError(`Maximum attempts reached (${assessment.maxAttempts}).`, 403));
+  }
+
   // Mark all responses as submitted
   const now = new Date();
   await prisma.response.updateMany({
@@ -108,12 +119,10 @@ export const submitAssessment = asyncHandler(async (req, res, next) => {
   // ─── Persist final security data ────────────────────────────────────────
   const { securityLog, totalViolations } = req.body;
   try {
-    const existingSec = await prisma.securityViolation.findUnique({
-      where: { assessmentId_userId: { assessmentId, userId: employeeId } },
-    });
     const secData = {
       securityLog: securityLog || null,
       submittedAt: now,
+      attemptCount: Math.max(existingSec?.attemptCount || 0, existingSec?.submittedAt ? 1 : 0) + 1,
     };
     if (totalViolations != null) {
       secData.totalViolations = Math.max(existingSec?.totalViolations || 0, totalViolations);
@@ -172,11 +181,18 @@ export const submitAssessment = asyncHandler(async (req, res, next) => {
     return res.status(200).json({
       status: 'success',
       message: 'Assessment submitted and scored.',
-      data: { result: result && { ...result, _id: result.id } },
+      data: {
+        result: result && { ...result, _id: result.id },
+        attempts: { used: attemptsUsed + 1, maxAttempts: assessment.maxAttempts ?? null },
+      },
     });
   }
 
-  res.status(200).json({ status: 'success', message: 'Assessment submitted successfully.' });
+  res.status(200).json({
+    status: 'success',
+    message: 'Assessment submitted successfully.',
+    data: { attempts: { used: attemptsUsed + 1, maxAttempts: assessment.maxAttempts ?? null } },
+  });
 });
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -456,13 +472,12 @@ export const getProgress = asyncHandler(async (req, res, next) => {
   // A 0% submission (all questions unanswered + "Submit Anyway") leaves no
   // response row with a submittedAt, so also trust the persisted security log
   // (written on every submit) or an existing result as proof of completion.
-  const securitySubmitted = await prisma.securityViolation.findFirst({
+  const securityRecord = await prisma.securityViolation.findFirst({
     where: {
       assessmentId,
       userId: req.user.id,
-      submittedAt: { not: null },
     },
-    select: { id: true },
+    select: { id: true, attemptCount: true, submittedAt: true },
   });
   const resultExists = await prisma.result.findFirst({
     where: {
@@ -472,13 +487,82 @@ export const getProgress = asyncHandler(async (req, res, next) => {
     select: { id: true },
   });
 
+  const attemptsUsed = Math.max(
+    securityRecord?.attemptCount || 0,
+    securityRecord?.submittedAt ? 1 : 0,
+  );
+  const maxAttempts = assessment.maxAttempts ?? null;
+
+  // A result left over from a previous attempt must not mark a fresh retake
+  // (security record reset, attempts consumed) as submitted.
+  const retakeInProgress = !!(
+    securityRecord && !securityRecord.submittedAt && (securityRecord.attemptCount || 0) > 0
+  );
+
   res.status(200).json({
     status: 'success',
     data: {
       totalQuestions: total,
       answeredCount,
       percentage: total > 0 ? parseFloat(((answeredCount / total) * 100).toFixed(1)) : 0,
-      isSubmitted: !!(submittedResponse || securitySubmitted || resultExists),
+      isSubmitted: !!(submittedResponse || securityRecord?.submittedAt || (resultExists && !retakeInProgress)),
+      maxAttempts,
+      attemptsUsed,
+      attemptsRemaining: maxAttempts == null ? null : Math.max(maxAttempts - attemptsUsed, 0),
+    },
+  });
+});
+
+// ─── START NEW ATTEMPT (Retake) ─────────────────────────────────────────────
+// Clears the employee's prior self answers and resets the per-attempt security
+// record (keeping the consumed-attempt counter). The attempt itself is only
+// consumed when the employee submits again.
+export const startAttempt = asyncHandler(async (req, res, next) => {
+  const { assessmentId } = req.body;
+  if (!assessmentId) return next(new AppError('assessmentId is required.', 400));
+
+  const assessment = await validateAccess(assessmentId, req.user.id, req.user.id, 'self');
+
+  const sec = await prisma.securityViolation.findUnique({
+    where: { assessmentId_userId: { assessmentId, userId: req.user.id } },
+  });
+  const attemptsUsed = Math.max(sec?.attemptCount || 0, sec?.submittedAt ? 1 : 0);
+  if (assessment.maxAttempts != null && attemptsUsed >= assessment.maxAttempts) {
+    return next(new AppError(`Maximum attempts reached (${assessment.maxAttempts}).`, 403));
+  }
+
+  await prisma.response.deleteMany({
+    where: { assessmentId, userId: req.user.id, respondentType: 'self' },
+  });
+
+  if (sec) {
+    await prisma.securityViolation.update({
+      where: { id: sec.id },
+      data: {
+        violations: [],
+        securityLog: null,
+        totalViolations: 0,
+        tabSwitches: 0,
+        copyAttempts: 0,
+        rightClickAttempts: 0,
+        fullscreenExits: 0,
+        devToolsAttempts: 0,
+        windowBlurs: 0,
+        printAttempts: 0,
+        isHighRisk: false,
+        submittedAt: null,
+      },
+    });
+  }
+
+  const maxAttempts = assessment.maxAttempts ?? null;
+  res.status(200).json({
+    status: 'success',
+    message: 'New attempt started.',
+    data: {
+      maxAttempts,
+      attemptsUsed,
+      attemptsRemaining: maxAttempts == null ? null : Math.max(maxAttempts - attemptsUsed, 0),
     },
   });
 });

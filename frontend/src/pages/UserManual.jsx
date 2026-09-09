@@ -90,8 +90,8 @@ const ROLE_GUIDES = {
 
   SUPERVISOR: {
     label: 'Supervisor',
-    color: '#059669',
-    lightBg: '#F0FDF4',
+    color: '#111827',
+    lightBg: '#F3F4F6',
     videos: [
       {
         id: 'submit-evaluation',
@@ -107,8 +107,8 @@ const ROLE_GUIDES = {
 
   EMPLOYEE: {
     label: 'Employee',
-    color: '#4f46e5',
-    lightBg: '#EEF2FF',
+    color: '#4B5563',
+    lightBg: '#F3F4F6',
     videos: [
       {
         id: 'complete-assessment',

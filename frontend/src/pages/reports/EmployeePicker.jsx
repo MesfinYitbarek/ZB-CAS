@@ -34,7 +34,7 @@ export default function EmployeePicker({ user, employees, value, onChange, onRes
       subtitle={value ? 'Showing reports for the selected employee' : 'Individual reporting and history'}
       action={value && (
         <button type="button" onClick={() => { onChange(null); onSelect?.(null); }}
-          className="text-xs font-semibold text-blue-600 hover:text-blue-800">Clear</button>
+          className="text-xs font-semibold text-gray-700 hover:text-gray-900">Clear</button>
       )}
       bodyClassName="pt-2"
     >
@@ -84,8 +84,8 @@ export default function EmployeePicker({ user, employees, value, onChange, onRes
       </div>
 
       {value && (
-        <div className="mt-3 flex items-center justify-between bg-blue-50 rounded-lg px-4 py-2.5">
-          <div className="text-sm text-blue-800 font-medium">
+        <div className="mt-3 flex items-center justify-between bg-gray-100 rounded-lg px-4 py-2.5">
+          <div className="text-sm text-gray-700 font-medium">
             Viewing: {value.name} · {value.department}
             {value.position && ` · ${value.position}`}
           </div>

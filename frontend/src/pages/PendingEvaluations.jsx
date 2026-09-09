@@ -21,14 +21,14 @@ function DaysChip({ days, isScheduled }) {
   if (isScheduled) return null; // shown separately
   if (days === null || days === undefined) return null;
   if (days < 0)  return <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-red-50 text-red-600">{Math.abs(days)}d overdue</span>;
-  if (days === 0) return <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-orange-50 text-orange-600">Due today</span>;
-  if (days <= 2)  return <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-600">{days}d left</span>;
+  if (days === 0) return <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">Due today</span>;
+  if (days <= 2)  return <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">{days}d left</span>;
   return          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-50 text-gray-500">{days}d left</span>;
 }
 
 function PriorityDot({ priority, isScheduled }) {
-  if (isScheduled) return <span className="w-2 h-2 rounded-full bg-blue-400 flex-shrink-0" />;
-  const c = { HIGH: 'bg-red-500', MEDIUM: 'bg-amber-400', LOW: 'bg-gray-300' };
+  if (isScheduled) return <span className="w-2 h-2 rounded-full bg-gray-500 flex-shrink-0" />;
+  const c = { HIGH: 'bg-red-500', MEDIUM: 'bg-gray-500', LOW: 'bg-gray-300' };
   return <span className={`w-2 h-2 rounded-full flex-shrink-0 ${c[priority] || 'bg-gray-300'}`} />;
 }
 
@@ -86,7 +86,7 @@ export default function PendingEvaluations() {
         </div>
         <div className="flex items-center gap-1.5">
           {pendingCount > 0 && (
-            <span className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 bg-orange-50 text-orange-600 rounded-lg border border-orange-100">
+            <span className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg border border-gray-200">
               <AlertTriangle className="w-3.5 h-3.5" />
               {pendingCount} pending
             </span>
@@ -103,7 +103,7 @@ export default function PendingEvaluations() {
         {/* Empty state */}
         {items.length === 0 && (
           <div className="flex flex-col items-center justify-center py-24 text-center">
-            <CheckCircle2 className="w-10 h-10 text-green-300 mb-3" />
+            <CheckCircle2 className="w-10 h-10 text-gray-400 mb-3" />
             <p className="text-base font-medium text-gray-400">All caught up!</p>
             <p className="text-sm text-gray-300 mt-1">No evaluations pending right now.</p>
           </div>
@@ -121,13 +121,13 @@ export default function PendingEvaluations() {
                 return (
                   <div
                     key={`${item.assessmentId}-${item.employee._id}`}
-                    className={`bg-white rounded-xl border transition-all hover:shadow-md overflow-hidden ${alreadyDone ? 'border-green-100' : 'border-gray-100 hover:border-red-200'}`}
+                    className={`bg-white rounded-xl border transition-all hover:shadow-md overflow-hidden ${alreadyDone ? 'border-gray-200' : 'border-gray-100 hover:border-red-200'}`}
                   >
                     {/* Priority strip */}
                     <div className={`h-1 ${
-                      alreadyDone ? 'bg-green-400' :
+                      alreadyDone ? 'bg-gray-500' :
                       item.priority === 'HIGH' ? 'bg-red-500' :
-                      item.priority === 'MEDIUM' ? 'bg-amber-400' : 'bg-gray-200'
+                      item.priority === 'MEDIUM' ? 'bg-gray-500' : 'bg-gray-200'
                     }`} />
 
                     <div className="p-4">
@@ -144,7 +144,7 @@ export default function PendingEvaluations() {
                           </div>
                         </div>
                         {alreadyDone && (
-                          <span className="flex-shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-green-50 text-green-600 border border-green-100">
+                          <span className="flex-shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 border border-gray-200">
                             Evaluated ✓
                           </span>
                         )}
@@ -177,7 +177,7 @@ export default function PendingEvaluations() {
                         onClick={() => navigate(item)}
                         className={`w-full py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors ${
                           alreadyDone
-                            ? 'bg-green-50 text-green-700 hover:bg-green-100 border border-green-200'
+                            ? 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300'
                             : 'bg-brand-red text-white hover:bg-red-700'
                         }`}
                       >
@@ -205,26 +205,26 @@ export default function PendingEvaluations() {
               {scheduled.map((item) => (
                 <div
                   key={`sched-${item.assessmentId}-${item.employee._id}`}
-                  className="bg-white rounded-xl border border-blue-100 overflow-hidden opacity-80"
+                  className="bg-white rounded-xl border border-gray-200 overflow-hidden opacity-80"
                 >
-                  <div className="h-1 bg-blue-300" />
+                  <div className="h-1 bg-gray-400" />
                   <div className="p-4">
                     <div className="flex items-center gap-3 mb-3">
-                      <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                      <div className="w-9 h-9 rounded-full bg-gradient-to-br from-gray-700 to-brand-black flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
                         {avatar(item.employee.name)}
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-semibold text-gray-700 truncate">{item.employee.name}</p>
                         <p className="text-xs text-gray-400 truncate">{item.employee.position || 'Employee'}</p>
                       </div>
-                      <span className="flex-shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-100">
+                      <span className="flex-shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 border border-gray-200">
                         Scheduled
                       </span>
                     </div>
 
-                    <div className="bg-blue-50 rounded-lg p-3 mb-3 space-y-1.5 text-xs text-gray-500">
+                    <div className="bg-gray-100 rounded-lg p-3 mb-3 space-y-1.5 text-xs text-gray-500">
                       <div className="flex items-start gap-1.5">
-                        <Target className="w-3.5 h-3.5 text-blue-400 mt-0.5 flex-shrink-0" />
+                        <Target className="w-3.5 h-3.5 text-gray-500 mt-0.5 flex-shrink-0" />
                         <span className="font-semibold text-gray-800 line-clamp-1">
                           {item.competency?.name || 'Unknown Competency'}
                         </span>
@@ -236,7 +236,7 @@ export default function PendingEvaluations() {
                       )}
                       {item.startDate && (
                         <div className="flex items-center gap-1.5 pt-0.5">
-                          <CalendarClock className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
+                          <CalendarClock className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />
                           <span>Opens {fmtStartTime(item.startDate)}</span>
                         </div>
                       )}

@@ -11,11 +11,11 @@ import api from '../utils/api';
 
 // ── Score helpers ─────────────────────────────────────────────────────────────
 const scoreLabel = (s) => {
-  if (s >= 90) return { text: 'Exceptional',       color: 'text-emerald-600', bar: 'bg-emerald-500', ring: 'ring-emerald-200' };
-  if (s >= 80) return { text: 'Excellent',          color: 'text-green-600',   bar: 'bg-green-500',   ring: 'ring-green-200'   };
-  if (s >= 70) return { text: 'Good',               color: 'text-blue-600',    bar: 'bg-blue-500',    ring: 'ring-blue-200'    };
-  if (s >= 60) return { text: 'Satisfactory',       color: 'text-yellow-600',  bar: 'bg-yellow-400',  ring: 'ring-yellow-200'  };
-  if (s >= 50) return { text: 'Needs Improvement',  color: 'text-orange-600',  bar: 'bg-orange-400',  ring: 'ring-orange-200'  };
+  if (s >= 90) return { text: 'Exceptional',       color: 'text-gray-700', bar: 'bg-brand-black', ring: 'ring-gray-300' };
+  if (s >= 80) return { text: 'Excellent',          color: 'text-gray-700',   bar: 'bg-brand-black',   ring: 'ring-gray-300'   };
+  if (s >= 70) return { text: 'Good',               color: 'text-gray-700',    bar: 'bg-brand-black',    ring: 'ring-gray-300'    };
+  if (s >= 60) return { text: 'Satisfactory',       color: 'text-gray-700',  bar: 'bg-brand-black',  ring: 'ring-gray-300'  };
+  if (s >= 50) return { text: 'Needs Improvement',  color: 'text-gray-700',  bar: 'bg-brand-black',  ring: 'ring-gray-300'  };
   return           { text: 'Unsatisfactory',        color: 'text-red-600',     bar: 'bg-red-500',     ring: 'ring-red-200'     };
 };
 
@@ -64,7 +64,7 @@ function ConfirmModal({ open, onClose, onConfirm, loading, employee, score, hasE
           </div>
 
           {!hasExisting && (
-            <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2.5 flex items-start gap-2">
+            <p className="text-xs text-gray-700 bg-gray-100 rounded-lg px-3 py-2.5 flex items-start gap-2">
               <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
               Once submitted, you can still update this evaluation while the assessment is active.
             </p>
@@ -230,11 +230,11 @@ export default function SupervisorEvaluation() {
 
         <div className="flex items-center gap-2">
           {hasExisting && (
-            <span className="flex items-center gap-1 text-[11px] font-semibold text-green-600 bg-green-50 px-2.5 py-1 rounded-full border border-green-100">
+            <span className="flex items-center gap-1 text-[11px] font-semibold text-gray-700 bg-gray-100 px-2.5 py-1 rounded-full border border-gray-200">
               <CheckCircle2 className="w-3 h-3" /> Saved
             </span>
           )}
-          <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full ${isExpired ? 'bg-red-50 text-red-600 border border-red-100' : 'bg-green-50 text-green-600 border border-green-100'}`}>
+          <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full ${isExpired ? 'bg-red-50 text-red-600 border border-red-100' : 'bg-gray-100 text-gray-700 border border-gray-200'}`}>
             {isExpired ? 'Expired' : 'Active'}
           </span>
         </div>
@@ -268,7 +268,7 @@ export default function SupervisorEvaluation() {
             <div className="bg-white rounded-xl border border-gray-100 p-3.5">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2.5">Assessment</p>
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-violet-500 to-violet-700 flex items-center justify-center text-white flex-shrink-0">
+                <div className="w-9 h-9 rounded-full bg-brand-black flex items-center justify-center text-white flex-shrink-0">
                   <Target className="w-4 h-4" />
                 </div>
                 <div className="min-w-0">

@@ -6,9 +6,9 @@ import { useToast } from '../context/ToastContext';
 const STATUS_OPTIONS = ['PENDING', 'IN_PROGRESS', 'COMPLETED', 'SYNCED'];
 
 const STATUS_BADGE = {
-  PENDING:     'bg-yellow-100 text-yellow-800 border-yellow-200',
-  IN_PROGRESS: 'bg-blue-100 text-blue-800 border-blue-200',
-  COMPLETED:   'bg-green-100 text-green-800 border-green-200',
+  PENDING:     'bg-gray-100 text-gray-600 border-gray-300',
+  IN_PROGRESS: 'bg-gray-200 text-gray-800 border-gray-400',
+  COMPLETED:   'bg-brand-black text-white border-brand-black',
   SYNCED:      'bg-gray-100 text-gray-600 border-gray-200',
 };
 
@@ -120,7 +120,7 @@ export default function AssessmentRequests() {
           <div className="flex items-center gap-3">
             <h1 className="text-xl  font-bold text-brand-black">Assessment Requests</h1>
             {pendingCount > 0 && (
-              <span className="px-2.5 py-1 bg-orange-100 text-orange-700 rounded-full text-xs font-bold border border-orange-200">
+              <span className="px-2.5 py-1 bg-gray-200 text-gray-700 rounded-full text-xs font-bold border border-gray-300">
                 {pendingCount} pending
               </span>
             )}
@@ -194,8 +194,8 @@ export default function AssessmentRequests() {
                       {req.competencies?.length > 0 && (
                         <div className="flex flex-wrap gap-1.5 mt-2">
                           {req.competencies.map((c, i) => (
-                            <span key={i} className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-50 text-blue-700 rounded-lg text-xs font-medium border border-blue-100">
-                              {c.name} <span className="text-blue-400">{c.targetGroup ? c.targetGroup.replace(/_/g, ' ') : 'Common'}</span>
+                            <span key={i} className="inline-flex items-center gap-1 px-2.5 py-1 bg-gray-100 text-gray-700 rounded-lg text-xs font-medium border border-gray-200">
+                              {c.name} <span className="text-gray-500">{c.targetGroup ? c.targetGroup.replace(/_/g, ' ') : 'Common'}</span>
                             </span>
                           ))}
                         </div>
@@ -203,7 +203,7 @@ export default function AssessmentRequests() {
 
                       {/* Linked user info */}
                       {req.linkedUserId && (
-                        <div className="mt-2 flex items-center gap-2 text-xs text-green-700 bg-green-50 px-2.5 py-1.5 rounded-lg inline-flex border border-green-100">
+                        <div className="mt-2 flex items-center gap-2 text-xs text-gray-700 bg-gray-100 px-2.5 py-1.5 rounded-lg inline-flex border border-gray-200">
                           <Link2 className="w-3 h-3" />
                           Linked to: {req.linkedUserId?.name || 'User'} ({req.linkedUserId?.email || 'N/A'})
                           {req.linkedAssessmentIds?.length > 0 && (
@@ -214,7 +214,7 @@ export default function AssessmentRequests() {
 
                       {/* Warning if no linked user */}
                       {!req.linkedUserId && (
-                        <div className="mt-2 flex items-center justify-between gap-4 text-xs text-amber-700 bg-amber-50 px-3 py-2 rounded-lg border border-amber-100">
+                        <div className="mt-2 flex items-center justify-between gap-4 text-xs text-gray-700 bg-gray-100 px-3 py-2 rounded-lg border border-gray-200">
                           <div className="flex items-center gap-2">
                             <AlertCircle className="w-4 h-4 flex-shrink-0" />
                             <span>
@@ -224,7 +224,7 @@ export default function AssessmentRequests() {
                           <button
                             onClick={() => handleLinkUser(req._id)}
                             disabled={linkingUser === req._id}
-                            className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-md font-medium transition-colors disabled:opacity-50 flex items-center gap-1.5 flex-shrink-0 shadow-sm"
+                            className="px-3 py-1.5 bg-brand-black hover:bg-gray-800 text-white rounded-md font-medium transition-colors disabled:opacity-50 flex items-center gap-1.5 flex-shrink-0 shadow-sm"
                           >
                             {linkingUser === req._id ? (
                               <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Linking...</>
@@ -249,8 +249,8 @@ export default function AssessmentRequests() {
                           disabled={markingComplete === req._id}
                           className={`px-4 py-2 text-xs font-semibold text-white rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50 shadow-sm ${
                             (req.status === 'COMPLETED' || req.status === 'SYNCED')
-                              ? 'bg-blue-600 hover:bg-blue-700' // Blue for update
-                              : 'bg-green-600 hover:bg-green-700' // Green for first complete
+                              ? 'bg-brand-black hover:bg-gray-800' // Black for update
+                              : 'bg-brand-black hover:bg-gray-800' // Black for first complete
                           }`}
                         >
                           {markingComplete === req._id ? (
@@ -263,7 +263,7 @@ export default function AssessmentRequests() {
 
                       {/* Completed / Synced badge */}
                       {req.status === 'COMPLETED' && (
-                        <span className="px-3 py-1.5 text-xs font-semibold bg-green-50 text-green-700 border border-green-200 rounded-lg flex items-center gap-1">
+                        <span className="px-3 py-1.5 text-xs font-semibold bg-gray-100 text-gray-700 border border-gray-300 rounded-lg flex items-center gap-1">
                           <Check className="w-3 h-3" /> Ready to Sync in ZB SP
                         </span>
                       )}
@@ -300,7 +300,7 @@ export default function AssessmentRequests() {
                 {isExpanded && (
                   <div className="border-t border-gray-100 bg-gray-50 p-5">
                     <p className="text-xs font-semibold text-gray-600 mb-3 flex items-center gap-1.5">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-green-600" />
+                      <CheckCircle2 className="w-3.5 h-3.5 text-brand-black" />
                       Submitted Assessment Results
                     </p>
 
@@ -310,7 +310,7 @@ export default function AssessmentRequests() {
                         Loading results…
                       </div>
                     ) : results.length === 0 ? (
-                      <div className="px-3 py-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700">
+                      <div className="px-3 py-3 bg-gray-100 border border-gray-300 rounded-lg text-sm text-gray-700">
                         <Clock className="w-3.5 h-3.5 inline mr-1" />
                         The employee hasn't submitted any assessment results yet.
                       </div>
@@ -327,16 +327,16 @@ export default function AssessmentRequests() {
                                 <span className="text-xs font-bold text-gray-700">Score: {a.finalScore}%</span>
                               )}
                               {a.level && (
-                                <span className="text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 font-medium">{a.level}</span>
+                                <span className="text-xs px-2 py-0.5 rounded-full bg-gray-200 text-gray-800 font-medium">{a.level}</span>
                               )}
                               <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
                                 a.status === 'COMPLETED' || a.status === 'ARCHIVED'
-                                  ? 'bg-green-100 text-green-700'
-                                  : 'bg-blue-100 text-blue-700'
+                                  ? 'bg-brand-black text-white'
+                                  : 'bg-gray-200 text-gray-700'
                               }`}>
                                 {a.status}
                               </span>
-                              <Check className="w-4 h-4 text-green-500" />
+                              <Check className="w-4 h-4 text-gray-700" />
                             </div>
                           </div>
                         ))}

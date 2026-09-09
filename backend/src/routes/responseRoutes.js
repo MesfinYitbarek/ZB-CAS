@@ -12,6 +12,7 @@ router.use(protect);
 // Auto-save and progress tracking for the person taking the assessment
 router.post('/save', rCtrl.saveAnswer);
 router.post('/submit', rCtrl.submitAssessment);
+router.post('/start-attempt', rCtrl.startAttempt);
 router.get('/progress/:assessmentId', rCtrl.getProgress);
 
 // ─── SECURITY VIOLATION TRACKING ─────────────────────────────────────────────

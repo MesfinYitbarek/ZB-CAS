@@ -5,7 +5,7 @@ import { useToast } from '../context/ToastContext';
 import {
   ArrowLeft, Edit2, Trash2, Users, FileText,
   Target, Bell, Check, Search, Tag,
-  CalendarDays, Timer, ChevronDown, Building2, Award, CircleDot
+  CalendarDays, Timer, ChevronDown, Building2, Award, CircleDot, Repeat
 } from 'lucide-react';
 import Modal from '../components/Modal';
 import api from '../utils/api';
@@ -17,24 +17,24 @@ const PURPOSES = [
 
 const STATUS_COLORS = {
   DRAFT: 'bg-gray-100 text-gray-700 border-gray-200',
-  SCHEDULED: 'bg-blue-100 text-blue-700 border-blue-200',
-  ACTIVE: 'bg-green-100 text-green-700 border-green-200',
+  SCHEDULED: 'bg-gray-200 text-gray-700 border-gray-300',
+  ACTIVE: 'bg-gray-200 text-gray-700 border-gray-300',
   COMPLETED: 'bg-red-100 text-red-700 border-red-200',
   ARCHIVED: 'bg-gray-100 text-gray-500 border-gray-200',
 };
 
 const TYPE_COLORS = {
-  SelfAssessment: 'bg-blue-50 text-blue-700',
-  SupervisorOnly: 'bg-green-50 text-green-700',
-  Combined: 'bg-purple-50 text-purple-700',
+  SelfAssessment: 'bg-gray-200 text-gray-800',
+  SupervisorOnly: 'bg-brand-black text-white',
+  Combined: 'bg-brand-red text-white',
 };
 
 const PURPOSE_COLORS = {
-  'Career Development': 'bg-indigo-50 text-indigo-700',
-  'Succession Planning': 'bg-violet-50 text-violet-700',
-  'Performance Improvement': 'bg-orange-50 text-orange-700',
-  'Training Needs Analysis': 'bg-teal-50 text-teal-700',
-  'Promotion Readiness': 'bg-emerald-50 text-emerald-700',
+  'Career Development': 'bg-gray-100 text-gray-700',
+  'Succession Planning': 'bg-gray-100 text-gray-700',
+  'Performance Improvement': 'bg-gray-100 text-gray-700',
+  'Training Needs Analysis': 'bg-gray-100 text-gray-700',
+  'Promotion Readiness': 'bg-gray-100 text-gray-700',
   'Other': 'bg-gray-50 text-gray-600',
 };
 
@@ -43,12 +43,12 @@ function TargetAudienceDisplay({ assessment }) {
   if (!ta) {
     return <span>{assessment.target?.department || 'All Departments'} · {assessment.target?.position || 'All Positions'}</span>;
   }
-  if (ta.type === 'ALL_DEPARTMENTS') return <span className="text-green-700 font-medium">All Departments</span>;
+  if (ta.type === 'ALL_DEPARTMENTS') return <span className="text-gray-700 font-medium">All Departments</span>;
   if (ta.type === 'DEPARTMENT_ALL') {
     return (
       <div className="flex flex-wrap gap-1 mt-1">
         {(ta.departments || []).map(d => (
-          <span key={d} className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full border border-blue-100">{d}</span>
+          <span key={d} className="text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded-full border border-gray-200">{d}</span>
         ))}
       </div>
     );
@@ -136,6 +136,7 @@ export default function AssessmentDetail() {
     startDate: '',
     endDate: '',
     timeLimit: '',
+    maxAttempts: '',
     type: 'SelfAssessment',
     weight: { selfAssessment: 20, supervisor: 80 },
   });
@@ -156,6 +157,7 @@ export default function AssessmentDetail() {
         startDate: a.startDate?.split('T')[0] || '',
         endDate: a.endDate?.split('T')[0] || '',
         timeLimit: a.timeLimit || '',
+        maxAttempts: a.maxAttempts ?? '',
         type: a.type,
         weight: a.weight || { selfAssessment: 20, supervisor: 80 },
       });
@@ -205,6 +207,7 @@ export default function AssessmentDetail() {
         ...form,
         reminderDaysBefore: form.reminderDaysBefore ? Number(form.reminderDaysBefore) : null,
         timeLimit: form.timeLimit ? Number(form.timeLimit) : null,
+        maxAttempts: form.maxAttempts ? Number(form.maxAttempts) : null,
       };
       await api.put(`/assessments/${id}`, payload);
       show('Assessment updated.', 'success');
@@ -257,8 +260,8 @@ export default function AssessmentDetail() {
 
   const statusBar = {
     DRAFT:     'from-gray-400 to-gray-500',
-    SCHEDULED: 'from-blue-500 to-blue-600',
-    ACTIVE:    'from-green-500 to-green-600',
+    SCHEDULED: 'from-gray-600 to-gray-900',
+    ACTIVE:    'from-gray-600 to-gray-900',
     COMPLETED: 'from-red-500 to-red-600',
     ARCHIVED:  'from-gray-500 to-gray-600',
   }[assessment.status] || 'from-gray-400 to-gray-500';
@@ -342,9 +345,9 @@ export default function AssessmentDetail() {
               )}
 
               <div className="mt-5 grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <StatCard icon={CalendarDays} label="Starts" value={fmtDate(assessment.startDate)} accent="text-blue-600 bg-blue-50" />
+                <StatCard icon={CalendarDays} label="Starts" value={fmtDate(assessment.startDate)} accent="text-gray-700 bg-gray-100" />
                 <StatCard icon={CalendarDays} label="Ends" value={fmtDate(assessment.endDate)} accent="text-red-500 bg-red-50" />
-                <StatCard icon={Timer} label="Time Limit" value={assessment.timeLimit ? `${assessment.timeLimit} min` : 'No limit'} accent="text-amber-600 bg-amber-50" />
+                <StatCard icon={Timer} label="Time Limit" value={assessment.timeLimit ? `${assessment.timeLimit} min` : 'No limit'} accent="text-gray-700 bg-gray-100" />
                 <StatCard icon={FileText} label="Questions" value={`${questionCount}`} accent="text-brand-red bg-brand-red/10" />
               </div>
             </div>
@@ -356,7 +359,7 @@ export default function AssessmentDetail() {
                 {workflowSteps.map((s, i) => {
                   const done = i < flowIdx;
                   const current = i === flowIdx;
-                  const activeColor = s.key === 'ACTIVE' ? 'bg-green-500' : 'bg-brand-red';
+                  const activeColor = s.key === 'ACTIVE' ? 'bg-brand-black' : 'bg-brand-red';
                   return (
                     <div key={s.key} className="flex items-center flex-1 last:flex-none">
                       <div className="flex flex-col items-center">
@@ -372,7 +375,7 @@ export default function AssessmentDetail() {
                         </div>
                       </div>
                       {i < workflowSteps.length - 1 && (
-                        <div className={`h-0.5 flex-1 mx-1.5 -mt-3 ${i < flowIdx ? (workflowSteps[i].key === 'ACTIVE' ? 'bg-green-400' : 'bg-brand-red') : 'bg-gray-200'}`} />
+                        <div className={`h-0.5 flex-1 mx-1.5 -mt-3 ${i < flowIdx ? (workflowSteps[i].key === 'ACTIVE' ? 'bg-brand-black' : 'bg-brand-red') : 'bg-gray-200'}`} />
                       )}
                     </div>
                   );
@@ -387,7 +390,7 @@ export default function AssessmentDetail() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {/* Target Audience */}
           <div className="bg-white rounded-2xl border border-gray-200 p-5">
-            <SectionTitle icon={Users} title="Target Audience" accent="text-blue-600 bg-blue-50" />
+            <SectionTitle icon={Users} title="Target Audience" accent="text-gray-700 bg-gray-100" />
             <div className="mt-3">
               <TargetAudienceDisplay assessment={assessment} />
             </div>
@@ -403,7 +406,7 @@ export default function AssessmentDetail() {
 
           {/* Reminder & Scoring */}
           <div className="bg-white rounded-2xl border border-gray-200 p-5">
-            <SectionTitle icon={Bell} title="Reminders & Scoring" accent="text-amber-600 bg-amber-50" />
+            <SectionTitle icon={Bell} title="Reminders & Scoring" accent="text-gray-700 bg-gray-100" />
             <div className="mt-3 space-y-3 text-sm text-gray-700">
               <div className="flex items-center justify-between">
                 <span className="text-gray-500">Reminder</span>
@@ -412,7 +415,7 @@ export default function AssessmentDetail() {
                 </span>
               </div>
               {assessment.reminderSent && (
-                <div className="flex items-center gap-1.5 text-xs bg-green-50 text-green-700 px-2.5 py-1 rounded-lg w-fit">
+                <div className="flex items-center gap-1.5 text-xs bg-gray-100 text-gray-700 px-2.5 py-1 rounded-lg w-fit">
                   <Check className="w-3.5 h-3.5" /> Reminder sent
                 </div>
               )}
@@ -430,7 +433,7 @@ export default function AssessmentDetail() {
                     <span className="font-bold text-gray-900">{assessment.weight?.supervisor || 0}%</span>
                   </div>
                   <div className="w-full bg-gray-100 rounded-full h-1.5">
-                    <div className="bg-blue-500 h-1.5 rounded-full transition-all" style={{ width: `${assessment.weight?.supervisor || 0}%` }} />
+                    <div className="bg-gray-700 h-1.5 rounded-full transition-all" style={{ width: `${assessment.weight?.supervisor || 0}%` }} />
                   </div>
                 </div>
               )}
@@ -449,6 +452,7 @@ export default function AssessmentDetail() {
               <SummaryRow icon={Building2} label="Type" value={assessment.type} />
               <SummaryRow icon={Target} label="Purpose" value={assessment.purpose || '—'} />
               <SummaryRow icon={Tag} label="Target Group" value={assessment.targetGroup ? assessment.targetGroup.replace('-', ' ') : '—'} />
+              <SummaryRow icon={Repeat} label="Attempts" value={assessment.maxAttempts ?? 'Unlimited'} />
               <SummaryRow icon={FileText} label="Questions" value={`${questionCount} question${questionCount !== 1 ? 's' : ''}`} />
             </div>
           </div>
@@ -488,7 +492,7 @@ export default function AssessmentDetail() {
                           <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">{q.type}</span>
                           <span className="text-xs text-gray-400">{q.score} pt{q.score !== 1 ? 's' : ''}</span>
                           {q.targetGroup && (
-                            <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">{q.targetGroup}</span>
+                            <span className="text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded-full">{q.targetGroup}</span>
                           )}
                           {q.options?.length > 0 && (
                             <span className="text-xs text-gray-400">{q.options.length} options</span>
@@ -605,6 +609,15 @@ export default function AssessmentDetail() {
               <input type="number" min="1" max="30" placeholder="Optional"
                 value={form.reminderDaysBefore}
                 onChange={(e) => setForm(prev => ({ ...prev, reminderDaysBefore: e.target.value }))}
+                className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red text-sm" />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                Attempts <span className="text-gray-400 font-normal text-xs">(blank = unlimited)</span>
+              </label>
+              <input type="number" min="1" placeholder="e.g., 3"
+                value={form.maxAttempts}
+                onChange={(e) => setForm(prev => ({ ...prev, maxAttempts: e.target.value }))}
                 className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red text-sm" />
             </div>
           </div>

@@ -216,7 +216,7 @@ export default function ReportsLayout() {
                   </button>
                   <button type="button" onClick={() => doExport('excel', section === 'individual' ? 'individual' : 'filtered')} disabled={!!exporting}
                     className="flex items-center gap-1.5 px-3 py-1.5 border border-l-0 border-gray-300 bg-white rounded-r-lg text-sm font-semibold text-brand-black hover:bg-gray-50 transition-colors disabled:opacity-50">
-                    {exporting === 'excel' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileSpreadsheet className="w-3.5 h-3.5 text-green-600" />}Excel
+                    {exporting === 'excel' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileSpreadsheet className="w-3.5 h-3.5 text-gray-700" />}Excel
                   </button>
                 </div>
               </div>
@@ -232,7 +232,7 @@ export default function ReportsLayout() {
         </div>
 
         {/* ── SCROLLABLE BODY ──────────────────────────────────────────── */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar">
+        <div className="flex-1 overflow-y-auto scrollbar-none">
           <div className="p-7 space-y-5">
             {showFilters && isAdmin && <FilterDrawer {...drawerProps} />}
             <Outlet />

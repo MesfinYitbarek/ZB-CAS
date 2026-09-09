@@ -15,11 +15,11 @@ import {
 
 const CAT_COLORS = {
   GENERAL:    'bg-gray-100 text-gray-600',
-  ASSESSMENT: 'bg-blue-50 text-blue-600',
-  TECHNICAL:  'bg-purple-50 text-purple-600',
-  HR:         'bg-rose-50 text-rose-600',
-  POLICY:     'bg-amber-50 text-amber-700',
-  OTHER:      'bg-teal-50 text-teal-600',
+  ASSESSMENT: 'bg-gray-100 text-gray-700',
+  TECHNICAL:  'bg-gray-100 text-gray-700',
+  HR:         'bg-red-50 text-red-600',
+  POLICY:     'bg-gray-100 text-gray-700',
+  OTHER:      'bg-gray-100 text-gray-700',
 };
 
 const INIT_FORM = { question: '', answer: '', category: 'GENERAL', order: 0, isActive: true };
@@ -64,7 +64,7 @@ function FAQRow({ faq, catLabel, catColor, onEdit, onDelete, onToggle }) {
 
         {/* Status */}
         <span className={`flex-shrink-0 text-[11px] font-medium px-2 py-0.5 rounded-full ${
-          faq.isActive ? 'bg-green-50 text-green-600' : 'bg-gray-100 text-gray-400'
+          faq.isActive ? 'bg-gray-100 text-gray-700' : 'bg-gray-100 text-gray-400'
         }`}>
           {faq.isActive ? 'Active' : 'Hidden'}
         </span>
@@ -77,14 +77,14 @@ function FAQRow({ faq, catLabel, catColor, onEdit, onDelete, onToggle }) {
             className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
           >
             {faq.isActive
-              ? <ToggleRight className="w-4 h-4 text-green-500" />
+              ? <ToggleRight className="w-4 h-4 text-gray-700" />
               : <ToggleLeft className="w-4 h-4" />
             }
           </button>
           <button
             onClick={() => onEdit(faq)}
             title="Edit"
-            className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+            className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
           >
             <Edit2 className="w-4 h-4" />
           </button>
@@ -348,9 +348,9 @@ export default function FAQs() {
         </div>
         <button
           onClick={openCreate}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-red text-white rounded-xl text-sm font-semibold hover:bg-brand-red-dark transition-colors shadow-sm self-start sm:self-auto"
+          className="flex items-center gap-1.5 px-2 py-1 bg-brand-red text-white rounded-xl text-sm font-semibold hover:bg-brand-red-dark transition-colors shadow-sm self-start sm:self-auto"
         >
-          <Plus className="w-3.5 h-3.5" />
+          <Plus className="w-3 h-3" />
           Add FAQ
         </button>
       </div>

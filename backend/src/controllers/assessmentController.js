@@ -19,6 +19,7 @@ import {
 } from '../services/notificationService.js';
 import { scheduleAssessmentTimers, clearAssessmentTimers } from '../services/schedulerService.js';
 import { logActivity } from '../services/activityService.js';
+import { normalizeTargetGroup, denormalizeTargetGroup } from '../utils/targetGroup.js';
 
 // ─── AUTO-ACTIVATE HELPER ────────────────────────────────────────────────────
 // Exported so schedulerService can call it on a cron schedule
@@ -56,7 +57,7 @@ const toLegacy = (a) => ({
   _id:             a.id,
   id:              a.id,
   competencyId:    a.competency || a.competencyId,
-  targetGroup:     a.targetGroup,
+  targetGroup:     denormalizeTargetGroup(a.targetGroup),
   purpose:         a.purpose,
   description:     a.description,
   reminderDaysBefore: a.reminderDaysBefore,
@@ -71,11 +72,12 @@ const toLegacy = (a) => ({
     position:   a.legacyPosition,
   },
   questionIds: a.assessmentQuestions
-    ? a.assessmentQuestions.map(q => ({ ...q.question, _id: q.question.id }))
+    ? a.assessmentQuestions.map(q => ({ ...q.question, _id: q.question.id, targetGroup: denormalizeTargetGroup(q.question.targetGroup) }))
     : [],
   startDate:     a.startDate,
   endDate:       a.endDate,
   timeLimit:     a.timeLimit,
+  maxAttempts:   a.maxAttempts ?? null,
   type:          a.type,
   weight: {
     selfAssessment: a.selfWeight,
@@ -142,11 +144,20 @@ const deriveLegacyTarget = (targetAudience) => {
 
 // ─── CREATE ──────────────────────────────────────────────────────────────────
 export const createAssessment = asyncHandler(async (req, res, next) => {
-  const { competencyId, targetGroup, purpose, description, targetAudience, reminderDaysBefore, questionIds, startDate, endDate, timeLimit, type, weight } = req.body;
+  const { competencyId, targetGroup, purpose, description, targetAudience, reminderDaysBefore, questionIds, startDate, endDate, timeLimit, type, weight, maxAttempts: rawMaxAttempts } = req.body;
 
   if (!targetGroup) return next(new AppError('Target group is required.', 400));
   if (!purpose)     return next(new AppError('Purpose is required.', 400));
   if (!validateTargetAudience(targetAudience, next)) return;
+
+  const normalizedTG = normalizeTargetGroup(targetGroup);
+
+  const maxAttempts = rawMaxAttempts === undefined || rawMaxAttempts === null || rawMaxAttempts === ''
+    ? null
+    : parseInt(rawMaxAttempts, 10);
+  if (maxAttempts !== null && (!Number.isInteger(maxAttempts) || maxAttempts < 1)) {
+    return next(new AppError('maxAttempts must be a positive integer or empty for unlimited.', 400));
+  }
 
   const legacyTarget = deriveLegacyTarget(targetAudience);
   const ta = targetAudience || { type: 'ALL_DEPARTMENTS', departments: [], employeeIds: [] };
@@ -154,7 +165,7 @@ export const createAssessment = asyncHandler(async (req, res, next) => {
   const assessment = await prisma.assessment.create({
     data: {
       competencyId,
-      targetGroup,
+      targetGroup: normalizedTG,
       purpose,
       description,
       legacyDepartment: legacyTarget.department,
@@ -170,6 +181,7 @@ export const createAssessment = asyncHandler(async (req, res, next) => {
       startDate: new Date(startDate),
       endDate:   new Date(endDate),
       timeLimit: timeLimit || null,
+      maxAttempts,
       type,
       selfWeight: type === 'Combined'
         ? (weight?.selfAssessment || 20)
@@ -276,11 +288,25 @@ export const updateAssessment = asyncHandler(async (req, res, next) => {
   if (req.body.targetAudience && !validateTargetAudience(req.body.targetAudience, next)) return;
 
   const data = {};
-  ['description', 'startDate', 'endDate', 'timeLimit', 'targetGroup', 'purpose'].forEach((f) => {
+  ['description', 'startDate', 'endDate', 'timeLimit', 'purpose'].forEach((f) => {
     if (req.body[f] !== undefined) {
       data[f] = req.body[f] instanceof Date ? req.body[f] : req.body[f];
     }
   });
+
+  if (req.body.targetGroup !== undefined) {
+    data.targetGroup = normalizeTargetGroup(req.body.targetGroup);
+  }
+
+  if (req.body.maxAttempts !== undefined) {
+    const n = req.body.maxAttempts === null || req.body.maxAttempts === ''
+      ? null
+      : parseInt(req.body.maxAttempts, 10);
+    if (n !== null && (!Number.isInteger(n) || n < 1)) {
+      return next(new AppError('maxAttempts must be a positive integer or empty for unlimited.', 400));
+    }
+    data.maxAttempts = n;
+  }
 
   if (req.body.startDate !== undefined) data.startDate = new Date(req.body.startDate);
   if (req.body.endDate !== undefined)   data.endDate   = new Date(req.body.endDate);

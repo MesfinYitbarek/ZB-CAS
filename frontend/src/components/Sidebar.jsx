@@ -66,8 +66,8 @@ const ROLE_LABELS = {
 // Tailwind colour classes per role for the badge
 const ROLE_COLORS = {
   HR_ADMIN: 'bg-red-600/20 text-red-400 border-red-600/30',
-  SUPERVISOR: 'bg-blue-600/20 text-blue-400 border-blue-600/30',
-  EMPLOYEE: 'bg-green-600/20 text-green-400 border-green-600/30',
+  SUPERVISOR: 'bg-white/10 text-white border-white/20',
+  EMPLOYEE: 'bg-gray-500/20 text-gray-300 border-gray-500/30',
 };
 
 export default function Sidebar({
@@ -213,7 +213,7 @@ export default function Sidebar({
         </div>
 
         {/* ── Nav Items ── */}
-        <nav className="flex-1 py-2 overflow-y-auto custom-scrollbar">
+        <nav className="flex-1 py-2 overflow-y-auto scrollbar-none">
           {visible.map((item) => {
             const Icon = item.icon;
 
@@ -341,7 +341,7 @@ export default function Sidebar({
                   >
                     <span
                       className={`w-2 h-2 rounded-full flex-shrink-0 ${auth.activeRole === 'HR_ADMIN' ? 'bg-red-400' :
-                        auth.activeRole === 'SUPERVISOR' ? 'bg-blue-400' : 'bg-green-400'
+                        auth.activeRole === 'SUPERVISOR' ? 'bg-white' : 'bg-gray-400'
                         }`}
                     />
                     <span className="flex-1 text-left text-sm font-semibold text-white">
@@ -367,7 +367,7 @@ export default function Sidebar({
                         >
                           <span
                             className={`w-2 h-2 rounded-full flex-shrink-0 ${role === 'HR_ADMIN' ? 'bg-red-400' :
-                              role === 'SUPERVISOR' ? 'bg-blue-400' : 'bg-green-400'
+                              role === 'SUPERVISOR' ? 'bg-white' : 'bg-gray-400'
                               }`}
                           />
                           <span className="flex-1 text-left">{ROLE_LABELS[role] ?? role}</span>
@@ -414,7 +414,7 @@ export default function Sidebar({
                         >
                           <span
                             className={`w-2 h-2 rounded-full ${role === 'HR_ADMIN' ? 'bg-red-400' :
-                              role === 'SUPERVISOR' ? 'bg-blue-400' : 'bg-green-400'
+                              role === 'SUPERVISOR' ? 'bg-white' : 'bg-gray-400'
                               }`}
                           />
                           {ROLE_LABELS[role] ?? role}

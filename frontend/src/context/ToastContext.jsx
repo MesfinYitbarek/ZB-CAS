@@ -10,10 +10,10 @@ export const useToast = () => {
 };
 
 const ICONS = {
-  success: <CheckCircle className="w-5 h-5 text-green-600" />,
+  success: <CheckCircle className="w-5 h-5 text-brand-black" />,
   error: <AlertCircle className="w-5 h-5 text-red-600" />,
-  warning: <AlertTriangle className="w-5 h-5 text-orange-600" />,
-  info: <Info className="w-5 h-5 text-blue-600" />,
+  warning: <AlertTriangle className="w-5 h-5 text-gray-700" />,
+  info: <Info className="w-5 h-5 text-gray-700" />,
 };
 
 export default function ToastProvider({ children }) {
@@ -37,10 +37,10 @@ export default function ToastProvider({ children }) {
           <div
             key={t.id}
             className={`toast-enter bg-white rounded-xl shadow-lg border-l-4 pointer-events-auto flex items-start gap-3 p-4 ${
-              t.type === 'success' ? 'border-green-600' :
+              t.type === 'success' ? 'border-brand-black' :
               t.type === 'error' ? 'border-red-600' :
-              t.type === 'warning' ? 'border-orange-600' :
-              'border-blue-600'
+              t.type === 'warning' ? 'border-gray-500' :
+              'border-gray-400'
             }`}
           >
             {ICONS[t.type]}

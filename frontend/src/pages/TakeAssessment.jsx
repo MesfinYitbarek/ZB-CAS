@@ -131,8 +131,8 @@ const SecurityLawsScreen = ({ assessment, onAccept, onCancel }) => {
 const BackWarningModal = ({ answeredCount, totalCount, onStay, onLeave, isLeaving }) => (
   <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
     <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6">
-      <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center mx-auto mb-4">
-        <AlertTriangle className="w-6 h-6 text-amber-600" />
+      <div className="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center mx-auto mb-4">
+        <AlertTriangle className="w-6 h-6 text-gray-700" />
       </div>
       <h3 className="text-base font-bold text-gray-900 text-center mb-2">Leave Assessment?</h3>
       <p className="text-sm text-gray-600 text-center mb-1">
@@ -212,57 +212,17 @@ const SeriousViolationModal = ({ count, onAcknowledge }) => (
   </div>
 );
 
-// // ─── Security Monitor Modal ───────────────────────────────────────────────────
-// const SecurityMonitorModal = ({ violations, isHighRisk, onDismiss }) => {
-//   if (!violations || violations.length === 0) return null;
+// ─── Security Monitor Modal ───────────────────────────────────────────────────
+const SecurityMonitorModal = ({ violations, isHighRisk, onDismiss }) => {
+  if (!violations || violations.length === 0) return null;
 
-//   return (
-//     <div className="fixed bottom-4 right-4 z-50 max-w-sm w-full bg-white rounded-lg shadow-xl border-l-4 border-red-500 overflow-hidden animate-in slide-in-from-bottom-5 duration-300">
-//       <div className="bg-gradient-to-r from-red-600 to-red-500 px-4 py-2 flex items-center justify-between text-white">
-//         <div className="flex items-center gap-2">
-//           <Shield className="w-4 h-4" />
-//           <span className="text-xs font-bold">Security Monitor</span>
-//           {isHighRisk && (
-//             <span className="px-1.5 py-0.5 bg-red-800 rounded text-[9px] font-semibold">HIGH RISK</span>
-//           )}
-//         </div>
-//         <button
-//           onClick={onDismiss}
-//           className="text-white/80 hover:text-white transition-colors"
-//         >
-//           <X className="w-4 h-4" />
-//         </button>
-//       </div>
-//       <div className="p-3 bg-red-50">
-//         <div className="space-y-1.5">
-//           <div className="flex justify-between text-xs">
-//             <span className="text-gray-600">Total Violations:</span>
-//             <span className="font-bold text-red-600">{violations.length}</span>
-//           </div>
-//           <div className="flex justify-between text-xs">
-//             <span className="text-gray-600">Tab Switches:</span>
-//             <span className="font-bold text-red-600">
-//               {violations.filter(v => v.type === 'TAB_SWITCH').length}
-//             </span>
-//           </div>
-//           <div className="flex justify-between text-xs">
-//             <span className="text-gray-600">Full Screen Exits:</span>
-//             <span className="font-bold text-red-600">
-//               {violations.filter(v => v.type === 'FULLSCREEN_EXIT').length}
-//             </span>
-//           </div>
-//           {violations.length > 0 && (
-//             <div className="mt-2 pt-2 border-t border-red-200">
-//               <p className="text-[9px] text-red-700">
-//                 Last violation: {new Date(violations[violations.length - 1].timestamp).toLocaleTimeString()}
-//               </p>
-//             </div>
-//           )}
-//         </div>
-//       </div>
-//     </div>
-//   );
-// };
+  return (
+    <div className="fixed bottom-4 right-4 z-50 max-w-sm w-full bg-white rounded-lg shadow-xl border-l-4 border-red-500 overflow-hidden animate-in slide-in-from-bottom-5 duration-300">
+      
+      
+    </div>
+  );
+};
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function TakeAssessment() {
@@ -300,6 +260,10 @@ export default function TakeAssessment() {
   // Persisted security summary (survives reloads; live hook state resets on reload)
   const [securitySummary, setSecuritySummary] = useState(null);
   const [securityLoaded, setSecurityLoaded] = useState(false);
+
+  // Attempt tracking (maxAttempts null = unlimited)
+  const [attempts, setAttempts] = useState({ used: 0, maxAttempts: null, remaining: null });
+  const [retaking, setRetaking] = useState(false);
 
   const debounceRef = useRef({});
   const countdownRef = useRef(null);
@@ -352,6 +316,11 @@ export default function TakeAssessment() {
           });
           if (prog.data.data.isSubmitted) {
             setSubmitted(true);
+            setAttempts({
+              used: prog.data.data.attemptsUsed || 0,
+              maxAttempts: prog.data.data.maxAttempts ?? null,
+              remaining: prog.data.data.attemptsRemaining ?? null,
+            });
             await loadSecuritySummary();
             await checkResult();
           } else {
@@ -487,11 +456,19 @@ export default function TakeAssessment() {
 
     setSubmitting(true);
     try {
-      await api.post('/responses/submit', {
+      const { data: submitData } = await api.post('/responses/submit', {
         assessmentId, employeeId, respondentType,
         securityLog: security.getViolationLog(),
         totalViolations: security.totalViolations,
       });
+      if (submitData.data?.attempts) {
+        const a = submitData.data.attempts;
+        setAttempts({
+          used: a.used || 0,
+          maxAttempts: a.maxAttempts ?? null,
+          remaining: a.maxAttempts == null ? null : Math.max(a.maxAttempts - (a.used || 0), 0),
+        });
+      }
 
       setSubmitted(true);
       setShowSubmitWarning(false);
@@ -535,6 +512,34 @@ export default function TakeAssessment() {
     }
   };
 
+  // ── Retake (start a new attempt while attempts remain) ─────────────────────
+  const handleRetake = async () => {
+    setRetaking(true);
+    try {
+      const { data } = await api.post('/responses/start-attempt', { assessmentId });
+      const a = data.data || {};
+      setAttempts({
+        used: a.attemptsUsed || 0,
+        maxAttempts: a.maxAttempts ?? null,
+        remaining: a.attemptsRemaining ?? null,
+      });
+      setAnswers({});
+      setResult(null);
+      setSecuritySummary(null);
+      setSecurityLoaded(false);
+      setCurrentQuestionIndex(0);
+      violationCountRef.current = 0;
+      setSubmitted(false);
+      if (assessment?.timeLimit) security.startTimer(assessment.timeLimit);
+      security.requestFullscreen();
+      show('New attempt started. Good luck!', 'success');
+    } catch (err) {
+      show(err.response?.data?.message || 'Could not start a new attempt.', 'error');
+    } finally {
+      setRetaking(false);
+    }
+  };
+
   // ── Back button handler ─────────────────────────────────────────────────────
   const handleBackClick = () => {
     if (submitted) { nav('/assessments'); return; }
@@ -554,20 +559,20 @@ export default function TakeAssessment() {
   };
 
   // ── Export ──────────────────────────────────────────────────────────────────
-  const handleExportResult = async () => {
-    setExportingPdf(true);
-    try {
-      await exportToPDF(
-        { type: 'results', user, results: [{ ...result, competencyName: result.competencyId?.name }] },
-        generateFilename(`result_${assessment.competencyId?.name}`, 'pdf')
-      );
-      show('Exported!', 'success');
-    } catch (err) {
-      show('Export failed: ' + err.message, 'error');
-    } finally {
-      setExportingPdf(false);
-    }
-  };
+  // const handleExportResult = async () => {
+  //   setExportingPdf(true);
+  //   try {
+  //     await exportToPDF(
+  //       { type: 'results', user, results: [{ ...result, competencyName: result.competencyId?.name }] },
+  //       generateFilename(`result_${assessment.competencyId?.name}`, 'pdf')
+  //     );
+  //     show('Exported!', 'success');
+  //   } catch (err) {
+  //     show('Export failed: ' + err.message, 'error');
+  //   } finally {
+  //     setExportingPdf(false);
+  //   }
+  // };
 
   // ── Security acknowledgment from laws screen ────────────────────────────────
   const handleStartSecure = () => {
@@ -597,9 +602,9 @@ export default function TakeAssessment() {
         return (
           <div className="space-y-2">
             {q.scenario && q.type === 'ScenarioMCQ' && (
-              <div className="p-3 bg-blue-50 border-l-4 border-blue-500 rounded mb-4 max-h-48 overflow-y-auto">
-                <div className="text-[10px] font-bold text-blue-800 uppercase tracking-wide mb-1">Scenario</div>
-                <p className="text-xs text-blue-900 leading-relaxed whitespace-pre-wrap break-words">{q.scenario}</p>
+              <div className="p-3 bg-gray-100 border-l-4 border-gray-700 rounded mb-4 max-h-48 overflow-y-auto">
+                <div className="text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1">Scenario</div>
+                <p className="text-xs text-gray-700 leading-relaxed whitespace-pre-wrap break-words">{q.scenario}</p>
               </div>
             )}
             {(q.options || []).map((opt, idx) => {
@@ -640,7 +645,7 @@ export default function TakeAssessment() {
                 const chosen = answers[q._id] >= val;
                 return (
                   <button key={val} onClick={() => handleAnswer(q._id, val)} className="p-1 hover:scale-110 transition-transform">
-                    <Star className="w-6 h-6" fill={chosen ? '#DC2626' : 'none'} color={chosen ? '#DC2626' : '#D1D5DB'} />
+                    <Star className="w-6 h-6" fill={chosen ? '#C8102E' : 'none'} color={chosen ? '#C8102E' : '#D1D5DB'} />
                   </button>
                 );
               })}
@@ -775,8 +780,8 @@ export default function TakeAssessment() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
         <div className="bg-white rounded-xl shadow-lg p-6 max-w-lg w-full">
-          <div className="w-16 h-16 rounded-full bg-blue-100 flex items-center justify-center mx-auto mb-4">
-            <Clock className="w-8 h-8 text-blue-600" />
+          <div className="w-16 h-16 rounded-full bg-gray-200 flex items-center justify-center mx-auto mb-4">
+            <Clock className="w-8 h-8 text-gray-700" />
           </div>
           <h2 className="text-xl  font-bold text-brand-black text-center mb-5">Assessment Scheduled</h2>
 
@@ -786,7 +791,7 @@ export default function TakeAssessment() {
               {assessment.competencyId?.name || 'N/A'}
             </p>
             <div className="flex items-center gap-4 text-xs text-gray-500 mt-2">
-              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${assessment.type === 'SelfAssessment' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'}`}>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${assessment.type === 'SelfAssessment' ? 'bg-gray-200 text-gray-800' : 'bg-brand-black text-white'}`}>
                 {assessment.type}
               </span>
               {assessment.timeLimit && <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{assessment.timeLimit} min</span>}
@@ -799,8 +804,8 @@ export default function TakeAssessment() {
               <div className="grid grid-cols-4 gap-3">
                 {[{ label: 'Days', value: countdown.days }, { label: 'Hours', value: countdown.hours }, { label: 'Minutes', value: countdown.minutes }, { label: 'Seconds', value: countdown.seconds }].map(({ label, value }) => (
                   <div key={label} className="text-center">
-                    <div className="bg-gradient-to-b from-blue-50 to-blue-100 rounded-lg p-3 border border-blue-200">
-                      <div className="text-2xl font-bold font-mono text-blue-800">{String(value).padStart(2, '0')}</div>
+                    <div className="bg-gradient-to-b from-gray-100 to-white rounded-lg p-3 border border-gray-300">
+                      <div className="text-2xl font-bold font-mono text-gray-700">{String(value).padStart(2, '0')}</div>
                     </div>
                     <div className="text-[10px] text-gray-500 mt-1 font-medium">{label}</div>
                   </div>
@@ -809,15 +814,15 @@ export default function TakeAssessment() {
             </div>
           )}
 
-          <div className="bg-blue-50 border-l-4 border-blue-500 p-3 rounded mb-5 text-xs text-blue-800 space-y-1">
+          <div className="bg-gray-100 border-l-4 border-gray-700 p-3 rounded mb-5 text-xs text-gray-700 space-y-1">
             <p><strong>Starts:</strong> {new Date(assessment.startDate).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
             <p><strong>Ends:</strong> {new Date(assessment.endDate).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
           </div>
 
-          <div className="bg-yellow-50 border-l-4 border-yellow-500 p-3 rounded mb-5">
+          <div className="bg-gray-100 border-l-4 border-gray-700 p-3 rounded mb-5">
             <div className="flex gap-2">
-              <AlertTriangle className="w-4 h-4 text-yellow-600 flex-shrink-0 mt-0.5" />
-              <p className="text-[10px] text-yellow-800">This page will automatically refresh when the assessment starts.</p>
+              <AlertTriangle className="w-4 h-4 text-gray-700 flex-shrink-0 mt-0.5" />
+              <p className="text-[10px] text-gray-700">This page will automatically refresh when the assessment starts.</p>
             </div>
           </div>
 
@@ -866,8 +871,8 @@ export default function TakeAssessment() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
         <div className="bg-white rounded-xl shadow-lg p-6 max-w-lg w-full">
-          <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
-            <CheckCircle className="w-8 h-8 text-green-600" />
+          <div className="w-16 h-16 rounded-full bg-gray-200 flex items-center justify-center mx-auto mb-4">
+            <CheckCircle className="w-8 h-8 text-brand-black" />
           </div>
           <h2 className="text-xl  font-bold text-brand-black text-center mb-4">Assessment Completed!</h2>
 
@@ -916,14 +921,25 @@ export default function TakeAssessment() {
             </div>
           )}
 
+          <div className="text-center text-[11px] text-gray-500 mb-4">
+            {attempts.maxAttempts != null
+              ? `Attempt ${attempts.used} of ${attempts.maxAttempts}`
+              : attempts.used > 0 ? `Attempt ${attempts.used} · Unlimited attempts` : 'Unlimited attempts'}
+          </div>
+
           <div className="flex gap-2">
-            <LoadingButton
+            {(attempts.maxAttempts == null || (attempts.remaining ?? 0) > 0) && (
+              <button onClick={handleRetake} disabled={retaking} className="flex-1 py-2 bg-brand-red text-white rounded-lg text-xs font-semibold hover:bg-brand-red-dark disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1">
+                {retaking ? 'Starting…' : `Retake${attempts.maxAttempts != null ? ` (${attempts.remaining} left)` : ''}`}
+              </button>
+            )}
+            {/* <LoadingButton
               onClick={handleExportResult}
               loading={exportingPdf}
               className="flex-1 py-2 border border-red-600 text-red-600 rounded-lg text-xs font-semibold hover:bg-red-50 flex items-center justify-center gap-1"
             >
               <FileText className="w-3 h-3" /> Export
-            </LoadingButton>
+            </LoadingButton> */}
             <button onClick={() => nav('/results')} className="flex-1 py-2 border border-red-600 text-red-600 rounded-lg text-xs font-semibold hover:bg-red-50">
               View All
             </button>
@@ -941,8 +957,8 @@ export default function TakeAssessment() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
         <div className="bg-white rounded-xl shadow-lg p-6 max-w-sm text-center">
-          <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
-            <CheckCircle className="w-8 h-8 text-green-600" />
+          <div className="w-16 h-16 rounded-full bg-gray-200 flex items-center justify-center mx-auto mb-4">
+            <CheckCircle className="w-8 h-8 text-brand-black" />
           </div>
           <h2 className="text-xl  font-bold text-brand-black mb-4">Submitted!</h2>
           <button
@@ -1008,16 +1024,16 @@ export default function TakeAssessment() {
       {showSubmitWarning && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
-            <div className="w-12 h-12 rounded-full bg-yellow-100 flex items-center justify-center mx-auto mb-4">
-              <AlertTriangle className="w-6 h-6 text-yellow-600" />
+            <div className="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center mx-auto mb-4">
+              <AlertTriangle className="w-6 h-6 text-gray-700" />
             </div>
             <h3 className="text-lg font-bold text-brand-black text-center mb-2">Incomplete Assessment</h3>
             <p className="text-sm text-gray-600 text-center mb-4">
               You have <strong>{questions.length - answeredCount}</strong> unanswered question{questions.length - answeredCount !== 1 ? 's' : ''}.
               These will receive 0 points.
             </p>
-            <div className="bg-blue-50 border-l-4 border-blue-500 p-3 rounded mb-4">
-              <p className="text-xs text-blue-900">Go back to answer remaining questions, or submit with incomplete answers.</p>
+            <div className="bg-gray-100 border-l-4 border-gray-700 p-3 rounded mb-4">
+              <p className="text-xs text-gray-700">Go back to answer remaining questions, or submit with incomplete answers.</p>
             </div>
             <div className="flex gap-3">
               <button onClick={() => setShowSubmitWarning(false)}
@@ -1107,7 +1123,7 @@ export default function TakeAssessment() {
 
               <div className="flex items-center gap-2">
                 {isCurrentAnswered && (
-                  <span className="flex items-center gap-1 text-green-600 text-xs">
+                  <span className="flex items-center gap-1 text-brand-black text-xs">
                     <Check className="w-3 h-3" /> Answered
                   </span>
                 )}
@@ -1125,7 +1141,7 @@ export default function TakeAssessment() {
                   onClick={() => handleSubmit(false)}
                   loading={submitting}
                   disabled={submitting}
-                  className="px-5 py-2 bg-green-600 text-white rounded-lg text-xs font-bold hover:bg-green-700 disabled:opacity-60 disabled:bg-green-400"
+                  className="px-5 py-2 bg-brand-black text-white rounded-lg text-xs font-bold hover:bg-gray-800 disabled:opacity-60 disabled:bg-gray-500"
                 >
                   Submit
                 </LoadingButton>
@@ -1143,7 +1159,7 @@ export default function TakeAssessment() {
               const isCurrent = idx === currentQuestionIndex;
               return (
                 <button key={q._id} onClick={() => goToQuestion(idx)}
-                  className={`w-full aspect-square rounded-md text-[10px] font-medium transition-all ${isCurrent ? 'bg-red-600 text-white shadow scale-105' : ans ? 'bg-green-100 text-green-700 border border-green-300' : 'bg-gray-100 text-gray-600 border border-gray-200'}`}>
+                  className={`w-full aspect-square rounded-md text-[10px] font-medium transition-all ${isCurrent ? 'bg-red-600 text-white shadow scale-105' : ans ? 'bg-gray-200 text-gray-700 border border-gray-400' : 'bg-gray-100 text-gray-600 border border-gray-200'}`}>
                   {idx + 1}
                 </button>
               );
@@ -1151,7 +1167,7 @@ export default function TakeAssessment() {
           </div>
           <div className="flex items-center justify-center gap-4 mt-3 text-[9px]">
             <div className="flex items-center gap-1"><div className="w-4 h-4 rounded bg-red-600" /><span className="text-gray-600">Current</span></div>
-            <div className="flex items-center gap-1"><div className="w-4 h-4 rounded bg-green-100 border border-green-300" /><span className="text-gray-600">Answered</span></div>
+            <div className="flex items-center gap-1"><div className="w-4 h-4 rounded bg-gray-200 border border-gray-400" /><span className="text-gray-600">Answered</span></div>
             <div className="flex items-center gap-1"><div className="w-4 h-4 rounded bg-gray-100 border border-gray-200" /><span className="text-gray-600">Unanswered</span></div>
           </div>
         </div>

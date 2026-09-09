@@ -23,16 +23,16 @@ const PURPOSES = [
 // â”€â”€â”€ Status / type config â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const STATUS_META = {
   DRAFT:     { dot: 'bg-gray-400',    bar: 'bg-gray-300',    badge: 'bg-gray-100 text-gray-700',     label: 'Draft'     },
-  SCHEDULED: { dot: 'bg-blue-500',    bar: 'bg-blue-400',    badge: 'bg-blue-100 text-blue-800',     label: 'Scheduled' },
-  ACTIVE:    { dot: 'bg-green-500',   bar: 'bg-green-400',   badge: 'bg-green-100 text-green-800',   label: 'Active'    },
+  SCHEDULED: { dot: 'bg-gray-700',    bar: 'bg-gray-500',    badge: 'bg-gray-200 text-gray-700',     label: 'Scheduled' },
+  ACTIVE:    { dot: 'bg-gray-700',   bar: 'bg-gray-500',   badge: 'bg-gray-200 text-gray-700',   label: 'Active'    },
   COMPLETED: { dot: 'bg-brand-red',   bar: 'bg-brand-red',   badge: 'bg-red-100 text-red-800',       label: 'Completed' },
   ARCHIVED:  { dot: 'bg-gray-500',    bar: 'bg-gray-500',    badge: 'bg-gray-100 text-gray-600',     label: 'Archived'  },
 };
 
 const TYPE_META = {
-  SelfAssessment: { badge: 'bg-blue-100 text-blue-800',   short: 'Self'  },
-  SupervisorOnly: { badge: 'bg-green-100 text-green-800', short: 'Sup.'  },
-  Combined:       { badge: 'bg-purple-100 text-purple-800', short: 'Both'},
+  SelfAssessment: { badge: 'bg-gray-200 text-gray-800',   short: 'Self'  },
+  SupervisorOnly: { badge: 'bg-brand-black text-white', short: 'Sup.'  },
+  Combined:       { badge: 'bg-brand-red text-white', short: 'Both'},
 };
 
 // â”€â”€â”€ Calendar helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -188,7 +188,7 @@ function AssessmentPanel({ assessment, isAdmin, isSupervisor, isEmployee, onClos
                 {a.competencyId?.name || 'â€”'}
               </h3>
               {a.purpose && (
-                <span className="text-xs text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full mt-1 inline-block">
+                <span className="text-xs text-gray-700 bg-gray-100 px-2 py-0.5 rounded-full mt-1 inline-block">
                   {a.purpose}
                 </span>
               )}
@@ -232,13 +232,13 @@ function AssessmentPanel({ assessment, isAdmin, isSupervisor, isEmployee, onClos
           {/* Combined weights */}
           {a.type === 'Combined' && (
             <div className="flex gap-2 mb-4">
-              <div className="flex-1 bg-blue-50 rounded-lg p-2 text-center">
-                <div className="text-lg font-bold text-blue-700">{a.weight?.selfAssessment || 20}%</div>
-                <div className="text-[10px] text-blue-500">Self</div>
+              <div className="flex-1 bg-gray-100 rounded-lg p-2 text-center">
+                <div className="text-lg font-bold text-gray-700">{a.weight?.selfAssessment || 20}%</div>
+                <div className="text-[10px] text-gray-700">Self</div>
               </div>
-              <div className="flex-1 bg-green-50 rounded-lg p-2 text-center">
-                <div className="text-lg font-bold text-green-700">{a.weight?.supervisor || 80}%</div>
-                <div className="text-[10px] text-green-500">Supervisor</div>
+              <div className="flex-1 bg-gray-100 rounded-lg p-2 text-center">
+                <div className="text-lg font-bold text-gray-700">{a.weight?.supervisor || 80}%</div>
+                <div className="text-[10px] text-gray-700">Supervisor</div>
               </div>
             </div>
           )}
@@ -264,7 +264,7 @@ function AssessmentPanel({ assessment, isAdmin, isSupervisor, isEmployee, onClos
             {isEmployee && a.status === 'ACTIVE' && a.type === 'Combined' && (
               <button
                 onClick={() => onNavigate(`/assessments/${a._id}/take`)}
-                className="w-full py-2 px-4 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors"
+                className="w-full py-2 px-4 bg-brand-black text-white rounded-xl text-sm font-semibold hover:bg-gray-700 transition-colors"
               >
                 Start Self-Assessment
               </button>
@@ -272,7 +272,7 @@ function AssessmentPanel({ assessment, isAdmin, isSupervisor, isEmployee, onClos
             {isSupervisor && a.status === 'ACTIVE' && requiresSup && (
               <button
                 onClick={() => onNavigate(`/assessments/${a._id}/evaluate`)}
-                className="w-full py-2 px-4 bg-green-600 text-white rounded-xl text-sm font-semibold hover:bg-green-700 transition-colors"
+                className="w-full py-2 px-4 bg-brand-black text-white rounded-xl text-sm font-semibold hover:bg-gray-700 transition-colors"
               >
                 Evaluate Team
               </button>
@@ -280,7 +280,7 @@ function AssessmentPanel({ assessment, isAdmin, isSupervisor, isEmployee, onClos
             {isAdmin && a.status === 'COMPLETED' && a.type === 'Combined' && (
               <button
                 onClick={() => { onScoreResults(a._id); onClose(); }}
-                className="w-full py-2 px-4 bg-purple-600 text-white rounded-xl text-sm font-semibold hover:bg-purple-700 transition-colors flex items-center justify-center gap-1"
+                className="w-full py-2 px-4 bg-brand-black text-white rounded-xl text-sm font-semibold hover:bg-gray-700 transition-colors flex items-center justify-center gap-1"
               >
                 <Target className="w-3.5 h-3.5" /> Score Combined Results
               </button>
@@ -337,6 +337,7 @@ export default function Assessments() {
     endDate: '',
     endTime: '17:00',
     timeLimit: '',
+    maxAttempts: '',
     type: 'SelfAssessment',
     weight: { selfAssessment: 20, supervisor: 80 },
   });
@@ -557,6 +558,7 @@ export default function Assessments() {
         startDate: startDateTime,
         endDate: endDateTime,
         timeLimit: form.timeLimit ? Number(form.timeLimit) : null,
+        maxAttempts: form.maxAttempts ? Number(form.maxAttempts) : null,
         type: form.type,
         weight: form.weight,
       };
@@ -676,7 +678,7 @@ export default function Assessments() {
 
   // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   return (
-    <div className="h-[calc(100vh-4rem)] flex flex-col p-7">
+    <div className="h-[calc(100vh-3rem)] flex flex-col p-7">
 
       {/* â”€â”€ Sticky Header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="flex justify-between items-start mb-3 flex-shrink-0">
@@ -687,18 +689,18 @@ export default function Assessments() {
           {isSupervisor && supervisorStats.pendingEvaluations > 0 && (
             <button
               onClick={() => nav('/supervisor/pending')}
-              className="relative px-3 py-1.5 bg-orange-100 text-orange-700 rounded-lg border border-orange-200 hover:bg-orange-200 transition-colors font-semibold flex items-center gap-1.5"
+              className="relative px-3 py-1.5 bg-gray-200 text-gray-700 rounded-lg border border-gray-300 hover:bg-gray-300 transition-colors font-semibold flex items-center gap-1.5"
             >
               <Target className="w-3.5 h-3.5" />
               Pending Evaluations
-              <span className="bg-orange-600 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+              <span className="bg-brand-black text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
                 {supervisorStats.pendingEvaluations}
               </span>
             </button>
           )}
           {isAdmin && (
-            <button onClick={openCreate} className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors">
-              <Plus className="w-3.5 h-3.5" /> Create Assessment
+            <button onClick={openCreate} className="flex items-center gap-1.5 px-2 py-1 text-sm bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors">
+              <Plus className="w-3 h-3" /> Create Assessment
             </button>
           )}
         </div>
@@ -709,19 +711,19 @@ export default function Assessments() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 flex-shrink-0">
           <div className="bg-white rounded-xl p-5 shadow-card border border-gray-100">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center"><Target className="w-5 h-5 text-blue-600" /></div>
+              <div className="w-10 h-10 rounded-lg bg-gray-200 flex items-center justify-center"><Target className="w-5 h-5 text-gray-700" /></div>
               <div><div className="text-xs text-gray-500 uppercase font-semibold">Pending Evaluations</div><div className="text-2xl  font-bold text-brand-black">{supervisorStats.pendingEvaluations}</div></div>
             </div>
           </div>
           <div className="bg-white rounded-xl p-5 shadow-card border border-gray-100">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center"><Users className="w-5 h-5 text-green-600" /></div>
+              <div className="w-10 h-10 rounded-lg bg-gray-200 flex items-center justify-center"><Users className="w-5 h-5 text-gray-700" /></div>
               <div><div className="text-xs text-gray-500 uppercase font-semibold">Completed</div><div className="text-2xl  font-bold text-brand-black">{supervisorStats.completedEvaluations}</div></div>
             </div>
           </div>
           <div className="bg-white rounded-xl p-5 shadow-card border border-gray-100">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center"><Eye className="w-5 h-5 text-purple-600" /></div>
+              <div className="w-10 h-10 rounded-lg bg-gray-200 flex items-center justify-center"><Eye className="w-5 h-5 text-gray-700" /></div>
               <div><div className="text-xs text-gray-500 uppercase font-semibold">Active Assessments</div><div className="text-2xl  font-bold text-brand-black">{items.filter(a => a.status === 'ACTIVE' && requiresSupervisorEvaluation(a)).length}</div></div>
             </div>
           </div>
@@ -759,7 +761,7 @@ export default function Assessments() {
             <div className="flex items-center gap-2">
               <span className="text-sm text-gray-600">Show:</span>
               <select value={pagination.limit} onChange={handlePageSizeChange}
-                className="px-3 py-1.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm">
+                className="px-2 py-1 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm">
                 <option value="6">6 per page</option>
                 <option value="12">12 per page</option>
                 <option value="24">24 per page</option>
@@ -793,7 +795,7 @@ export default function Assessments() {
       </div>
 
       {/* â”€â”€ Scrollable Content â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar">
+      <div className="flex-1 overflow-y-auto scrollbar-none">
         {loading && viewMode === 'grid' ? (
           <div className="flex items-center justify-center p-16">
             <div className="w-10 h-10 border-4 border-brand-red border-t-transparent rounded-full animate-spin" />
@@ -804,7 +806,7 @@ export default function Assessments() {
             {viewMode === 'grid' && (
               <>
                 <div className="bg-white rounded-xl shadow-card border border-gray-100 overflow-hidden mb-6">
-                  <div className="overflow-x-auto">
+                  <div className="overflow-x-auto scrollbar-none">
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="text-left text-xs uppercase tracking-wide text-gray-500 border-b border-gray-200 bg-gray-50">
@@ -838,7 +840,7 @@ export default function Assessments() {
                                 <p className="font-semibold text-brand-black mt-1.5">{a.competencyId?.name || 'No competency'}</p>
                               </td>
                               <td className="px-4 py-3">
-                                <span className={`inline-block px-2 py-1 rounded-full text-xs font-bold ${sm.badge}`}>{sm.label}</span>
+                                <span className={`inline-block px-2 py-1 rounded-full text-xs font-bold`}>{sm.label}</span>
                               </td>
                               <td className="px-4 py-3 text-xs text-gray-600">
                                 <span className="flex items-center gap-1">
@@ -854,7 +856,7 @@ export default function Assessments() {
                                   {a.timeLimit ? `${a.timeLimit} min` : 'No limit'}
                                 </span>
                                 {isScheduled && (
-                                  <p className="text-blue-600 font-semibold mt-1">{getTimeUntil(a.startDate)}</p>
+                                  <p className="text-gray-700 font-semibold mt-1">{getTimeUntil(a.startDate)}</p>
                                 )}
                               </td>
                               <td className="px-4 py-3">
@@ -873,7 +875,7 @@ export default function Assessments() {
                                   )}
                                   {isEmployee && isActive && a.type === 'Combined' && (
                                     <button onClick={() => nav(`/assessments/${a._id}/take`)}
-                                      className="px-3 py-1.5 text-xs font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                                      className="px-3 py-1.5 text-xs font-semibold bg-brand-black text-white rounded-lg hover:bg-gray-700 transition-colors">
                                       Start Self-Assessment
                                     </button>
                                   )}
@@ -883,19 +885,19 @@ export default function Assessments() {
                                     </span>
                                   )}
                                   {!isAdmin && isScheduled && a.type !== 'SupervisorOnly' && (
-                                    <span className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-50 text-blue-600 border border-blue-100 cursor-default select-none">
+                                    <span className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-gray-100 text-gray-700 border border-gray-200 cursor-default select-none">
                                       <Clock className="w-3 h-3" /> Upcoming
                                     </span>
                                   )}
                                   {isSupervisor && isActive && requiresSup && (
                                     <button onClick={() => nav(`/assessments/${a._id}/evaluate`)}
-                                      className="px-3 py-1.5 text-xs font-semibold bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
+                                      className="px-3 py-1.5 text-xs font-semibold bg-brand-black text-white rounded-lg hover:bg-gray-700 transition-colors">
                                       Evaluate Team
                                     </button>
                                   )}
                                   {isAdmin && a.status === 'COMPLETED' && a.type === 'Combined' && (
                                     <button onClick={() => handleScoreResults(a._id)}
-                                      className="px-3 py-1.5 text-xs font-semibold text-white bg-purple-600 rounded-lg hover:bg-purple-700 transition-colors flex items-center gap-1">
+                                      className="px-3 py-1.5 text-xs font-semibold text-white bg-brand-black rounded-lg hover:bg-gray-700 transition-colors flex items-center gap-1">
                                       <Target className="w-3 h-3" /> Score Results
                                     </button>
                                   )}
@@ -922,9 +924,9 @@ export default function Assessments() {
                   </div>
                 </div>
 
-                {/* Pagination */}
+                {/* Pagination — sticky at bottom while scrolling */}
                 {pagination.total > pagination.limit && (
-                  <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mt-8 pt-6 border-t border-gray-200">
+                  <div className="sticky bottom-0 z-10 bg-gray-50 flex flex-col sm:flex-row justify-between items-center gap-4 mt-6 py-4 border-t border-gray-200">
                     <div className="text-sm text-gray-600">
                       Showing {(pagination.page - 1) * pagination.limit + 1} to{' '}
                       {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} assessments
@@ -997,14 +999,14 @@ export default function Assessments() {
       {scoreConfirm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-lg max-w-md w-full p-6">
-            <div className="w-12 h-12 rounded-full bg-purple-100 flex items-center justify-center mx-auto mb-4">
-              <Target className="w-6 h-6 text-purple-600" />
+            <div className="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center mx-auto mb-4">
+              <Target className="w-6 h-6 text-gray-700" />
             </div>
             <h3 className="text-lg font-bold text-brand-black text-center mb-2">Score Combined Results?</h3>
             <p className="text-sm text-gray-600 text-center mb-4">Missing responses will be treated as 0. This action cannot be undone.</p>
             <div className="flex gap-3">
               <button onClick={() => setScoreConfirm(null)} className="flex-1 py-2.5 border border-gray-300 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-50">Cancel</button>
-              <button onClick={() => executeScoreResults(scoreConfirm)} className="flex-1 py-2.5 bg-purple-600 text-white rounded-lg text-sm font-semibold hover:bg-purple-700">Score Results</button>
+              <button onClick={() => executeScoreResults(scoreConfirm)} className="flex-1 py-2.5 bg-brand-black text-white rounded-lg text-sm font-semibold hover:bg-gray-700">Score Results</button>
             </div>
           </div>
         </div>
@@ -1119,12 +1121,12 @@ export default function Assessments() {
           </div>
 
           {/* Schedule & Duration */}
-          <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
-            <h3 className="text-sm font-bold text-blue-800 mb-3 flex items-center gap-2">
+          <div className="bg-gray-100 p-4 rounded-xl border border-gray-200">
+            <h3 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">
               <Calendar className="w-4 h-4" /> Schedule &amp; Duration
             </h3>
-            <div className="bg-blue-100 border-l-4 border-blue-500 p-2 rounded mb-3">
-              <p className="text-[10px] text-blue-800 flex items-center gap-1">
+            <div className="bg-gray-200 border-l-4 border-gray-700 p-2 rounded mb-3">
+              <p className="text-[10px] text-gray-700 flex items-center gap-1">
                 <Clock className="w-3 h-3 flex-shrink-0" />
                 <span><strong>Note:</strong> The assessment auto-activates at the scheduled start time.</span>
               </p>
@@ -1153,15 +1155,23 @@ export default function Assessments() {
                   className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm" required />
               </div>
             </div>
-            <div className="mt-4">
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Time Limit per Attempt (minutes, Optional)</label>
-              <input type="number" value={form.timeLimit} onChange={e => setForm(prev => ({ ...prev, timeLimit: e.target.value }))}
-                placeholder="e.g., 60 (leave empty for no limit)" min={1}
-                className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm max-w-xs" />
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Time Limit per Attempt (minutes, Optional)</label>
+                <input type="number" value={form.timeLimit} onChange={e => setForm(prev => ({ ...prev, timeLimit: e.target.value }))}
+                  placeholder="e.g., 60 (leave empty for no limit)" min={1}
+                  className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm" />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Number of Attempts (Optional)</label>
+                <input type="number" value={form.maxAttempts} onChange={e => setForm(prev => ({ ...prev, maxAttempts: e.target.value }))}
+                  placeholder="e.g., 3 (leave empty for unlimited)" min={1}
+                  className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm" />
+              </div>
             </div>
-            <div className="mt-4 pt-4 border-t border-blue-200">
+            <div className="mt-4 pt-4 border-t border-gray-300">
               <label className="block text-sm font-semibold text-gray-700 mb-1.5 flex items-center gap-2">
-                <Bell className="w-4 h-4 text-blue-600" /> Reminder <span className="text-gray-400 font-normal">(Optional)</span>
+                <Bell className="w-4 h-4 text-gray-700" /> Reminder <span className="text-gray-400 font-normal">(Optional)</span>
               </label>
               <div className="flex items-center gap-3">
                 <input type="number" value={form.reminderDaysBefore} onChange={e => setForm(prev => ({ ...prev, reminderDaysBefore: e.target.value }))}
@@ -1170,14 +1180,14 @@ export default function Assessments() {
                 <span className="text-sm text-gray-600">days before end date</span>
               </div>
               {form.reminderDaysBefore && (
-                <p className="mt-1 text-xs text-blue-600">Participants will be notified {form.reminderDaysBefore} day(s) before the assessment ends.</p>
+                <p className="mt-1 text-xs text-gray-700">Participants will be notified {form.reminderDaysBefore} day(s) before the assessment ends.</p>
               )}
             </div>
           </div>
 
           {/* Target Audience */}
-          <div className="bg-purple-50 p-4 rounded-xl border border-purple-100">
-            <h3 className="text-sm font-bold text-purple-800 mb-3 flex items-center gap-2">
+          <div className="bg-gray-100 p-4 rounded-xl border border-gray-200">
+            <h3 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">
               <Users className="w-4 h-4" /> Target Audience
             </h3>
             <div className="border border-gray-200 rounded-xl p-4 space-y-3">
@@ -1286,8 +1296,8 @@ export default function Assessments() {
 
           {/* Combined Weights */}
           {form.type === 'Combined' && (
-            <div className="bg-amber-50 p-4 rounded-xl border border-amber-100">
-              <h3 className="text-sm font-bold text-amber-800 mb-3">Combined Assessment Weights</h3>
+            <div className="bg-gray-100 p-4 rounded-xl border border-gray-200">
+              <h3 className="text-sm font-bold text-gray-700 mb-3">Combined Assessment Weights</h3>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-1.5">Self-Assessment Weight (%) *</label>
@@ -1313,23 +1323,23 @@ export default function Assessments() {
 
           {/* Question Selection */}
           {form.competencyId && form.targetGroup && questions.length > 0 && form.type !== 'SupervisorOnly' && (
-            <div className="bg-green-50 p-4 rounded-xl border border-green-100">
+            <div className="bg-gray-100 p-4 rounded-xl border border-gray-200">
               <div className="flex justify-between items-center mb-3">
-                <h3 className="text-sm font-bold text-green-800 flex items-center gap-2"><Check className="w-4 h-4" /> Question Selection</h3>
+                <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2"><Check className="w-4 h-4" /> Question Selection</h3>
                 <div className="flex gap-2">
                   <button onClick={() => setQuestionSelectionMode('auto')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${questionSelectionMode === 'auto' ? 'bg-green-600 text-white' : 'bg-white text-green-700 border border-green-300'}`}>
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${questionSelectionMode === 'auto' ? 'bg-brand-black text-white' : 'bg-white text-gray-700 border border-gray-400'}`}>
                     <Shuffle className="w-3 h-3 inline mr-1" /> Auto Select
                   </button>
                   <button onClick={() => setQuestionSelectionMode('manual')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${questionSelectionMode === 'manual' ? 'bg-green-600 text-white' : 'bg-white text-green-700 border border-green-300'}`}>
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${questionSelectionMode === 'manual' ? 'bg-brand-black text-white' : 'bg-white text-gray-700 border border-gray-400'}`}>
                     <Edit2 className="w-3 h-3 inline mr-1" /> Manual Select
                   </button>
                 </div>
               </div>
 
               {questionSelectionMode === 'auto' && (
-                <div className="bg-white p-3 rounded-lg border border-green-200">
+                <div className="bg-white p-3 rounded-lg border border-gray-300">
                   <div className="text-xs text-gray-600 mb-2">Configure how many questions of each type to randomly select.</div>
                   <div className="grid grid-cols-2 gap-3">
                     {['MCQ','Rating','TrueFalse','MultiSelect','ScenarioMCQ','ShortAnswer','Matching','Ordering','DragDropClassification'].map(type => {
@@ -1347,7 +1357,7 @@ export default function Assessments() {
                   <div className="flex justify-between items-center mt-3 pt-3 border-t border-gray-200">
                     <span className="text-xs font-semibold text-gray-700">Total Questions: {getTotalAutoQuestions()}</span>
                     <button onClick={autoSelectQuestions} disabled={getTotalAutoQuestions() === 0}
-                      className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-semibold hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1">
+                      className="px-3 py-1.5 bg-brand-black text-white rounded-lg text-xs font-semibold hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1">
                       <Shuffle className="w-3 h-3" /> Shuffle &amp; Select
                     </button>
                   </div>
@@ -1355,7 +1365,7 @@ export default function Assessments() {
               )}
 
               {questionSelectionMode === 'manual' && (
-                <div className="border border-green-200 rounded-lg bg-white max-h-64 overflow-y-auto p-2 space-y-1">
+                <div className="border border-gray-300 rounded-lg bg-white max-h-64 overflow-y-auto p-2 space-y-1">
                   {questions.map(q => (
                     <label key={q._id} className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer text-sm">
                       <input type="checkbox" checked={form.questionIds.includes(q._id)} onChange={() => toggleQuestion(q._id)}
@@ -1367,13 +1377,13 @@ export default function Assessments() {
                 </div>
               )}
               <div className="text-xs text-gray-600 mt-2 flex items-center gap-1">
-                <Check className="w-3 h-3 text-green-600" /> {form.questionIds.length} question(s) selected
+                <Check className="w-3 h-3 text-gray-700" /> {form.questionIds.length} question(s) selected
               </div>
             </div>
           )}
 
           {form.competencyId && form.targetGroup && questions.length === 0 && (
-            <div className="bg-yellow-50 p-3 rounded-xl border border-yellow-200 text-xs text-yellow-800 flex items-center gap-2">
+            <div className="bg-gray-100 p-3 rounded-xl border border-gray-300 text-xs text-gray-700 flex items-center gap-2">
               <AlertCircle className="w-4 h-4 flex-shrink-0" /> No questions found for this competency and target group combination.
             </div>
           )}
@@ -1383,23 +1393,23 @@ export default function Assessments() {
             </div>
           )}
           {form.type === 'SupervisorOnly' && questions.length > 0 && form.competencyId && form.targetGroup && (
-            <div className="bg-orange-50 p-4 rounded-xl border border-orange-200">
+            <div className="bg-gray-100 p-4 rounded-xl border border-gray-300">
               <div className="flex items-start gap-2">
-                <AlertCircle className="w-5 h-5 text-orange-600 flex-shrink-0 mt-0.5" />
+                <AlertCircle className="w-5 h-5 text-gray-700 flex-shrink-0 mt-0.5" />
                 <div>
-                  <h4 className="text-sm font-semibold text-orange-800 mb-1">OD Question Selection (Optional)</h4>
-                  <p className="text-xs text-orange-700 mb-3">For Supervisor-Only assessments, questions are for reference only.</p>
-                  <div className="border border-orange-200 rounded-lg bg-white max-h-48 overflow-y-auto p-2 space-y-1">
+                  <h4 className="text-sm font-semibold text-gray-700 mb-1">OD Question Selection (Optional)</h4>
+                  <p className="text-xs text-gray-700 mb-3">For Supervisor-Only assessments, questions are for reference only.</p>
+                  <div className="border border-gray-300 rounded-lg bg-white max-h-48 overflow-y-auto p-2 space-y-1">
                     {questions.map(q => (
                       <label key={q._id} className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer text-sm">
                         <input type="checkbox" checked={form.questionIds.includes(q._id)} onChange={() => toggleQuestion(q._id)}
-                          className="w-4 h-4 text-orange-500 focus:ring-orange-500 rounded" />
+                          className="w-4 h-4 text-gray-700 focus:ring-gray-700 rounded" />
                         <span className="flex-1 line-clamp-1">{q.text}</span>
                         <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded">{q.type}</span>
                       </label>
                     ))}
                   </div>
-                  <div className="text-xs text-orange-600 mt-2">{form.questionIds.length} reference question(s) selected</div>
+                  <div className="text-xs text-gray-700 mt-2">{form.questionIds.length} reference question(s) selected</div>
                 </div>
               </div>
             </div>
