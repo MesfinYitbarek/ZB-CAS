@@ -7,7 +7,7 @@
  */
 import { Server } from 'socket.io';
 import { verifyAccessToken } from '../utils/jwt.js';
-import ChatMessage from '../models/ChatMessage.js';
+import prisma from '../config/prisma.js';
 import logger from '../utils/logger.js';
 
 /** Map<userId, Set<socketId>> — a user may have multiple tabs open */
@@ -81,17 +81,19 @@ export function initSocket(httpServer) {
           return ack?.({ error: 'receiverId and message required' });
         }
 
-        const saved = await ChatMessage.create({
-          sender: userId,
-          receiver: receiverId,
-          message: message.trim(),
+        const saved = await prisma.chatMessage.create({
+          data: {
+            senderId: userId,
+            receiverId,
+            message: message.trim(),
+          },
+          include: {
+            sender: { select: { id: true, name: true, username: true } },
+            receiver: { select: { id: true, name: true, username: true } },
+          },
         });
 
-        const populated = await ChatMessage.findById(saved._id)
-          .populate('sender', 'name username')
-          .populate('receiver', 'name username');
-
-        const payload = populated.toObject();
+        const payload = { ...saved, _id: saved.id };
 
         // Deliver to receiver (their room) and back to sender
         io.to(receiverId).emit('message:new', payload);
@@ -108,11 +110,11 @@ export function initSocket(httpServer) {
     // ── Mark as read ─────────────────────────────────────────────────────
     socket.on('message:read', async ({ senderId }) => {
       try {
-        const result = await ChatMessage.updateMany(
-          { sender: senderId, receiver: userId, read: false },
-          { read: true, readAt: new Date() }
-        );
-        if (result.modifiedCount > 0) {
+        const result = await prisma.chatMessage.updateMany({
+          where: { senderId, receiverId: userId, read: false },
+          data: { read: true, readAt: new Date() },
+        });
+        if (result.count > 0) {
           // Notify the original sender their messages were read
           io.to(senderId).emit('message:read', { byUserId: userId });
         }

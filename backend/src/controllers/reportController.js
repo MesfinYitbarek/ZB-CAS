@@ -1,22 +1,69 @@
-import mongoose from 'mongoose';
 import PDFDocument from 'pdfkit';
 import ExcelJS from 'exceljs';
-import Report from '../models/Report.js';
-import Assessment from '../models/Assessment.js';
-import User from '../models/User.js';
+import prisma from '../config/prisma.js';
 import AppError from '../utils/AppError.js';
 import asyncHandler from '../utils/asyncHandler.js';
-
-const toObjectId = (str) => {
-  if (mongoose.Types.ObjectId.isValid(str)) return new mongoose.Types.ObjectId(str);
-  return null;
-};
 
 const assignLevel = (score) => {
   if (score >= 85) return 'Expert';
   if (score >= 70) return 'Advanced';
   if (score >= 50) return 'Intermediate';
   return 'Basic';
+};
+
+// ─── Legacy-shape mapper ──────────────────────────────────────────────────────
+const toLegacyReport = (row, competencyRows = []) => ({
+  _id: row.id,
+  id: row.id,
+  userId: row.userId,
+  user: {
+    userId: row.userId,
+    name: row.user_name || '',
+    email: row.user_email || '',
+    employeeId: row.user_employeeId || '',
+    department: row.user_department || '',
+    position: row.user_position || '',
+    gender: row.user_gender || '',
+  },
+  assessment: {
+    assessmentId: row.assessmentId,
+    description: row.assessment_description || '',
+    type: row.assessment_type || '',
+    purpose: row.assessment_purpose || '',
+    targetGroup: row.assessment_targetGroup || '',
+    startDate: row.assessment_startDate || null,
+    endDate: row.assessment_endDate || null,
+  },
+  competencyResults: competencyRows.map(cr => ({
+    competencyId: cr.competencyId || null,
+    competencyName: cr.competencyName || '',
+    category: cr.category || '',
+    finalScore: cr.finalScore,
+    level: cr.level,
+    recommendation: cr.recommendation || '',
+    scoreDetails: cr.scoreDetails,
+    resultId: cr.resultId || null,
+  })),
+  overallScore: row.overallScore,
+  overallLevel: row.overallLevel,
+  status: row.status,
+  generatedAt: row.generatedAt,
+  createdAt: row.createdAt,
+  updatedAt: row.updatedAt,
+});
+
+const withCompetencies = (rows) => {
+  if (!rows.length) return [];
+  const reportIds = rows.map(r => r.id);
+  const allCRs = prisma.reportCompetency.findMany({ where: { reportId: { in: reportIds } } });
+  return allCRs.then(crs => {
+    const crMap = {};
+    for (const cr of crs) {
+      if (!crMap[cr.reportId]) crMap[cr.reportId] = [];
+      crMap[cr.reportId].push(cr);
+    }
+    return rows.map(r => toLegacyReport(r, crMap[r.id] || []));
+  });
 };
 
 // ─── Build human-readable filter summary for PDF/Excel headers ────────────────
@@ -43,138 +90,116 @@ const buildFilterSummary = (query) => {
 };
 
 // ─── MASTER FILTER BUILDER ────────────────────────────────────────────────────
-// Supports every filterable attribute in the Report schema
 const buildFilter = async (query, user) => {
   const {
-    // ── User attributes ──────────────────────────────────────
-    employeeId,           // specific user ObjectId
-    department,           // user.department exact match
-    departmentSearch,     // user.department regex search
-    position,             // user.position exact match
-    positionSearch,       // user.position regex search
-    gender,               // user.gender: Male | Female
-    employeeIdCode,       // user.employeeId string (the HR code, not mongo _id)
-
-    // ── Assessment attributes ────────────────────────────────
-    assessmentId,         // assessment.assessmentId ObjectId
-    assessmentType,       // assessment.type: SelfAssessment | SupervisorOnly | Combined
-    purpose,              // assessment.purpose
-    targetGroup,          // assessment.targetGroup: managerial | non-managerial | common
-    assessmentStatus,     // assessment.status (snapshot)
-    assessmentStartFrom,  // assessment.startDate >= date
-    assessmentStartTo,    // assessment.startDate <= date
-    assessmentEndFrom,    // assessment.endDate >= date
-    assessmentEndTo,      // assessment.endDate <= date
-
-    // ── Competency attributes ────────────────────────────────
-    competencyId,         // competencyResults[].competencyId ObjectId
-    competencyName,       // competencyResults[].competencyName regex
-    competencyCategory,   // competencyResults[].category
-
-    // ── Result attributes ────────────────────────────────────
-    overallLevel,         // overallLevel (report level)
-    competencyLevel,      // competencyResults[].level filter
-    scoreMin,             // overallScore >= value
-    scoreMax,             // overallScore <= value
-    selfScoreMin,         // competencyResults[].scoreDetails.selfScore >=
-    selfScoreMax,         // competencyResults[].scoreDetails.selfScore <=
-    supervisorScoreMin,   // competencyResults[].scoreDetails.supervisorScore >=
-    supervisorScoreMax,   // competencyResults[].scoreDetails.supervisorScore <=
-
-    // ── Report meta ──────────────────────────────────────────
-    status,               // report status: PARTIAL | COMPLETE
-    dateFrom,             // generatedAt >= date
-    dateTo,               // generatedAt <= date
-
-    // ── Sorting & pagination (passed through, not used here) ─
-    // sortBy, sortDir, page, limit
+    employeeId, department, departmentSearch, position, positionSearch,
+    gender, employeeIdCode,
+    assessmentId, assessmentType, purpose, targetGroup, assessmentStatus,
+    assessmentStartFrom, assessmentStartTo, assessmentEndFrom, assessmentEndTo,
+    competencyId, competencyName, competencyCategory,
+    overallLevel, competencyLevel, scoreMin, scoreMax,
+    selfScoreMin, selfScoreMax, supervisorScoreMin, supervisorScoreMax,
+    status, dateFrom, dateTo,
   } = query;
 
   const filter = {};
 
-  // ── User filters ─────────────────────────────────────────────────────────
-  if (employeeId) {
-    const oid = toObjectId(employeeId);
-    if (oid) filter['user.userId'] = oid;
-  }
-  if (department)       filter['user.department'] = department;
-  if (departmentSearch) filter['user.department'] = { $regex: departmentSearch, $options: 'i' };
-  if (position)         filter['user.position']   = position;
-  if (positionSearch)   filter['user.position']   = { $regex: positionSearch, $options: 'i' };
-  if (gender)           filter['user.gender']     = gender;
-  if (employeeIdCode)   filter['user.employeeId'] = { $regex: employeeIdCode, $options: 'i' };
+  if (employeeId) filter.userId = employeeId;
+  if (department) filter.user_department = department;
+  if (departmentSearch) filter.user_department = { contains: departmentSearch, mode: 'insensitive' };
+  if (position) filter.user_position = position;
+  if (positionSearch) filter.user_position = { contains: positionSearch, mode: 'insensitive' };
+  if (gender) filter.user_gender = gender;
+  if (employeeIdCode) filter.user_employeeId = { contains: employeeIdCode, mode: 'insensitive' };
 
-  // ── Assessment filters ────────────────────────────────────────────────────
-  if (assessmentId) {
-    const oid = toObjectId(assessmentId);
-    if (oid) filter['assessment.assessmentId'] = oid;
-  }
-  if (assessmentType)   filter['assessment.type']        = assessmentType;
-  if (purpose)          filter['assessment.purpose']     = purpose;
-  if (targetGroup)      filter['assessment.targetGroup'] = targetGroup;
+  if (assessmentId) filter.assessmentId = assessmentId;
+  if (assessmentType) filter.assessment_type = assessmentType;
+  if (purpose) filter.assessment_purpose = purpose;
+  if (targetGroup) filter.assessment_targetGroup = targetGroup;
 
   if (assessmentStartFrom || assessmentStartTo) {
-    filter['assessment.startDate'] = {};
-    if (assessmentStartFrom) filter['assessment.startDate'].$gte = new Date(assessmentStartFrom);
-    if (assessmentStartTo)   filter['assessment.startDate'].$lte = new Date(assessmentStartTo);
+    filter.assessment_startDate = {};
+    if (assessmentStartFrom) filter.assessment_startDate.gte = new Date(assessmentStartFrom);
+    if (assessmentStartTo) filter.assessment_startDate.lte = new Date(assessmentStartTo);
   }
   if (assessmentEndFrom || assessmentEndTo) {
-    filter['assessment.endDate'] = {};
-    if (assessmentEndFrom) filter['assessment.endDate'].$gte = new Date(assessmentEndFrom);
-    if (assessmentEndTo)   filter['assessment.endDate'].$lte = new Date(assessmentEndTo);
+    filter.assessment_endDate = {};
+    if (assessmentEndFrom) filter.assessment_endDate.gte = new Date(assessmentEndFrom);
+    if (assessmentEndTo) filter.assessment_endDate.lte = new Date(assessmentEndTo);
   }
 
-  // ── Competency filters ────────────────────────────────────────────────────
-  if (competencyId) {
-    const oid = toObjectId(competencyId);
-    if (oid) filter['competencyResults.competencyId'] = oid;
-  }
-  if (competencyName)     filter['competencyResults.competencyName'] = { $regex: competencyName, $options: 'i' };
-  if (competencyCategory) filter['competencyResults.category']       = competencyCategory;
-  if (competencyLevel)    filter['competencyResults.level']          = competencyLevel;
+  // Competency-level filters → query ReportCompetency table first
+  const hasCompetencyFilter = competencyId || competencyName || competencyCategory || competencyLevel
+    || selfScoreMin !== undefined || selfScoreMax !== undefined
+    || supervisorScoreMin !== undefined || supervisorScoreMax !== undefined;
 
-  // Per-competency score filters (these filter reports that have at least one
-  // competency result matching the score range)
-  if (selfScoreMin !== undefined || selfScoreMax !== undefined) {
-    const cond = {};
-    if (selfScoreMin !== undefined) cond.$gte = Number(selfScoreMin);
-    if (selfScoreMax !== undefined) cond.$lte = Number(selfScoreMax);
-    filter['competencyResults.scoreDetails.selfScore'] = cond;
-  }
-  if (supervisorScoreMin !== undefined || supervisorScoreMax !== undefined) {
-    const cond = {};
-    if (supervisorScoreMin !== undefined) cond.$gte = Number(supervisorScoreMin);
-    if (supervisorScoreMax !== undefined) cond.$lte = Number(supervisorScoreMax);
-    filter['competencyResults.scoreDetails.supervisorScore'] = cond;
+  if (hasCompetencyFilter) {
+    const rcWhere = {};
+    if (competencyId) rcWhere.competencyId = competencyId;
+    if (competencyName) rcWhere.competencyName = { contains: competencyName, mode: 'insensitive' };
+    if (competencyCategory) rcWhere.category = competencyCategory;
+    if (competencyLevel) rcWhere.level = competencyLevel;
+
+    const rcAND = [];
+    if (selfScoreMin !== undefined || selfScoreMax !== undefined) {
+      const selfCond = {};
+      if (selfScoreMin !== undefined) selfCond.gte = Number(selfScoreMin);
+      if (selfScoreMax !== undefined) selfCond.lte = Number(selfScoreMax);
+      rcAND.push({ scoreDetails: { path: ['selfScore'], ...selfCond } });
+    }
+    if (supervisorScoreMin !== undefined || supervisorScoreMax !== undefined) {
+      const supCond = {};
+      if (supervisorScoreMin !== undefined) supCond.gte = Number(supervisorScoreMin);
+      if (supervisorScoreMax !== undefined) supCond.lte = Number(supervisorScoreMax);
+      rcAND.push({ scoreDetails: { path: ['supervisorScore'], ...supCond } });
+    }
+
+    const rcQuery = { ...rcWhere };
+    if (rcAND.length) rcQuery.AND = rcAND;
+
+    const rcRows = await prisma.reportCompetency.findMany({
+      where: rcQuery,
+      select: { reportId: true },
+    });
+    const reportIds = [...new Set(rcRows.map(r => r.reportId))];
+    if (reportIds.length === 0) {
+      return { id: { in: [] } };
+    }
+    filter.id = { in: reportIds };
   }
 
-  // ── Overall result filters ────────────────────────────────────────────────
   if (overallLevel) filter.overallLevel = overallLevel;
-  if (status)       filter.status       = status;
+  if (status) filter.status = status;
 
   if (scoreMin !== undefined || scoreMax !== undefined) {
     filter.overallScore = {};
-    if (scoreMin !== undefined) filter.overallScore.$gte = Number(scoreMin);
-    if (scoreMax !== undefined) filter.overallScore.$lte = Number(scoreMax);
+    if (scoreMin !== undefined) filter.overallScore.gte = Number(scoreMin);
+    if (scoreMax !== undefined) filter.overallScore.lte = Number(scoreMax);
   }
 
-  // ── Generated-at date range ───────────────────────────────────────────────
   if (dateFrom || dateTo) {
     filter.generatedAt = {};
-    if (dateFrom) filter.generatedAt.$gte = new Date(dateFrom);
+    if (dateFrom) filter.generatedAt.gte = new Date(dateFrom);
     if (dateTo) {
       const end = new Date(dateTo);
       end.setHours(23, 59, 59, 999);
-      filter.generatedAt.$lte = end;
+      filter.generatedAt.lte = end;
     }
   }
 
-  // ── Role-based scoping (always enforced last) ─────────────────────────────
+  // Role-based scoping
   if (user.role === 'EMPLOYEE') {
-    filter['user.userId'] = toObjectId(user.id);
-  } else if (user.role === 'SUPERVISOR' && !filter['user.userId']) {
-    const subs = await User.find({ supervisorId: user.id }).select('_id').lean();
-    filter['user.userId'] = { $in: subs.map(s => s._id) };
+    filter.userId = user.id;
+  } else if (user.role === 'SUPERVISOR' && !filter.userId) {
+    const subs = await prisma.user.findMany({
+      where: { supervisorId: user.id },
+      select: { id: true },
+    });
+    const subIds = subs.map(s => s.id);
+    if (subIds.length === 0) {
+      return { id: { in: [] } };
+    }
+    filter.userId = { in: subIds };
   }
 
   return filter;
@@ -628,13 +653,19 @@ const generateConsolidatedExcel = async (res, reports, { title, subtitle, filena
 export const getReports = asyncHandler(async (req, res) => {
   const { page = 1, limit = 20, sortBy = 'generatedAt', sortDir = 'desc' } = req.query;
   const filter = await buildFilter(req.query, req.user);
-  const skip   = (parseInt(page) - 1) * parseInt(limit);
-  const sort   = { [sortBy]: sortDir === 'asc' ? 1 : -1 };
+  const skip = (parseInt(page) - 1) * parseInt(limit);
 
-  const [reports, total] = await Promise.all([
-    Report.find(filter).sort(sort).skip(skip).limit(parseInt(limit)).lean(),
-    Report.countDocuments(filter),
+  const [rows, total] = await Promise.all([
+    prisma.report.findMany({
+      where: filter,
+      orderBy: { [sortBy]: sortDir === 'asc' ? 'asc' : 'desc' },
+      skip,
+      take: parseInt(limit),
+    }),
+    prisma.report.count({ where: filter }),
   ]);
+
+  const reports = await withCompetencies(rows);
 
   res.status(200).json({
     status: 'success',
@@ -644,168 +675,412 @@ export const getReports = asyncHandler(async (req, res) => {
 
 // ─── SINGLE REPORT ────────────────────────────────────────────────────────────
 export const getReportById = asyncHandler(async (req, res, next) => {
-  const report = await Report.findById(req.params.reportId).lean();
-  if (!report) return next(new AppError('Report not found.', 404));
-  if (req.user.role === 'EMPLOYEE' && report.user?.userId?.toString() !== req.user.id)
+  const row = await prisma.report.findUnique({ where: { id: req.params.reportId } });
+  if (!row) return next(new AppError('Report not found.', 404));
+  if (req.user.role === 'EMPLOYEE' && row.userId !== req.user.id)
     return next(new AppError('Access denied.', 403));
   if (req.user.role === 'SUPERVISOR') {
-    const subs = await User.find({ supervisorId: req.user.id }).select('_id').lean();
-    if (!subs.map(s => s._id.toString()).includes(report.user?.userId?.toString()))
+    const subs = await prisma.user.findMany({ where: { supervisorId: req.user.id }, select: { id: true } });
+    if (!subs.map(s => s.id).includes(row.userId))
       return next(new AppError('Access denied.', 403));
   }
-  res.status(200).json({ status: 'success', data: { report } });
+  const crs = await prisma.reportCompetency.findMany({ where: { reportId: row.id } });
+  res.status(200).json({ status: 'success', data: { report: toLegacyReport(row, crs) } });
 });
 
 // ─── INDIVIDUAL REPORTS for a user ───────────────────────────────────────────
 export const getIndividualReports = asyncHandler(async (req, res, next) => {
   const { userId } = req.params;
-  const oid = toObjectId(userId);
   if (req.user.role === 'EMPLOYEE' && req.user.id !== userId)
     return next(new AppError('Access denied.', 403));
   if (req.user.role === 'SUPERVISOR') {
-    const emp = await User.findById(userId).lean();
-    if (!emp || emp.supervisorId?.toString() !== req.user.id)
+    const emp = await prisma.user.findUnique({ where: { id: userId } });
+    if (!emp || emp.supervisorId !== req.user.id)
       return next(new AppError('Access denied.', 403));
   }
-  const reports = await Report.find({ 'user.userId': oid }).sort({ generatedAt: -1 }).lean();
+  const rows = await prisma.report.findMany({ where: { userId }, orderBy: { generatedAt: 'desc' } });
+  const reports = await withCompetencies(rows);
   res.status(200).json({ status: 'success', data: { reports } });
 });
 
 // ─── DEPARTMENT SUMMARY ───────────────────────────────────────────────────────
 export const getDepartmentReports = asyncHandler(async (req, res) => {
   const { department } = req.params;
-  const summary = await Report.aggregate([
-    { $match: { 'user.department': department } },
-    { $unwind: '$competencyResults' },
-    { $group: { _id: '$competencyResults.competencyName', avgScore: { $avg: '$competencyResults.finalScore' }, totalReports: { $sum: 1 }, levels: { $push: '$competencyResults.level' } } },
-    { $sort: { _id: 1 } },
-  ]);
-  const withDistribution = summary.map(item => {
-    const dist = { Basic: 0, Intermediate: 0, Advanced: 0, Expert: 0 };
-    item.levels.forEach(l => { if (dist[l] !== undefined) dist[l]++; });
-    return { competencyName: item._id, avgScore: parseFloat(item.avgScore.toFixed(2)), totalReports: item.totalReports, levelDistribution: dist };
+  const reports = await prisma.report.findMany({
+    where: { user_department: department },
   });
-  res.status(200).json({ status: 'success', data: { department, summary: withDistribution } });
+  const reportIds = reports.map(r => r.id);
+  const allCRs = reportIds.length
+    ? await prisma.reportCompetency.findMany({ where: { reportId: { in: reportIds } } })
+    : [];
+
+  const grouped = {};
+  for (const cr of allCRs) {
+    const name = cr.competencyName;
+    if (!grouped[name]) grouped[name] = { scores: [], levels: [] };
+    grouped[name].scores.push(cr.finalScore);
+    grouped[name].levels.push(cr.level);
+  }
+
+  const summary = Object.entries(grouped).map(([name, data]) => {
+    const dist = { Basic: 0, Intermediate: 0, Advanced: 0, Expert: 0 };
+    data.levels.forEach(l => { if (dist[l] !== undefined) dist[l]++; });
+    const avg = data.scores.reduce((a, b) => a + b, 0) / data.scores.length;
+    return { competencyName: name, avgScore: parseFloat(avg.toFixed(2)), totalReports: data.scores.length, levelDistribution: dist };
+  }).sort((a, b) => a.competencyName.localeCompare(b.competencyName));
+
+  res.status(200).json({ status: 'success', data: { department, summary } });
 });
 
 // ─── HEATMAP ──────────────────────────────────────────────────────────────────
 export const getHeatmap = asyncHandler(async (req, res) => {
-  const heatmap = await Report.aggregate([
-    { $unwind: '$competencyResults' },
-    { $group: { _id: { competency: '$competencyResults.competencyName', department: '$user.department' }, avgScore: { $avg: '$competencyResults.finalScore' }, count: { $sum: 1 } } },
-    { $sort: { '_id.competency': 1, '_id.department': 1 } },
-  ]);
+  const reports = await prisma.report.findMany({});
+  const reportIds = reports.map(r => r.id);
+  const allCRs = reportIds.length
+    ? await prisma.reportCompetency.findMany({ where: { reportId: { in: reportIds } } })
+    : [];
+
+  const reportMap = {};
+  reports.forEach(r => { reportMap[r.id] = r; });
+
+  const grouped = {};
+  for (const cr of allCRs) {
+    const comp = cr.competencyName;
+    const dept = reportMap[cr.reportId]?.user_department || 'Unspecified';
+    const key = `${comp}|||${dept}`;
+    if (!grouped[key]) grouped[key] = { scores: [], count: 0 };
+    grouped[key].scores.push(cr.finalScore);
+    grouped[key].count++;
+  }
+
   const map = {};
-  heatmap.forEach(item => {
-    const comp = item._id.competency;
-    const dept = item._id.department || 'Unspecified';
+  for (const [key, data] of Object.entries(grouped)) {
+    const [comp, dept] = key.split('|||');
+    const avg = data.scores.reduce((a, b) => a + b, 0) / data.scores.length;
     if (!map[comp]) map[comp] = [];
-    map[comp].push({ department: dept, avgScore: parseFloat(item.avgScore.toFixed(2)), count: item.count });
-  });
+    map[comp].push({ department: dept, avgScore: parseFloat(avg.toFixed(2)), count: data.count });
+  }
+
+  // Sort within each competency
+  for (const arr of Object.values(map)) {
+    arr.sort((a, b) => a.department.localeCompare(b.department));
+  }
+
   res.status(200).json({ status: 'success', data: { heatmap: map } });
 });
 
 // ─── ANALYTICS / STATS ───────────────────────────────────────────────────────
 export const getReportStats = asyncHandler(async (req, res) => {
-  const match = await buildFilter(req.query, req.user);
-  // Remove role filter for stats if HR_ADMIN
+  const filter = await buildFilter(req.query, req.user);
   const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
-  const [overall, levelDist, deptStats, competencyStats, trendData, topPerformers, bottomPerformers, assessmentStats, genderStats, positionStats] = await Promise.all([
-    Report.aggregate([{ $match: match }, { $group: { _id: null, total: { $sum: 1 }, avgScore: { $avg: '$overallScore' }, maxScore: { $max: '$overallScore' }, minScore: { $min: '$overallScore' }, uniqueEmployees: { $addToSet: '$user.userId' }, uniqueDepts: { $addToSet: '$user.department' }, uniqueAssessments: { $addToSet: '$assessment.assessmentId' } } }, { $project: { total: 1, avgScore: { $round: ['$avgScore', 1] }, maxScore: 1, minScore: 1, uniqueEmployees: { $size: '$uniqueEmployees' }, uniqueDepts: { $size: '$uniqueDepts' }, uniqueAssessments: { $size: '$uniqueAssessments' } } }]),
-    Report.aggregate([{ $match: match }, { $group: { _id: '$overallLevel', count: { $sum: 1 }, avgScore: { $avg: '$overallScore' } } }, { $sort: { avgScore: -1 } }]),
-    Report.aggregate([{ $match: match }, { $group: { _id: '$user.department', count: { $sum: 1 }, avgScore: { $avg: '$overallScore' }, maxScore: { $max: '$overallScore' }, minScore: { $min: '$overallScore' }, employeeCount: { $addToSet: '$user.userId' } } }, { $project: { count: 1, avgScore: { $round: ['$avgScore', 1] }, maxScore: 1, minScore: 1, employeeCount: { $size: '$employeeCount' } } }, { $sort: { avgScore: -1 } }, { $limit: 12 }]),
-    Report.aggregate([{ $match: match }, { $unwind: '$competencyResults' }, { $group: { _id: '$competencyResults.competencyName', competencyId: { $first: '$competencyResults.competencyId' }, category: { $first: '$competencyResults.category' }, count: { $sum: 1 }, avgScore: { $avg: '$competencyResults.finalScore' }, maxScore: { $max: '$competencyResults.finalScore' }, minScore: { $min: '$competencyResults.finalScore' }, expertCount: { $sum: { $cond: [{ $eq: ['$competencyResults.level', 'Expert'] }, 1, 0] } }, basicCount: { $sum: { $cond: [{ $eq: ['$competencyResults.level', 'Basic'] }, 1, 0] } } } }, { $sort: { avgScore: -1 } }]),
-    Report.aggregate([{ $match: { ...match, generatedAt: { $gte: new Date(Date.now() - 365*24*60*60*1000) } } }, { $group: { _id: { year: { $year: '$generatedAt' }, month: { $month: '$generatedAt' } }, count: { $sum: 1 }, avgScore: { $avg: '$overallScore' } } }, { $sort: { '_id.year': 1, '_id.month': 1 } }]),
-    Report.aggregate([{ $match: match }, { $group: { _id: '$user.userId', name: { $first: '$user.name' }, department: { $first: '$user.department' }, position: { $first: '$user.position' }, avgScore: { $avg: '$overallScore' }, count: { $sum: 1 }, expertCount: { $sum: { $cond: [{ $eq: ['$overallLevel', 'Expert'] }, 1, 0] } } } }, { $sort: { avgScore: -1 } }, { $limit: 5 }]),
-    Report.aggregate([{ $match: match }, { $group: { _id: '$user.userId', name: { $first: '$user.name' }, department: { $first: '$user.department' }, avgScore: { $avg: '$overallScore' }, count: { $sum: 1 }, basicCount: { $sum: { $cond: [{ $eq: ['$overallLevel', 'Basic'] }, 1, 0] } } } }, { $sort: { avgScore: 1 } }, { $limit: 5 }]),
-    Report.aggregate([{ $match: match }, { $group: { _id: '$assessment.assessmentId', description: { $first: '$assessment.description' }, type: { $first: '$assessment.type' }, purpose: { $first: '$assessment.purpose' }, targetGroup: { $first: '$assessment.targetGroup' }, count: { $sum: 1 }, avgScore: { $avg: '$overallScore' }, maxScore: { $max: '$overallScore' }, minScore: { $min: '$overallScore' } } }, { $sort: { avgScore: -1 } }, { $limit: 20 }]),
-    Report.aggregate([{ $match: match }, { $group: { _id: '$user.gender', count: { $sum: 1 }, avgScore: { $avg: '$overallScore' } } }]),
-    Report.aggregate([{ $match: match }, { $group: { _id: '$user.position', count: { $sum: 1 }, avgScore: { $avg: '$overallScore' } } }, { $sort: { avgScore: -1 } }, { $limit: 10 }]),
-  ]);
+  const reports = await prisma.report.findMany({ where: filter });
+  const reportIds = reports.map(r => r.id);
+  const allCRs = reportIds.length
+    ? await prisma.reportCompetency.findMany({ where: { reportId: { in: reportIds } } })
+    : [];
+
+  const crMap = {};
+  for (const cr of allCRs) {
+    if (!crMap[cr.reportId]) crMap[cr.reportId] = [];
+    crMap[cr.reportId].push(cr);
+  }
+
+  if (!reports.length) {
+    return res.status(200).json({
+      status: 'success',
+      data: {
+        overall: { total: 0, avgScore: 0, maxScore: 0, minScore: 0, uniqueEmployees: 0, uniqueDepts: 0, uniqueAssessments: 0 },
+        levelDistribution: [],
+        departmentBreakdown: [],
+        competencyBreakdown: [],
+        monthlyTrend: [],
+        topPerformers: [],
+        bottomPerformers: [],
+        assessmentBreakdown: [],
+        genderBreakdown: [],
+        positionBreakdown: [],
+      },
+    });
+  }
+
+  // ── Overall ──────────────────────────────────────────────────────────────
+  const uniqueEmps = new Set(reports.map(r => r.userId));
+  const uniqueDepts = new Set(reports.map(r => r.user_department).filter(Boolean));
+  const uniqueAssess = new Set(reports.map(r => r.assessmentId));
+  const scores = reports.map(r => r.overallScore);
+  const overall = {
+    total: reports.length,
+    avgScore: parseFloat((scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1)),
+    maxScore: Math.max(...scores),
+    minScore: Math.min(...scores),
+    uniqueEmployees: uniqueEmps.size,
+    uniqueDepts: uniqueDepts.size,
+    uniqueAssessments: uniqueAssess.size,
+  };
+
+  // ── Level Distribution ────────────────────────────────────────────────────
+  const levelMap = {};
+  for (const r of reports) {
+    if (!levelMap[r.overallLevel]) levelMap[r.overallLevel] = { _id: r.overallLevel, count: 0, totalScore: 0 };
+    levelMap[r.overallLevel].count++;
+    levelMap[r.overallLevel].totalScore += r.overallScore;
+  }
+  const levelDistribution = Object.values(levelMap)
+    .map(l => ({ _id: l._id, count: l.count, avgScore: parseFloat((l.totalScore / l.count).toFixed(1)) }))
+    .sort((a, b) => b.avgScore - a.avgScore);
+
+  // ── Department Breakdown ──────────────────────────────────────────────────
+  const deptMap = {};
+  for (const r of reports) {
+    const d = r.user_department || 'Unspecified';
+    if (!deptMap[d]) deptMap[d] = { count: 0, totalScore: 0, maxScore: -Infinity, minScore: Infinity, emps: new Set() };
+    deptMap[d].count++;
+    deptMap[d].totalScore += r.overallScore;
+    deptMap[d].maxScore = Math.max(deptMap[d].maxScore, r.overallScore);
+    deptMap[d].minScore = Math.min(deptMap[d].minScore, r.overallScore);
+    deptMap[d].emps.add(r.userId);
+  }
+  const departmentBreakdown = Object.entries(deptMap)
+    .map(([dept, d]) => ({
+      _id: dept,
+      count: d.count,
+      avgScore: parseFloat((d.totalScore / d.count).toFixed(1)),
+      maxScore: d.maxScore,
+      minScore: d.minScore,
+      employeeCount: d.emps.size,
+    }))
+    .sort((a, b) => b.avgScore - a.avgScore)
+    .slice(0, 12);
+
+  // ── Competency Breakdown ──────────────────────────────────────────────────
+  const compMap = {};
+  for (const cr of allCRs) {
+    const name = cr.competencyName;
+    if (!compMap[name]) compMap[name] = { competencyId: cr.competencyId, category: cr.category, scores: [], expertCount: 0, basicCount: 0 };
+    compMap[name].scores.push(cr.finalScore);
+    if (cr.level === 'Expert') compMap[name].expertCount++;
+    if (cr.level === 'Basic') compMap[name].basicCount++;
+  }
+  const competencyBreakdown = Object.entries(compMap)
+    .map(([name, c]) => ({
+      _id: name,
+      competencyId: c.competencyId,
+      category: c.category,
+      count: c.scores.length,
+      avgScore: parseFloat((c.scores.reduce((a, b) => a + b, 0) / c.scores.length).toFixed(1)),
+      maxScore: Math.max(...c.scores),
+      minScore: Math.min(...c.scores),
+      expertCount: c.expertCount,
+      basicCount: c.basicCount,
+    }))
+    .sort((a, b) => b.avgScore - a.avgScore);
+
+  // ── Monthly Trend (last 12 months) ───────────────────────────────────────
+  const oneYearAgo = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
+  const recentReports = reports.filter(r => r.generatedAt >= oneYearAgo);
+  const trendMap = {};
+  for (const r of recentReports) {
+    const d = new Date(r.generatedAt);
+    const key = `${d.getFullYear()}-${d.getMonth()}`;
+    if (!trendMap[key]) trendMap[key] = { year: d.getFullYear(), month: d.getMonth() + 1, count: 0, totalScore: 0 };
+    trendMap[key].count++;
+    trendMap[key].totalScore += r.overallScore;
+  }
+  const monthlyTrend = Object.values(trendMap)
+    .sort((a, b) => a.year - b.year || a.month - b.month)
+    .map(t => ({
+      month: `${MONTHS[t.month - 1]} ${t.year}`,
+      count: t.count,
+      avgScore: parseFloat((t.totalScore / t.count).toFixed(1)),
+    }));
+
+  // ── Top / Bottom Performers ───────────────────────────────────────────────
+  const empPerfMap = {};
+  for (const r of reports) {
+    const uid = r.userId;
+    if (!empPerfMap[uid]) empPerfMap[uid] = { name: r.user_name, department: r.user_department, position: r.user_position, scores: [], expertCount: 0, basicCount: 0 };
+    empPerfMap[uid].scores.push(r.overallScore);
+    if (r.overallLevel === 'Expert') empPerfMap[uid].expertCount++;
+    if (r.overallLevel === 'Basic') empPerfMap[uid].basicCount++;
+  }
+  const empPerfArr = Object.entries(empPerfMap).map(([uid, e]) => ({
+    _id: uid,
+    name: e.name,
+    department: e.department,
+    position: e.position,
+    avgScore: parseFloat((e.scores.reduce((a, b) => a + b, 0) / e.scores.length).toFixed(1)),
+    count: e.scores.length,
+    expertCount: e.expertCount,
+    basicCount: e.basicCount,
+  }));
+  const topPerformers = [...empPerfArr].sort((a, b) => b.avgScore - a.avgScore).slice(0, 5);
+  const bottomPerformers = [...empPerfArr].sort((a, b) => a.avgScore - b.avgScore).slice(0, 5);
+
+  // ── Assessment Breakdown ──────────────────────────────────────────────────
+  const assessMap = {};
+  for (const r of reports) {
+    const aid = r.assessmentId;
+    if (!assessMap[aid]) assessMap[aid] = { description: r.assessment_description, type: r.assessment_type, purpose: r.assessment_purpose, targetGroup: r.assessment_targetGroup, scores: [] };
+    assessMap[aid].scores.push(r.overallScore);
+  }
+  const assessmentBreakdown = Object.entries(assessMap)
+    .map(([aid, a]) => ({
+      _id: aid,
+      description: a.description,
+      type: a.type,
+      purpose: a.purpose,
+      targetGroup: a.targetGroup,
+      count: a.scores.length,
+      avgScore: parseFloat((a.scores.reduce((s, v) => s + v, 0) / a.scores.length).toFixed(1)),
+      maxScore: Math.max(...a.scores),
+      minScore: Math.min(...a.scores),
+    }))
+    .sort((a, b) => b.avgScore - a.avgScore)
+    .slice(0, 20);
+
+  // ── Gender Breakdown ──────────────────────────────────────────────────────
+  const genderMap = {};
+  for (const r of reports) {
+    const g = r.user_gender || 'Unspecified';
+    if (!genderMap[g]) genderMap[g] = { count: 0, totalScore: 0 };
+    genderMap[g].count++;
+    genderMap[g].totalScore += r.overallScore;
+  }
+  const genderBreakdown = Object.entries(genderMap).map(([g, d]) => ({
+    _id: g,
+    count: d.count,
+    avgScore: parseFloat((d.totalScore / d.count).toFixed(1)),
+  }));
+
+  // ── Position Breakdown ────────────────────────────────────────────────────
+  const posMap = {};
+  for (const r of reports) {
+    const p = r.user_position || 'Unspecified';
+    if (!posMap[p]) posMap[p] = { count: 0, totalScore: 0 };
+    posMap[p].count++;
+    posMap[p].totalScore += r.overallScore;
+  }
+  const positionBreakdown = Object.entries(posMap)
+    .map(([p, d]) => ({
+      _id: p,
+      count: d.count,
+      avgScore: parseFloat((d.totalScore / d.count).toFixed(1)),
+    }))
+    .sort((a, b) => b.avgScore - a.avgScore)
+    .slice(0, 10);
 
   res.status(200).json({
     status: 'success',
     data: {
-      overall: overall[0] || { total: 0, avgScore: 0, maxScore: 0, minScore: 0, uniqueEmployees: 0, uniqueDepts: 0, uniqueAssessments: 0 },
-      levelDistribution: levelDist,
-      departmentBreakdown: deptStats,
-      competencyBreakdown: competencyStats,
-      monthlyTrend: trendData.map(t => ({ month: `${MONTHS[t._id.month-1]} ${t._id.year}`, count: t.count, avgScore: parseFloat(t.avgScore.toFixed(1)) })),
-      topPerformers, bottomPerformers,
-      assessmentBreakdown: assessmentStats,
-      genderBreakdown: genderStats,
-      positionBreakdown: positionStats,
+      overall,
+      levelDistribution,
+      departmentBreakdown,
+      competencyBreakdown,
+      monthlyTrend,
+      topPerformers,
+      bottomPerformers,
+      assessmentBreakdown,
+      genderBreakdown,
+      positionBreakdown,
     },
   });
 });
 
 // ─── FILTER OPTIONS (every distinct value for every dropdown) ─────────────────
 export const getReportFilterOptions = asyncHandler(async (req, res) => {
-  const [
-    departments, positions, genders,
-    competencies, competencyCategories,
-    assessments,
-    assessmentTypes, purposes, targetGroups,
-    levels, statuses,
-  ] = await Promise.all([
-    Report.distinct('user.department').then(a => a.filter(Boolean).sort()),
-    Report.distinct('user.position').then(a => a.filter(Boolean).sort()),
-    Report.distinct('user.gender').then(a => a.filter(Boolean).sort()),
-    Report.aggregate([
-      { $unwind: '$competencyResults' },
-      { $group: { _id: '$competencyResults.competencyId', name: { $first: '$competencyResults.competencyName' }, category: { $first: '$competencyResults.category' } } },
-      { $sort: { name: 1 } }
-    ]),
-    Report.distinct('competencyResults.category').then(a => a.filter(Boolean).sort()),
-    Report.aggregate([
-      { $group: { _id: '$assessment.assessmentId', description: { $first: '$assessment.description' }, type: { $first: '$assessment.type' }, purpose: { $first: '$assessment.purpose' }, targetGroup: { $first: '$assessment.targetGroup' } } },
-      { $sort: { description: 1 } }
-    ]),
-    Report.distinct('assessment.type').then(a => a.filter(Boolean).sort()),
-    Report.distinct('assessment.purpose').then(a => a.filter(Boolean).sort()),
-    Report.distinct('assessment.targetGroup').then(a => a.filter(Boolean).sort()),
-    Promise.resolve(['Basic', 'Intermediate', 'Advanced', 'Expert']),
-    Promise.resolve(['PARTIAL', 'COMPLETE']),
+  const [deptRows, posRows, genderRows, assessments] = await Promise.all([
+    prisma.report.findMany({ distinct: ['user_department'], select: { user_department: true } }),
+    prisma.report.findMany({ distinct: ['user_position'], select: { user_position: true } }),
+    prisma.report.findMany({ distinct: ['user_gender'], select: { user_gender: true } }),
+    prisma.report.findMany({
+      distinct: ['assessmentId'],
+      select: {
+        assessmentId: true,
+        assessment_description: true,
+        assessment_type: true,
+        assessment_purpose: true,
+        assessment_targetGroup: true,
+      },
+    }),
   ]);
 
-  // Score range meta
-  const scoreRange = await Report.aggregate([
-    { $group: { _id: null, min: { $min: '$overallScore' }, max: { $max: '$overallScore' } } }
-  ]);
+  const departments = deptRows.map(r => r.user_department).filter(Boolean).sort();
+  const positions = posRows.map(r => r.user_position).filter(Boolean).sort();
+  const genders = genderRows.map(r => r.user_gender).filter(Boolean).sort();
+
+  // Competencies from ReportCompetency
+  const rcRows = await prisma.reportCompetency.findMany({
+    select: { competencyId: true, competencyName: true, category: true },
+  });
+  const compSet = {};
+  for (const rc of rcRows) {
+    const key = rc.competencyId || rc.competencyName;
+    if (!compSet[key]) compSet[key] = { _id: rc.competencyId, name: rc.competencyName, category: rc.category };
+  }
+  const competencies = Object.values(compSet).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+  const competencyCategories = [...new Set(rcRows.map(r => r.category).filter(Boolean))].sort();
+
+  const assessmentMap = {};
+  for (const a of assessments) {
+    if (!assessmentMap[a.assessmentId]) {
+      assessmentMap[a.assessmentId] = {
+        _id: a.assessmentId,
+        description: a.assessment_description,
+        type: a.assessment_type,
+        purpose: a.assessment_purpose,
+        targetGroup: a.assessment_targetGroup,
+      };
+    }
+  }
+  const assessmentList = Object.values(assessmentMap).sort((a, b) => (a.description || '').localeCompare(b.description || ''));
+
+  const assessmentTypes = [...new Set(assessments.map(a => a.assessment_type).filter(Boolean))].sort();
+  const purposes = [...new Set(assessments.map(a => a.assessment_purpose).filter(Boolean))].sort();
+  const targetGroups = [...new Set(assessments.map(a => a.assessment_targetGroup).filter(Boolean))].sort();
+
+  const scoreRange = await prisma.report.aggregate({ _min: { overallScore: true }, _max: { overallScore: true } });
 
   res.status(200).json({
     status: 'success',
     data: {
-      // User
       departments, positions, genders,
-      // Competency
-      competencies: competencies.map(c => ({ _id: c._id, name: c.name, category: c.category })),
+      competencies,
       competencyCategories,
-      // Assessment
-      assessments,
+      assessments: assessmentList,
       assessmentTypes, purposes, targetGroups,
-      // Result
-      levels, statuses,
-      // Score meta
-      scoreRange: scoreRange[0] ? { min: Math.floor(scoreRange[0].min), max: Math.ceil(scoreRange[0].max) } : { min: 0, max: 100 },
+      levels: ['Basic', 'Intermediate', 'Advanced', 'Expert'],
+      statuses: ['PARTIAL', 'COMPLETE'],
+      scoreRange: scoreRange._min.overallScore != null
+        ? { min: Math.floor(scoreRange._min.overallScore), max: Math.ceil(scoreRange._max.overallScore) }
+        : { min: 0, max: 100 },
     },
   });
 });
 
 // ─── EMPLOYEE LIST ────────────────────────────────────────────────────────────
 export const getEmployees = asyncHandler(async (req, res) => {
-  let filter = {};
-  if (req.user.role === 'SUPERVISOR') filter.supervisorId = req.user.id;
-  else if (req.user.role === 'EMPLOYEE') filter._id = req.user.id;
-  const employees = await User.find(filter).select('_id name email employeeId department position gender').sort({ name: 1 }).lean();
+  let where = {};
+  if (req.user.role === 'SUPERVISOR') where.supervisorId = req.user.id;
+  else if (req.user.role === 'EMPLOYEE') where.id = req.user.id;
+
+  const rows = await prisma.user.findMany({
+    where,
+    select: { id: true, name: true, email: true, employeeId: true, department: true, position: true, gender: true },
+    orderBy: { name: 'asc' },
+  });
+
+  const employees = rows.map(r => ({ _id: r.id, ...r }));
+
   res.status(200).json({ status: 'success', data: { employees } });
 });
 
 // ─── EXPORT PDF ───────────────────────────────────────────────────────────────
 export const exportFilteredPDF = asyncHandler(async (req, res, next) => {
   const filter = await buildFilter(req.query, req.user);
-  const reports = await Report.find(filter).sort({ generatedAt: -1 }).limit(3000).lean();
+  const rows = await prisma.report.findMany({ where: filter, orderBy: { generatedAt: 'desc' }, take: 3000 });
+  const reports = await withCompetencies(rows);
   if (!reports.length) return next(new AppError('No reports found.', 404));
   generateConsolidatedPDF(res, reports, {
     title: 'Competency Assessment Reports',
@@ -817,7 +1092,8 @@ export const exportFilteredPDF = asyncHandler(async (req, res, next) => {
 // ─── EXPORT EXCEL ─────────────────────────────────────────────────────────────
 export const exportFilteredExcel = asyncHandler(async (req, res, next) => {
   const filter = await buildFilter(req.query, req.user);
-  const reports = await Report.find(filter).sort({ generatedAt: -1 }).limit(10000).lean();
+  const rows = await prisma.report.findMany({ where: filter, orderBy: { generatedAt: 'desc' }, take: 10000 });
+  const reports = await withCompetencies(rows);
   if (!reports.length) return next(new AppError('No reports found.', 404));
   await generateConsolidatedExcel(res, reports, {
     title: 'Competency Assessment Reports',
@@ -829,13 +1105,13 @@ export const exportFilteredExcel = asyncHandler(async (req, res, next) => {
 // ─── EXPORT INDIVIDUAL PDF ────────────────────────────────────────────────────
 export const exportIndividualPDF = asyncHandler(async (req, res, next) => {
   const { userId } = req.params;
-  const oid = toObjectId(userId);
   if (req.user.role === 'EMPLOYEE' && req.user.id !== userId) return next(new AppError('Access denied.', 403));
   if (req.user.role === 'SUPERVISOR') {
-    const emp = await User.findById(userId).lean();
-    if (!emp || emp.supervisorId?.toString() !== req.user.id) return next(new AppError('Access denied.', 403));
+    const emp = await prisma.user.findUnique({ where: { id: userId } });
+    if (!emp || emp.supervisorId !== req.user.id) return next(new AppError('Access denied.', 403));
   }
-  const reports = await Report.find({ 'user.userId': oid }).sort({ generatedAt: -1 }).lean();
+  const rows = await prisma.report.findMany({ where: { userId }, orderBy: { generatedAt: 'desc' } });
+  const reports = await withCompetencies(rows);
   if (!reports.length) return next(new AppError('No reports found.', 404));
   const name = reports[0]?.user?.name || 'Employee';
   generateConsolidatedPDF(res, reports, {
@@ -848,13 +1124,13 @@ export const exportIndividualPDF = asyncHandler(async (req, res, next) => {
 // ─── EXPORT INDIVIDUAL EXCEL ──────────────────────────────────────────────────
 export const exportIndividualExcel = asyncHandler(async (req, res, next) => {
   const { userId } = req.params;
-  const oid = toObjectId(userId);
   if (req.user.role === 'EMPLOYEE' && req.user.id !== userId) return next(new AppError('Access denied.', 403));
   if (req.user.role === 'SUPERVISOR') {
-    const emp = await User.findById(userId).lean();
-    if (!emp || emp.supervisorId?.toString() !== req.user.id) return next(new AppError('Access denied.', 403));
+    const emp = await prisma.user.findUnique({ where: { id: userId } });
+    if (!emp || emp.supervisorId !== req.user.id) return next(new AppError('Access denied.', 403));
   }
-  const reports = await Report.find({ 'user.userId': oid }).sort({ generatedAt: -1 }).lean();
+  const rows = await prisma.report.findMany({ where: { userId }, orderBy: { generatedAt: 'desc' } });
+  const reports = await withCompetencies(rows);
   if (!reports.length) return next(new AppError('No reports found.', 404));
   const name = reports[0]?.user?.name || 'Employee';
   await generateConsolidatedExcel(res, reports, {
@@ -867,9 +1143,9 @@ export const exportIndividualExcel = asyncHandler(async (req, res, next) => {
 // ─── LEGACY JSON ──────────────────────────────────────────────────────────────
 export const exportReports = asyncHandler(async (req, res, next) => {
   const { userId } = req.params;
-  const oid = toObjectId(userId);
   if (req.user.role === 'EMPLOYEE' && req.user.id !== userId) return next(new AppError('Access denied.', 403));
-  const reports = await Report.find({ 'user.userId': oid }).sort({ generatedAt: -1 }).lean();
+  const rows = await prisma.report.findMany({ where: { userId }, orderBy: { generatedAt: 'desc' } });
+  const reports = await withCompetencies(rows);
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Content-Disposition', `attachment; filename="reports_${userId}.json"`);
   res.status(200).json(reports);
@@ -887,34 +1163,41 @@ export const getCustomPivotData = asyncHandler(async (req, res) => {
 
   if (!rowField) return res.status(400).json({ status: 'error', message: 'rowField is required.' });
 
-  // Build base filter from shared helper
   const filter = await buildFilter(req.query, req.user);
 
-  // Fetch raw report documents — unwind competencyResults so each row = one competency result
-  const raw = await Report.aggregate([
-    { $match: filter },
-    { $unwind: { path: '$competencyResults', preserveNullAndEmptyArrays: false } },
-    {
-      $project: {
-        employeeName:    '$user.name',
-        department:      '$user.department',
-        position:        '$user.position',
-        gender:          '$user.gender',
-        employeeId:      '$user.employeeId',
-        competency:      '$competencyResults.competencyName',
-        competencyCategory: '$competencyResults.category',
-        score:           '$competencyResults.finalScore',
-        level:           '$competencyResults.level',
-        selfScore:       '$competencyResults.scoreDetails.selfScore',
-        supervisorScore: '$competencyResults.scoreDetails.supervisorScore',
-        purpose:         '$assessment.purpose',
-        assessmentType:  '$assessment.type',
-        targetGroup:     '$assessment.targetGroup',
-        date: { $dateToString: { format: '%Y-%m', date: '$generatedAt' } },
-        generatedAt:     '$generatedAt',
-      }
-    }
-  ]);
+  const reports = await prisma.report.findMany({ where: filter });
+  const reportIds = reports.map(r => r.id);
+  const allCRs = reportIds.length
+    ? await prisma.reportCompetency.findMany({ where: { reportId: { in: reportIds } } })
+    : [];
+
+  const reportMap = {};
+  reports.forEach(r => { reportMap[r.id] = r; });
+
+  const raw = [];
+  for (const cr of allCRs) {
+    const r = reportMap[cr.reportId];
+    if (!r) continue;
+    const genDate = r.generatedAt ? new Date(r.generatedAt) : null;
+    raw.push({
+      employeeName: r.user_name,
+      department: r.user_department,
+      position: r.user_position,
+      gender: r.user_gender,
+      employeeId: r.user_employeeId,
+      competency: cr.competencyName,
+      competencyCategory: cr.category,
+      score: cr.finalScore,
+      level: cr.level,
+      selfScore: cr.scoreDetails?.selfScore,
+      supervisorScore: cr.scoreDetails?.supervisorScore,
+      purpose: r.assessment_purpose,
+      assessmentType: r.assessment_type,
+      targetGroup: r.assessment_targetGroup,
+      date: genDate ? `${genDate.getFullYear()}-${String(genDate.getMonth() + 1).padStart(2, '0')}` : null,
+      generatedAt: r.generatedAt,
+    });
+  }
 
   // Field accessor
   const FIELD_MAP = {
@@ -1015,27 +1298,35 @@ export const exportCustomPivotExcel = asyncHandler(async (req, res) => {
   const { rowField, colField, valueField = 'score', aggregation = 'avg' } = req.query;
   if (!rowField) return res.status(400).json({ status: 'error', message: 'rowField is required.' });
 
-  // Reuse the pivot logic by calling the same aggregate
   const filter = await buildFilter(req.query, req.user);
 
-  const raw = await Report.aggregate([
-    { $match: filter },
-    { $unwind: { path: '$competencyResults', preserveNullAndEmptyArrays: false } },
-    {
-      $project: {
-        employeeName: '$user.name', department: '$user.department',
-        position: '$user.position', gender: '$user.gender',
-        competency: '$competencyResults.competencyName',
-        competencyCategory: '$competencyResults.category',
-        score: '$competencyResults.finalScore', level: '$competencyResults.level',
-        selfScore: '$competencyResults.scoreDetails.selfScore',
-        supervisorScore: '$competencyResults.scoreDetails.supervisorScore',
-        purpose: '$assessment.purpose', assessmentType: '$assessment.type',
-        targetGroup: '$assessment.targetGroup',
-        date: { $dateToString: { format: '%Y-%m', date: '$generatedAt' } },
-      }
-    }
-  ]);
+  const reports = await prisma.report.findMany({ where: filter });
+  const reportIds = reports.map(r => r.id);
+  const allCRs = reportIds.length
+    ? await prisma.reportCompetency.findMany({ where: { reportId: { in: reportIds } } })
+    : [];
+
+  const reportMap = {};
+  reports.forEach(r => { reportMap[r.id] = r; });
+
+  const raw = [];
+  for (const cr of allCRs) {
+    const r = reportMap[cr.reportId];
+    if (!r) continue;
+    const genDate = r.generatedAt ? new Date(r.generatedAt) : null;
+    raw.push({
+      employeeName: r.user_name, department: r.user_department,
+      position: r.user_position, gender: r.user_gender,
+      competency: cr.competencyName,
+      competencyCategory: cr.category,
+      score: cr.finalScore, level: cr.level,
+      selfScore: cr.scoreDetails?.selfScore,
+      supervisorScore: cr.scoreDetails?.supervisorScore,
+      purpose: r.assessment_purpose, assessmentType: r.assessment_type,
+      targetGroup: r.assessment_targetGroup,
+      date: genDate ? `${genDate.getFullYear()}-${String(genDate.getMonth() + 1).padStart(2, '0')}` : null,
+    });
+  }
 
   const FIELD_MAP = {
     employeeName: r => r.employeeName || '—', department: r => r.department || '—',

@@ -166,7 +166,7 @@ export default function Header({ onMobileToggle }) {
 
   return (
     <>
-      <header className="h-16 bg-white border-b border-gray-200 flex items-center px-4 sm:px-5 lg:px-7 gap-3 sm:gap-4 sticky top-0 z-40">
+      <header className="h-14 bg-white border-b border-gray-200 flex items-center px-3 sm:px-4 lg:px-5 gap-2 sm:gap-3 sticky top-0 z-40">
         <button onClick={onMobileToggle} className="lg:hidden p-2 hover:bg-gray-100 rounded-lg transition-base active:scale-95" aria-label="Toggle menu">
           <Menu className="w-5 h-5" />
         </button>

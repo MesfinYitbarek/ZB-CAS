@@ -1,188 +1,197 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
-import { Activity, User, ClipboardList, FileText, MessageSquare, Filter, Download } from 'lucide-react';
+import {
+  Activity, User, ClipboardList, FileText, MessageSquare, Target, HelpCircle,
+  Lightbulb, BookOpen, ClipboardCheck, CheckCircle, Download, Search,
+} from 'lucide-react';
 import { exportToExcel, generateFilename } from '../utils/exportUtils';
 import api from '../utils/api';
+import Pagination from '../components/Pagination';
+import EmptyState from '../components/EmptyState';
+
+const ENTITY_FILTERS = [
+  { value: '', label: 'All Entities' },
+  { value: 'User', label: 'Users' },
+  { value: 'Assessment', label: 'Assessments' },
+  { value: 'Competency', label: 'Competencies' },
+  { value: 'Question', label: 'Questions' },
+  { value: 'Recommendation', label: 'Recommendations' },
+  { value: 'FAQ', label: 'FAQs' },
+  { value: 'Feedback', label: 'Feedback' },
+  { value: 'Result', label: 'Results' },
+  { value: 'SupervisorEvaluation', label: 'Supervisor Evaluations' },
+  { value: 'Response', label: 'Responses' },
+];
+
+const ENTITY_META = {
+  User:                 { icon: User,            color: 'text-blue-600 bg-blue-100' },
+  Assessment:           { icon: ClipboardList,   color: 'text-brand-red bg-brand-red/10' },
+  Result:               { icon: FileText,        color: 'text-green-600 bg-green-100' },
+  Feedback:             { icon: MessageSquare,   color: 'text-orange-600 bg-orange-100' },
+  Competency:           { icon: Target,          color: 'text-indigo-600 bg-indigo-100' },
+  Question:             { icon: HelpCircle,      color: 'text-purple-600 bg-purple-100' },
+  Recommendation:       { icon: Lightbulb,       color: 'text-amber-600 bg-amber-100' },
+  FAQ:                  { icon: BookOpen,        color: 'text-cyan-600 bg-cyan-100' },
+  SupervisorEvaluation: { icon: ClipboardCheck,  color: 'text-sky-600 bg-sky-100' },
+  Response:             { icon: CheckCircle,     color: 'text-emerald-600 bg-emerald-100' },
+};
+
+const DEFAULT_META = { icon: Activity, color: 'text-gray-600 bg-gray-100' };
+
+const formatAction = (action) => (action || '').replace(/_/g, ' ').toUpperCase();
 
 export default function ActivityLog() {
   const { isAdmin } = useAuth();
   const { show } = useToast();
+
   const [activities, setActivities] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [filterType, setFilterType] = useState('');
-  const [filterUser, setFilterUser] = useState('');
   const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const [filterEntity, setFilterEntity] = useState('');
+  const [filterUser, setFilterUser] = useState('');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [search, setSearch] = useState('');
+
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
 
   useEffect(() => {
-    loadActivities();
-    if (isAdmin) {
-      api.get('/users').then(({ data }) => setUsers(data.data.users || [])).catch(() => {});
-    }
-  }, [filterType, filterUser]);
+    if (!isAdmin) return;
+    api.get('/users', { params: { limit: 200 } })
+      .then(({ data }) => setUsers(data.data.users || []))
+      .catch(() => {});
+  }, [isAdmin]);
 
-  const loadActivities = async () => {
+  useEffect(() => {
+    let cancelled = false;
     setLoading(true);
-    try {
-      // Fetch various activities from different endpoints
-      const [assessments, results, feedback, usersData] = await Promise.all([
-        api.get('/assessments'),
-        api.get('/results'),
-        api.get('/feedback'),
-        isAdmin ? api.get('/users') : Promise.resolve({ data: { data: { users: [] } } }),
-      ]);
 
-      const logs = [];
+    const params = { limit: 50, page };
+    if (filterEntity) params.entity = filterEntity;
+    if (filterUser)   params.actorId = filterUser;
+    if (fromDate)     params.from = fromDate;
+    if (toDate)       params.to = toDate;
+    if (search.trim()) params.search = search.trim();
 
-      // Assessment activities
-      (assessments.data.data.assessments || []).forEach(a => {
-        logs.push({
-          id: `assess-${a._id}`,
-          type: 'assessment',
-          action: a.status === 'DRAFT' ? 'created' : a.status === 'ACTIVE' ? 'activated' : 'updated',
-          description: `Assessment "${a.description}" ${a.status.toLowerCase()}`,
-          user: a.createdBy?.name || 'System',
-          userId: a.createdBy?._id,
-          timestamp: a.createdAt,
-          metadata: { competency: a.competencyId?.name, type: a.type },
-        });
+    api.get('/activities', { params })
+      .then(({ data }) => {
+        if (cancelled) return;
+        setActivities(data.data.activities || []);
+        setTotalPages(data.data.pagination?.totalPages || 1);
+        setTotal(data.data.pagination?.total || 0);
+      })
+      .catch(() => {
+        if (!cancelled) show('Failed to load activity log.', 'error');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
       });
 
-      // Result activities
-      (results.data.data.results || []).forEach(r => {
-        logs.push({
-          id: `result-${r._id}`,
-          type: 'result',
-          action: r.status === 'FINAL' ? 'finalized' : 'generated',
-          description: `Result ${r.status.toLowerCase()} for ${r.userId?.name}`,
-          user: 'System',
-          userId: r.userId?._id,
-          timestamp: r.createdAt,
-          metadata: { score: r.finalScore, level: r.level },
-        });
-      });
+    return () => { cancelled = true; };
+  }, [page, filterEntity, filterUser, fromDate, toDate, search]);
 
-      // Feedback activities
-      (feedback.data.data.feedbacks || []).forEach(f => {
-        logs.push({
-          id: `feedback-${f._id}`,
-          type: 'feedback',
-          action: f.reviewed ? 'reviewed' : 'submitted',
-          description: `Feedback ${f.reviewed ? 'reviewed' : 'submitted'}`,
-          user: f.userId?.name || 'Anonymous',
-          userId: f.userId?._id,
-          timestamp: f.createdAt,
-          metadata: { rating: f.rating },
-        });
-      });
-
-      // User activities (admin only)
-      if (isAdmin) {
-        (usersData.data.data.users || []).forEach(u => {
-          logs.push({
-            id: `user-${u._id}`,
-            type: 'user',
-            action: 'created',
-            description: `User "${u.name}" registered`,
-            user: 'System',
-            userId: u._id,
-            timestamp: u.createdAt,
-            metadata: { role: u.role, department: u.department },
-          });
-        });
-      }
-
-      // Sort by timestamp (newest first)
-      logs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-
-      // Apply filters
-      let filtered = logs;
-      if (filterType) {
-        filtered = filtered.filter(l => l.type === filterType);
-      }
-      if (filterUser) {
-        filtered = filtered.filter(l => l.userId === filterUser);
-      }
-
-      setActivities(filtered.slice(0, 100)); // Limit to 100 most recent
-    } catch (_) {
-      show('Failed to load activity log.', 'error');
-    }
-    setLoading(false);
+  const applyAndReset = (setter) => (value) => {
+    setter(value);
+    setPage(1);
   };
 
   const handleExport = async () => {
     try {
-      const exportData = {
-        type: 'activities',
-        activities: activities.map(a => ({
-          'Type': a.type,
-          'Action': a.action,
-          'Description': a.description,
-          'User': a.user,
-          'Date': new Date(a.timestamp).toLocaleString(),
-          'Metadata': JSON.stringify(a.metadata),
-        })),
-      };
-
-      await exportToExcel({ type: 'activities', activities: exportData.activities }, generateFilename('activity_log', 'xlsx'));
+      await exportToExcel(
+        {
+          type: 'activities',
+          activities: activities.map(a => ({
+            date: a.createdAt,
+            entity: a.entity,
+            action: a.action,
+            description: a.description,
+            user: a.actorName || 'System',
+            role: a.actorRole || '',
+            ip: a.ipAddress || '',
+            metadata: a.metadata,
+          })),
+        },
+        generateFilename('activity_log', 'xlsx')
+      );
       show('Activity log exported successfully!', 'success');
     } catch (_) {
       show('Export failed.', 'error');
     }
   };
 
-  const getIcon = (type) => {
-    switch (type) {
-      case 'user': return User;
-      case 'assessment': return ClipboardList;
-      case 'result': return FileText;
-      case 'feedback': return MessageSquare;
-      default: return Activity;
-    }
-  };
-
-  const getColor = (type) => {
-    switch (type) {
-      case 'user': return 'text-blue-600 bg-blue-100';
-      case 'assessment': return 'text-brand-red bg-brand-red/10';
-      case 'result': return 'text-green-600 bg-green-100';
-      case 'feedback': return 'text-orange-600 bg-orange-100';
-      default: return 'text-gray-600 bg-gray-100';
-    }
-  };
+  const currentMeta = (entity) => ENTITY_META[entity] || DEFAULT_META;
 
   return (
     <div className="h-[calc(100vh-4rem)] flex flex-col p-7">
       {/* Sticky Header */}
-      <div className="flex justify-between items-start mb-6 flex-shrink-0">
+      <div className="flex justify-between items-start mb-3 flex-shrink-0">
         <div>
-          <h1 className="text-2xl font-display font-bold text-brand-black">Activity Log</h1>
-          <p className="text-gray-500 mt-1">System-wide activity tracking and audit trail</p>
+          <h1 className="text-xl font-bold text-brand-black">Activity Log</h1>
         </div>
-        <button onClick={handleExport} className="flex items-center gap-2 px-4 py-2 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors">
-          <Download className="w-4 h-4" /> Export Log
+        <button
+          onClick={handleExport}
+          disabled={activities.length === 0}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <Download className="w-3.5 h-3.5" /> Export Log
         </button>
       </div>
 
       {/* Sticky Filters */}
-      <div className="flex gap-3 mb-6 flex-shrink-0">
-        <select value={filterType} onChange={(e) => setFilterType(e.target.value)} className="h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm">
-          <option value="">All Types</option>
-          <option value="user">User Activities</option>
-          <option value="assessment">Assessments</option>
-          <option value="result">Results</option>
-          <option value="feedback">Feedback</option>
+      <div className="flex flex-wrap gap-3 mb-4 flex-shrink-0 items-center">
+        <select
+          value={filterEntity}
+          onChange={(e) => applyAndReset(setFilterEntity)(e.target.value)}
+          className="h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm"
+        >
+          {ENTITY_FILTERS.map(f => (
+            <option key={f.value} value={f.value}>{f.label}</option>
+          ))}
         </select>
 
         {isAdmin && (
-          <select value={filterUser} onChange={(e) => setFilterUser(e.target.value)} className="h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm w-48">
+          <select
+            value={filterUser}
+            onChange={(e) => applyAndReset(setFilterUser)(e.target.value)}
+            className="h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm w-52"
+          >
             <option value="">All Users</option>
             {users.map(u => (
               <option key={u._id} value={u._id}>{u.name}</option>
             ))}
           </select>
         )}
+
+        <input
+          type="date"
+          value={fromDate}
+          onChange={(e) => applyAndReset(setFromDate)(e.target.value)}
+          className="h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm text-gray-600"
+          title="From date"
+        />
+        <span className="text-gray-400 text-sm">to</span>
+        <input
+          type="date"
+          value={toDate}
+          onChange={(e) => applyAndReset(setToDate)(e.target.value)}
+          className="h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm text-gray-600"
+          title="To date"
+        />
+
+        <div className="relative flex-1 min-w-[180px] max-w-xs">
+          <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => applyAndReset(setSearch)(e.target.value)}
+            placeholder="Search description or user..."
+            className="w-full h-10 pl-9 pr-3 rounded-lg border border-gray-300 focus-brand text-sm"
+          />
+        </div>
       </div>
 
       {/* Scrollable Activity Timeline */}
@@ -191,52 +200,64 @@ export default function ActivityLog() {
           <div className="flex items-center justify-center p-16">
             <div className="w-10 h-10 border-4 border-brand-red border-t-transparent rounded-full animate-spin" />
           </div>
+        ) : activities.length === 0 ? (
+          <EmptyState
+            icon={Activity}
+            title="No activities found"
+            description="Try adjusting or clearing the filters above. New events appear here as soon as they happen."
+          />
         ) : (
           <div className="divide-y divide-gray-100">
-            {activities.length === 0 ? (
-              <div className="p-8 text-center text-gray-400">
-                <Activity className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-                <h3 className="text-lg font-semibold">No activities found</h3>
-              </div>
-            ) : (
-              activities.map((activity) => {
-                const Icon = getIcon(activity.type);
-                const colorClass = getColor(activity.type);
+            {activities.map((activity) => {
+              const { icon: Icon, color: colorClass } = currentMeta(activity.entity);
 
-                return (
-                  <div key={activity.id} className="p-4 hover:bg-gray-50 transition-colors">
-                    <div className="flex items-start gap-4">
-                      <div className={`w-10 h-10 rounded-lg ${colorClass} flex items-center justify-center flex-shrink-0`}>
-                        <Icon className="w-5 h-5" />
+              return (
+                <div key={activity.id} className="p-4 hover:bg-gray-50 transition-colors">
+                  <div className="flex items-start gap-4">
+                    <div className={`w-10 h-10 rounded-lg ${colorClass} flex items-center justify-center flex-shrink-0`}>
+                      <Icon className="w-5 h-5" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <span className="font-semibold text-sm text-brand-black">{activity.description}</span>
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider ${colorClass}`}>
+                          {formatAction(activity.action)}
+                        </span>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="font-semibold text-sm text-brand-black">{activity.description}</span>
-                          <span className={`px-2 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider ${colorClass}`}>
-                            {activity.action}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-4 text-xs text-gray-500">
-                          <span>{activity.user}</span>
-                          <span>•</span>
-                          <span>{new Date(activity.timestamp).toLocaleString()}</span>
-                          {activity.metadata && Object.keys(activity.metadata).length > 0 && (
-                            <>
-                              <span>•</span>
-                              <span className="text-gray-400">
-                                {Object.entries(activity.metadata).map(([k, v]) => `${k}: ${v}`).join(', ')}
-                              </span>
-                            </>
-                          )}
-                        </div>
+                      <div className="flex items-center gap-4 text-xs text-gray-500">
+                        <span>{activity.actorName || 'System'}</span>
+                        {activity.actorRole && (
+                          <>
+                            <span>•</span>
+                            <span className="text-gray-400">{activity.actorRole.replace('_', ' ')}</span>
+                          </>
+                        )}
+                        <span>•</span>
+                        <span>{new Date(activity.createdAt).toLocaleString()}</span>
+                        {activity.entity && (
+                          <>
+                            <span>•</span>
+                            <span className="text-gray-400">{activity.entity}</span>
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
-                );
-              })
-            )}
+                </div>
+              );
+            })}
           </div>
         )}
+      </div>
+
+      {/* Pagination Sticky Footer */}
+      <div className="flex-shrink-0 border-t border-gray-100">
+        {total > 0 && (
+          <div className="pt-3 px-4 pb-0 text-xs text-gray-400">
+            {total} event(s) · page {page} of {totalPages}
+          </div>
+        )}
+        <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} />
       </div>
     </div>
   );

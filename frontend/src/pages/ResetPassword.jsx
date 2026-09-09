@@ -52,7 +52,7 @@ export default function ResetPassword() {
           <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4">
             <Lock className="w-8 h-8 text-red-600" />
           </div>
-          <h2 className="text-2xl font-display font-bold text-brand-black mb-2">Invalid Reset Link</h2>
+          <h2 className="text-2xl  font-bold text-brand-black mb-2">Invalid Reset Link</h2>
           <p className="text-gray-500 mb-6">This password reset link is invalid or has expired.</p>
           <button onClick={() => nav('/login')} className="px-6 py-3 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors">
             Return to Login
@@ -69,7 +69,7 @@ export default function ResetPassword() {
           <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
             <CheckCircle className="w-8 h-8 text-green-600" />
           </div>
-          <h2 className="text-2xl font-display font-bold text-brand-black mb-2">Password Reset Successful</h2>
+          <h2 className="text-2xl  font-bold text-brand-black mb-2">Password Reset Successful</h2>
           <p className="text-gray-500 mb-6">Your password has been successfully reset. Redirecting to login...</p>
         </div>
       </div>
@@ -85,17 +85,16 @@ export default function ResetPassword() {
 
         <div className="flex items-center gap-3.5 z-10">
           <div className="w-14 h-14 rounded-xl bg-white/15 backdrop-blur-sm flex items-center justify-center">
-            <span className="text-white font-display font-bold text-[22px]">ZB</span>
+            <span className="text-white  font-bold text-[22px]">ZB</span>
           </div>
           <div>
-            <div className="text-white font-display text-xl font-bold">Zemen Bank</div>
+            <div className="text-white  text-xl font-bold">Zemen Bank</div>
             <div className="text-white/50 text-[11px] uppercase tracking-widest">CAS Platform</div>
           </div>
         </div>
 
         <div className="text-white/90 z-10">
-          <h1 className="font-display text-[34px] font-bold leading-tight mb-4">Secure.<br />Reset.<br />Continue.</h1>
-          <p className="text-[15px] text-white/55 leading-relaxed max-w-md">Reset your password securely and regain access to your account.</p>
+          <h1 className=" text-[34px] font-bold leading-tight mb-4">Secure.<br />Reset.<br />Continue.</h1>
         </div>
 
         <div className="text-white/30 text-xs z-10">© 2024 Zemen Bank. All rights reserved.</div>
@@ -108,8 +107,7 @@ export default function ResetPassword() {
             <div className="w-12 h-12 rounded-xl bg-brand-red/10 flex items-center justify-center mb-4">
               <Lock className="w-6 h-6 text-brand-red" />
             </div>
-            <h2 className="font-display text-[28px] font-bold mb-2">Reset Password</h2>
-            <p className="text-gray-500 text-sm">Create a new secure password for your account.</p>
+            <h2 className=" text-[28px] font-bold mb-8">Reset Password</h2>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-5">

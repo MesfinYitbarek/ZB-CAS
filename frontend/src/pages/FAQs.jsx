@@ -8,7 +8,7 @@ import { useToast } from '../context/ToastContext';
 import {
   Plus, Search, Edit2, Trash2, ChevronDown,
   HelpCircle, ToggleLeft, ToggleRight, Tag,
-  BookOpen, Filter,
+  Filter,
 } from 'lucide-react';
 
 // ─── Category config ─────────────────────────────────────────────────────────
@@ -26,17 +26,11 @@ const INIT_FORM = { question: '', answer: '', category: 'GENERAL', order: 0, isA
 
 // ─── Stat Card ────────────────────────────────────────────────────────────────
 
-function StatCard({ label, value, sub, accent }) {
+function StatCard({ label, value }) {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 px-5 py-4 flex items-center gap-4">
-      <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${accent}`}>
-        <BookOpen className="w-5 h-5" />
-      </div>
-      <div>
-        <p className="text-2xl font-display font-bold text-brand-black leading-none">{value}</p>
-        <p className="text-xs text-gray-500 mt-0.5">{label}</p>
-        {sub && <p className="text-[11px] text-gray-400 mt-0.5">{sub}</p>}
-      </div>
+    <div className="flex items-baseline gap-1.5">
+      <span className="text-base font-bold text-brand-black leading-none">{value}</span>
+      <span className="text-xs text-gray-500">{label}</span>
     </div>
   );
 }
@@ -350,23 +344,22 @@ export default function FAQs() {
       {/* ── Page header ─────────────────────────────────────────────────── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-display font-bold text-brand-black">FAQ Management</h1>
-          <p className="text-gray-500 text-sm mt-0.5">Manage the support widget FAQs shown to employees</p>
+          <h1 className="text-xl  font-bold text-brand-black">FAQ Management</h1>
         </div>
         <button
           onClick={openCreate}
-          className="flex items-center gap-2 px-4 py-2.5 bg-brand-red text-white rounded-xl text-sm font-semibold hover:bg-brand-red-dark transition-colors shadow-sm self-start sm:self-auto"
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-red text-white rounded-xl text-sm font-semibold hover:bg-brand-red-dark transition-colors shadow-sm self-start sm:self-auto"
         >
-          <Plus className="w-4 h-4" />
+          <Plus className="w-3.5 h-3.5" />
           Add FAQ
         </button>
       </div>
 
       {/* ── Stats row ────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-3 gap-4">
-        <StatCard label="Total FAQs" value={stats.total} accent="bg-brand-red/10 text-brand-red" />
-        <StatCard label="Visible" value={stats.active} sub="shown to employees" accent="bg-green-50 text-green-600" />
-        <StatCard label="Hidden" value={stats.hidden} sub="not shown" accent="bg-gray-100 text-gray-500" />
+      <div className="bg-white border border-gray-200 rounded-lg px-4 py-2 flex items-center gap-x-6 flex-wrap">
+        <StatCard label="Total FAQs" value={stats.total} />
+        <StatCard label="Visible" value={stats.active} />
+        <StatCard label="Hidden" value={stats.hidden} />
       </div>
 
       {/* ── Filters ──────────────────────────────────────────────────────── */}

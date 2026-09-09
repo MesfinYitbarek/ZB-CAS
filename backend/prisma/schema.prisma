@@ -1,0 +1,650 @@
+// ZB-CAS Prisma Schema (PostgreSQL)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum Role {
+  HR_ADMIN
+  SUPERVISOR
+  EMPLOYEE
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum Gender {
+  Male
+  Female
+}
+
+enum AssessmentType {
+  SelfAssessment
+  SupervisorOnly
+  Combined
+}
+
+enum AssessmentStatus {
+  DRAFT
+  SCHEDULED
+  ACTIVE
+  COMPLETED
+  ARCHIVED
+}
+
+enum TargetGroup {
+  managerial
+  non_managerial
+  common
+}
+
+enum CompetencyCategory {
+  Core_Personal_effectiveness
+  Core_Behavioral
+  Managerial
+  Leadership
+  Technical
+}
+
+enum QuestionType {
+  MCQ
+  Rating
+  TrueFalse
+  MultiSelect
+  Matching
+  Ordering
+  ScenarioMCQ
+  DragDropClassification
+}
+
+enum RespondentType {
+  self
+  supervisor
+}
+
+enum ResultStatus {
+  PENDING
+  FINAL
+}
+
+enum Level {
+  Basic
+  Intermediate
+  Advanced
+  Expert
+}
+
+enum ReportStatus {
+  PARTIAL
+  COMPLETE
+}
+
+enum NotificationType {
+  ASSESSMENT_ASSIGNED
+  RESULT_READY
+  SUPERVISOR_REMINDER
+  DEADLINE_REMINDER
+  ACCOUNT_CREATED
+}
+
+enum FaqCategory {
+  GENERAL
+  ASSESSMENT
+  ACCOUNT
+  TECHNICAL
+  OTHER
+}
+
+enum ExternalRequestStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  SYNCED
+}
+
+enum RequiredLevel {
+  Basic
+  Intermediate
+  Advanced
+  Expert
+}
+
+enum ExternalTargetGroup {
+  MANAGERIAL
+  NON_MANAGERIAL
+  COMMON
+}
+
+enum AudienceType {
+  ALL_DEPARTMENTS
+  DEPARTMENT_ALL
+  SPECIFIC_EMPLOYEES
+}
+
+enum EvaluationStatus {
+  PENDING
+  COMPLETED
+}
+
+// ─── Models ───────────────────────────────────────────────────────────────────
+
+model User {
+  id                  String     @id @default(cuid())
+  employeeId          String     @unique
+  name                String
+  username            String     @unique
+  email               String     @unique
+  passwordHash        String
+  roles               Role[]     @default([EMPLOYEE])
+  gender              Gender?
+  position            String?
+  department          String?
+  supervisorId        String?
+  supervisor          User?      @relation("Supervision", fields: [supervisorId], references: [id], onDelete: SetNull)
+  supervisees         User[]     @relation("Supervision")
+  status              UserStatus @default(ACTIVE)
+  refreshToken        String?
+  passwordResetToken  String?
+  passwordResetExpires DateTime?
+  failedLoginAttempts Int        @default(0)
+  lockUntil           DateTime?
+
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+
+  // relations
+  createdAssessments      Assessment[]           @relation("CreatedBy")
+  superviseeEvaluations   SupervisorEvaluation[]  @relation("SupervisedEmployee")
+  supervisingEvaluations  SupervisorEvaluation[]  @relation("EvaluatingSupervisor")
+  responses               Response[]
+  results                 Result[]
+  reports                 Report[]
+  feedbacks               Feedback[]
+  notifications           Notification[]
+  chatMessagesSent        ChatMessage[]           @relation("MessageSender")
+  chatMessagesReceived    ChatMessage[]           @relation("MessageReceiver")
+  securityViolations      SecurityViolation[]
+  externalRequests        ExternalRequest[]
+  faqsCreated             FAQ[]                   @relation("FaqCreatedBy")
+  faqsUpdated             FAQ[]                   @relation("FaqUpdatedBy")
+  audienceEmployeeAssessments AssessmentTargetAudienceEmployee[]
+  employeeResponses       Response[]              @relation("ResponseEmployee")
+  activities              ActivityLog[]           @relation("UserActivities")
+
+  @@index([supervisorId])
+  @@index([department, status])
+  @@index([roles])
+}
+
+model Competency {
+  id           String   @id @default(cuid())
+  name         String
+  category     CompetencyCategory
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  targetGroups       CompetencyTargetGroup[]
+  assessments        Assessment[]
+  questions          Question[]
+  results            Result[]
+  recommendations    Recommendation[]
+  reportCompetencies ReportCompetency[]
+
+  @@unique([name, category])
+  @@index([category])
+}
+
+model CompetencyTargetGroup {
+  id           String   @id @default(cuid())
+  competencyId String
+  targetGroup  TargetGroup
+  description  String   @default("")
+  competency   Competency @relation(fields: [competencyId], references: [id], onDelete: Cascade)
+
+  @@index([competencyId, targetGroup])
+}
+
+model Question {
+  id                    String       @id @default(cuid())
+  competencyId          String
+  targetGroup           TargetGroup
+  type                  QuestionType
+  text                  String
+  score                 Float        @default(1)
+  options               String[]     @default([])
+  correctAnswer         String?
+  correctAnswers        String[]     @default([])
+  scenario              String       @default("")
+  matchingPairs         Json?
+  correctOrder          String[]     @default([])
+  categories            Json?
+  matchingLeft          String[]     @default([])
+  matchingRight         String[]     @default([])
+  orderItems            String[]     @default([])
+  classificationItems   String[]     @default([])
+  categoryNames         String[]     @default([])
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+
+  competency  Competency @relation(fields: [competencyId], references: [id], onDelete: Restrict)
+  assessmentQuestions AssessmentQuestion[]
+  responses   Response[]
+  resultQuestionDetails ResultQuestionDetail[]
+
+  @@index([competencyId, targetGroup])
+  @@index([competencyId, type, targetGroup])
+}
+
+model Assessment {
+  id                  String          @id @default(cuid())
+  competencyId        String
+  targetGroup         TargetGroup
+  purpose             String
+  reminderDaysBefore  Int?
+  reminderSent        Boolean         @default(false)
+  audienceType        AudienceType    @default(ALL_DEPARTMENTS)
+  description         String          @default("")
+  legacyDepartment    String?
+  legacyPosition      String?
+  startDate           DateTime
+  endDate             DateTime
+  timeLimit           Int?
+  type                AssessmentType
+  selfWeight          Int             @default(20)
+  supervisorWeight    Int             @default(80)
+  status              AssessmentStatus @default(DRAFT)
+  createdBy           String?
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  competency  Competency @relation(fields: [competencyId], references: [id], onDelete: Restrict)
+  creator     User?      @relation("CreatedBy", fields: [createdBy], references: [id], onDelete: SetNull)
+
+  targetAudience      AssessTargetAudience?
+  audienceDepartments AssessmentTargetAudienceDepartment[]
+  audienceEmployees   AssessmentTargetAudienceEmployee[]
+  assessmentQuestions AssessmentQuestion[]
+  supervisorEvaluations SupervisorEvaluation[]
+  responses           Response[]
+  results             Result[]
+  reports             Report[]
+  feedbacks           Feedback[]
+  securityViolations  SecurityViolation[]
+  externalLinkedAssessments ExternalRequestLinkedAssessment[]
+
+  @@index([competencyId])
+  @@index([status])
+  @@index([startDate, endDate])
+  @@index([audienceType])
+  @@index([targetGroup])
+  @@index([legacyDepartment])
+}
+
+model AssessTargetAudience {
+  assessmentId String       @id
+  type         AudienceType @default(ALL_DEPARTMENTS)
+  assessment   Assessment   @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+}
+
+model AssessmentTargetAudienceDepartment {
+  id           String   @id @default(cuid())
+  assessmentId String
+  department   String
+  assessment   Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@index([assessmentId])
+}
+
+model AssessmentTargetAudienceEmployee {
+  id           String   @id @default(cuid())
+  assessmentId String
+  employeeId   String
+  assessment   Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  employee     User       @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([assessmentId])
+}
+
+model AssessmentQuestion {
+  id           String   @id @default(cuid())
+  assessmentId String
+  questionId   String
+  order        Int      @default(0)
+  assessment   Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  question     Question   @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([assessmentId, questionId])
+  @@index([assessmentId])
+}
+
+model SupervisorEvaluation {
+  id           String         @id @default(cuid())
+  assessmentId String
+  employeeId   String
+  supervisorId String
+  status       EvaluationStatus @default(PENDING)
+  completedAt  DateTime?
+  assessment   Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  employee     User       @relation("SupervisedEmployee", fields: [employeeId], references: [id], onDelete: Cascade)
+  supervisor   User       @relation("EvaluatingSupervisor", fields: [supervisorId], references: [id], onDelete: Cascade)
+
+  @@unique([assessmentId, employeeId, supervisorId])
+  @@index([assessmentId])
+  @@index([supervisorId, status])
+}
+
+model Response {
+  id                  String         @id @default(cuid())
+  assessmentId        String
+  questionId          String?
+  userId              String
+  employeeId          String
+  selectedAnswer      Json?
+  score               Float          @default(0)
+  manualScore         Float?
+  respondentType      RespondentType
+  submittedAt         DateTime?
+  comments            String         @default("")
+  isSupervisorEvaluation Boolean      @default(false)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  assessment  Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  question    Question?  @relation(fields: [questionId], references: [id], onDelete: SetNull)
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  employee    User       @relation("ResponseEmployee", fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([assessmentId, userId])
+  @@index([assessmentId, employeeId])
+  @@index([userId, respondentType])
+  @@index([assessmentId, questionId, employeeId, respondentType])
+  @@index([assessmentId, employeeId, userId, respondentType])
+}
+
+model Result {
+  id            String       @id @default(cuid())
+  userId        String
+  assessmentId  String
+  competencyId  String
+  finalScore    Float
+  level         Level
+  recommendation String      @default("")
+  status        ResultStatus @default(FINAL)
+  scoreDetails  Json?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assessment  Assessment  @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  competency  Competency  @relation(fields: [competencyId], references: [id], onDelete: Restrict)
+  reports     ReportCompetency[]
+  questionDetails ResultQuestionDetail[]
+
+  @@unique([userId, assessmentId, competencyId])
+  @@index([userId, competencyId])
+  @@index([assessmentId])
+}
+
+model ResultQuestionDetail {
+  id             String   @id @default(cuid())
+  resultId       String
+  questionId     String?
+  questionNumber Int?
+  questionText   String?
+  questionType   String?
+  maxScore       Float?
+  options        Json?
+  userAnswer     Json?
+  correctAnswer  Json?
+  scoreAwarded   Float?
+  scorePercentage Float?
+  isCorrect      Boolean?
+  isPartial      Boolean?
+  isUnanswered   Boolean?
+
+  result   Result   @relation(fields: [resultId], references: [id], onDelete: Cascade)
+  question Question? @relation(fields: [questionId], references: [id], onDelete: SetNull)
+
+  @@index([resultId])
+}
+
+model Report {
+  id           String       @id @default(cuid())
+  userId       String
+  assessmentId String
+  user_name    String
+  user_email   String        @default("")
+  user_employeeId String     @default("")
+  user_department String     @default("")
+  user_position String       @default("")
+  user_gender  String        @default("")
+  assessment_description String @default("")
+  assessment_type String     @default("")
+  assessment_purpose String  @default("")
+  assessment_targetGroup String @default("")
+  assessment_startDate DateTime?
+  assessment_endDate DateTime?
+  overallScore Float        @default(0)
+  overallLevel Level        @default(Basic)
+  status       ReportStatus @default(COMPLETE)
+  generatedAt  DateTime     @default(now())
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assessment Assessment         @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  competencyResults ReportCompetency[]
+
+  @@unique([userId, assessmentId])
+  @@index([userId, generatedAt])
+  @@index([assessmentId])
+  @@index([user_department, generatedAt])
+  @@index([overallLevel])
+  @@index([overallScore])
+}
+
+model ReportCompetency {
+  id              String   @id @default(cuid())
+  reportId        String
+  competencyId    String?
+  competencyName  String
+  category        String   @default("")
+  finalScore      Float
+  level           Level
+  recommendation  String   @default("")
+  scoreDetails    Json?
+  resultId        String?
+  report          Report       @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  competency      Competency?  @relation(fields: [competencyId], references: [id], onDelete: SetNull)
+  result          Result?      @relation(fields: [resultId], references: [id], onDelete: SetNull)
+
+  @@index([reportId])
+  @@index([competencyId])
+}
+
+model Feedback {
+  id           String   @id @default(cuid())
+  userId       String
+  assessmentId String
+  content      String
+  rating       Int?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assessment Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@index([assessmentId])
+  @@index([userId, createdAt])
+}
+
+model Notification {
+  id        String          @id @default(cuid())
+  userId    String
+  type      NotificationType
+  title     String
+  body      String          @default("")
+  link      String?
+  read      Boolean         @default(false)
+  readAt    DateTime?
+  meta      Json?
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read, createdAt])
+  @@index([userId])
+  @@index([read])
+}
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  senderId  String
+  receiverId String
+  message   String
+  read      Boolean  @default(false)
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sender   User @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver User @relation("MessageReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@index([senderId, receiverId, createdAt])
+  @@index([receiverId, read])
+}
+
+model SecurityViolation {
+  id           String   @id @default(cuid())
+  assessmentId String
+  userId       String
+  violations   Json?
+  totalViolations Int    @default(0)
+  tabSwitches  Int       @default(0)
+  copyAttempts Int       @default(0)
+  rightClickAttempts Int @default(0)
+  fullscreenExits Int   @default(0)
+  devToolsAttempts Int  @default(0)
+  windowBlurs  Int       @default(0)
+  printAttempts Int      @default(0)
+  isHighRisk   Boolean   @default(false)
+  securityLog  Json?
+  submittedAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  assessment Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([assessmentId, userId])
+  @@index([assessmentId])
+  @@index([isHighRisk])
+}
+
+model Recommendation {
+  id            String   @id @default(cuid())
+  competencyId  String
+  targetGroup   TargetGroup
+  level         Level
+  recommendation String
+  description   String   @default("")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  competency Competency @relation(fields: [competencyId], references: [id], onDelete: Cascade)
+
+  @@unique([competencyId, targetGroup, level])
+  @@index([targetGroup, level])
+}
+
+model FAQ {
+  id        String     @id @default(cuid())
+  question  String
+  answer    String
+  category  FaqCategory @default(GENERAL)
+  order     Int        @default(0)
+  isActive  Boolean    @default(true)
+  createdBy String
+  updatedBy String?
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  createdByUser User @relation("FaqCreatedBy", fields: [createdBy], references: [id], onDelete: Restrict)
+  updatedByUser User? @relation("FaqUpdatedBy", fields: [updatedBy], references: [id], onDelete: SetNull)
+
+  @@index([isActive, category, order])
+}
+
+model ExternalRequest {
+  id             String   @id @default(cuid())
+  sourceSystem   String   @default("ZB_SP")
+  sourceAssessmentId String?
+  employeeName   String
+  employeeEmail  String
+  positionTitle  String
+  linkedUserId   String?
+  status         ExternalRequestStatus @default(PENDING)
+  notes          String   @default("")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  linkedUser User? @relation(fields: [linkedUserId], references: [id], onDelete: SetNull)
+
+  competencies ExternalRequestCompetency[]
+  linkedAssessments ExternalRequestLinkedAssessment[]
+
+  @@index([status])
+  @@index([sourceSystem, sourceAssessmentId])
+  @@index([employeeEmail])
+}
+
+model ExternalRequestCompetency {
+  id            String   @id @default(cuid())
+  externalRequestId String
+  name          String
+  type          String   @default("TECHNICAL")
+  requiredLevel RequiredLevel @default(Intermediate)
+  targetGroup   ExternalTargetGroup @default(COMMON)
+  externalRequest ExternalRequest @relation(fields: [externalRequestId], references: [id], onDelete: Cascade)
+
+  @@index([externalRequestId])
+}
+
+model ExternalRequestLinkedAssessment {
+  id            String   @id @default(cuid())
+  externalRequestId String
+  assessmentId  String
+  externalRequest ExternalRequest @relation(fields: [externalRequestId], references: [id], onDelete: Cascade)
+  assessment    Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+}
+
+model ActivityLog {
+  id          String    @id @default(cuid())
+  actorId     String?
+  actorName   String?
+  actorRole   Role?
+  action      String
+  entity      String
+  entityId    String?
+  description String    @default("")
+  metadata    Json?
+  ipAddress   String?
+  createdAt   DateTime  @default(now())
+
+  actor User? @relation("UserActivities", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([actorId, createdAt])
+  @@index([entity, createdAt])
+  @@index([action, createdAt])
+  @@index([createdAt])
+}

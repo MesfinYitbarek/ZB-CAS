@@ -45,7 +45,14 @@ const SupervisorEvaluation = lazy(() => import('./pages/SupervisorEvaluation'));
 
 // Results & Reports
 const Results    = lazy(() => import('./pages/Results'));
-const Reports    = lazy(() => import('./pages/Reports'));
+const ResultDetail = lazy(() => import('./pages/ResultDetail'));
+const ReportsLayout   = lazy(() => import('./pages/ReportsLayout'));
+const ReportsOverview  = lazy(() => import('./pages/reports/OverviewPage'));
+const ReportsDepartment = lazy(() => import('./pages/reports/DepartmentPage'));
+const ReportsCompetency = lazy(() => import('./pages/reports/CompetencyPage'));
+const ReportsIndividual = lazy(() => import('./pages/reports/IndividualPage'));
+const ReportsAll        = lazy(() => import('./pages/reports/AllReportsPage'));
+const ReportsBuilder    = lazy(() => import('./pages/reports/BuilderPage'));
 const Feedback   = lazy(() => import('./pages/Feedback'));
 const ActivityLog = lazy(() => import('./pages/ActivityLog'));
 const FAQs = lazy(() => import('./pages/FAQs'));
@@ -108,7 +115,7 @@ function AppShell({ children }) {
 
       <div
         className={`flex-1 flex flex-col min-w-0 transition-all duration-200 ${
-          collapsed ? 'lg:ml-20' : 'lg:ml-64'
+          collapsed ? 'lg:ml-[65px]' : 'lg:ml-[220px]'
         }`}
       >
         <Header onMobileToggle={() => setMobileOpen((p) => !p)} />
@@ -293,13 +300,29 @@ export default function App() {
           }
         />
         <Route
-          path="/reports"
+          path="/results/:id"
           element={
             <ProtectedRoute>
-              <AppShell><PageSuspense><Reports /></PageSuspense></AppShell>
+              <AppShell><PageSuspense><ResultDetail /></PageSuspense></AppShell>
             </ProtectedRoute>
           }
         />
+        <Route
+          path="/reports"
+          element={
+            <ProtectedRoute>
+              <AppShell><PageSuspense><ReportsLayout /></PageSuspense></AppShell>
+            </ProtectedRoute>
+          }
+        >
+          <Route index element={<PageSuspense><ReportsOverview /></PageSuspense>} />
+          <Route path="overview" element={<PageSuspense><ReportsOverview /></PageSuspense>} />
+          <Route path="department" element={<PageSuspense><ReportsDepartment /></PageSuspense>} />
+          <Route path="competency" element={<PageSuspense><ReportsCompetency /></PageSuspense>} />
+          <Route path="individual" element={<PageSuspense><ReportsIndividual /></PageSuspense>} />
+          <Route path="all" element={<PageSuspense><ReportsAll /></PageSuspense>} />
+          <Route path="builder" element={<PageSuspense><ReportsBuilder /></PageSuspense>} />
+        </Route>
         <Route
           path="/feedback"
           element={
@@ -319,14 +342,6 @@ export default function App() {
             </ProtectedRoute>
           }
         />
-        <Route
-          path="/activity-log"
-          element={
-            <ProtectedRoute adminOnly>
-              <AppShell><PageSuspense><ActivityLog /></PageSuspense></AppShell>
-            </ProtectedRoute>
-          }
-        />
 
         {/* ── FAQ Management ─────────────────────────────────────────────── */}
         <Route
@@ -337,14 +352,7 @@ export default function App() {
             </ProtectedRoute>
           }
         />
-        <Route
-          path="/activity-log"
-          element={
-            <ProtectedRoute adminOnly>
-              <AppShell><PageSuspense><ActivityLog /></PageSuspense></AppShell>
-            </ProtectedRoute>
-          }
-        />
+
 
 
         {/* ── Supervisor ────────────────────────────────────────────────── */}

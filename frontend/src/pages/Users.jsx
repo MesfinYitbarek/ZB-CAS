@@ -1,6 +1,6 @@
 /* pages/Users.jsx */
-import { useState, useEffect, useCallback } from 'react';
-import { Plus, Search, Trash2, Edit2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, UserCheck } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Plus, Search, Trash2, Edit2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, UserCheck, Upload, Download, FileSpreadsheet, Loader2, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import Modal from '../components/Modal';
 import api from '../utils/api';
@@ -35,6 +35,78 @@ export default function Users() {
   });
 
   const [expandedUser, setExpandedUser] = useState(null);
+
+  // ── Bulk import ────────────────────────────────────────────────────────────
+  const [showImport,    setShowImport]    = useState(false);
+  const [importing,     setImporting]     = useState(false);
+  const [importResult,  setImportResult]  = useState(null);
+  const [selectedFile,  setSelectedFile]  = useState(null);
+  const [dragOver,      setDragOver]      = useState(false);
+  const fileInputRef = useRef(null);
+
+  const handleDownloadTemplate = async () => {
+    try {
+      const res = await api.get('/users/import/template', { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'user-import-template.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch {
+      show('Could not download the template.', 'error');
+    }
+  };
+
+  const resetImport = () => {
+    setSelectedFile(null);
+    setImportResult(null);
+    setDragOver(false);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const openImport = () => {
+    resetImport();
+    setShowImport(true);
+  };
+
+  const runImport = async () => {
+    if (!selectedFile) { show('Please choose a file first.', 'error'); return; }
+    setImporting(true);
+    setImportResult(null);
+    try {
+      const fd = new FormData();
+      fd.append('file', selectedFile);
+      const { data } = await api.post('/users/import', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      setImportResult(data.data);
+      show(`Import complete: ${data.data.summary.imported} imported, ${data.data.summary.failed} failed.`, 
+        data.data.summary.failed > 0 ? 'info' : 'success');
+      if (data.data.summary.imported > 0) fetchUsers();
+    } catch (err) {
+      show(err.response?.data?.message || 'Import failed.', 'error');
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const onDropFile = (e) => {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer?.files?.[0];
+    if (file) setSelectedFile(file);
+  };
+
+  const formatBytes = (b) => {
+    if (!b) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB'];
+    const i = Math.floor(Math.log(b) / Math.log(k));
+    return `${parseFloat((b / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+  };
 
   const initForm = () => ({
     employeeId:  '',
@@ -185,17 +257,24 @@ export default function Users() {
   return (
     <div className="p-7 h-[calc(100vh-4rem)] flex flex-col">
       {/* Sticky Header */}
-      <div className="flex justify-between items-start mb-6 flex-shrink-0">
+      <div className="flex justify-between items-start mb-3 flex-shrink-0">
         <div>
-          <h1 className="text-2xl font-display font-bold text-brand-black">User Management</h1>
-          <p className="text-gray-500 mt-1">Manage employees, supervisors, and HR administrators.</p>
+          <h1 className="text-xl  font-bold text-brand-black">User Management</h1>
         </div>
-        <button
-          onClick={openCreate}
-          className="flex items-center gap-2 px-5 py-2.5 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors"
-        >
-          <Plus className="w-4 h-4" /> Add User
-        </button>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <button
+            onClick={openImport}
+            className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-300 bg-white text-brand-black rounded-lg font-semibold hover:bg-gray-50 transition-colors"
+          >
+            <Upload className="w-3.5 h-3.5" /> Import Users
+          </button>
+          <button
+            onClick={openCreate}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors"
+          >
+            <Plus className="w-3.5 h-3.5" /> Add User
+          </button>
+        </div>
       </div>
 
       {/* Sticky Filters */}
@@ -603,6 +682,175 @@ export default function Users() {
           </button>
         </div>
       </Modal>
+
+      {/* ── Import Users Modal ─────────────────────────────────────────────── */}
+      <Modal open={showImport} onClose={() => { if (!importing) setShowImport(false); }} title="Import Users" large>
+        {!importResult ? (
+          <div className="space-y-5">
+            <div className="flex items-start gap-3 bg-blue-50 border border-blue-200 text-blue-700 rounded-lg p-4">
+              <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+              <div className="text-sm">
+                <p className="font-semibold">Bulk import users from Excel or CSV</p>
+                <p className="mt-1 text-blue-600">
+                  Required columns: <code className="font-mono font-semibold">employeeId, name, username, email</code>.
+                  Optional: <code className="font-mono">role, gender, position, department, supervisor, status</code>.
+                  Max 500 rows per file. Use the template for the correct format.
+                </p>
+              </div>
+            </div>
+
+            {/* Drop zone */}
+            <div
+              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={onDropFile}
+              onClick={() => fileInputRef.current?.click()}
+              className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors ${
+                dragOver ? 'border-brand-red bg-brand-red-muted' : 'border-gray-300 hover:border-brand-red hover:bg-gray-50'
+              }`}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx,.xls,.csv,.txt"
+                className="hidden"
+                onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+              />
+              <FileSpreadsheet className="w-10 h-10 mx-auto text-gray-400 mb-3" />
+              {selectedFile ? (
+                <div>
+                  <p className="font-semibold text-brand-black break-all">{selectedFile.name}</p>
+                  <p className="text-xs text-gray-500 mt-1">{formatBytes(selectedFile.size)} · click to change</p>
+                </div>
+              ) : (
+                <div>
+                  <p className="font-semibold text-brand-black">Drag & drop a file here, or click to browse</p>
+                  <p className="text-xs text-gray-500 mt-1">Supported: .xlsx, .xls, .csv</p>
+                </div>
+              )}
+            </div>
+
+            <button
+              onClick={handleDownloadTemplate}
+              className="flex items-center gap-2 text-brand-red font-semibold text-sm hover:text-brand-red-dark transition-colors"
+            >
+              <Download className="w-4 h-4" /> Download Excel template
+            </button>
+
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                onClick={() => setShowImport(false)}
+                className="px-4 py-2 border border-gray-300 rounded-lg font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={runImport}
+                disabled={importing || !selectedFile}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {importing && <Loader2 className="w-4 h-4 animate-spin" />}
+                {importing ? 'Importing...' : 'Import Users'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <ImportResultView
+            result={importResult}
+            onDone={() => { resetImport(); setShowImport(false); }}
+            onImportMore={() => resetImport()}
+          />
+        )}
+      </Modal>
+    </div>
+  );
+}
+
+// ── Import Result View ───────────────────────────────────────────────────────
+function ImportResultView({ result, onDone, onImportMore }) {
+  const { summary, imported, failed } = result || { summary: { total: 0, imported: 0, failed: 0 }, imported: [], failed: [] };
+  return (
+    <div className="space-y-5">
+      {/* Summary cards */}
+      <div className="grid grid-cols-3 gap-3">
+        <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-center">
+          <p className="text-2xl  font-bold text-brand-black">{summary.total}</p>
+          <p className="text-xs text-gray-500 mt-1">Total Rows</p>
+        </div>
+        <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
+          <p className="text-2xl  font-bold text-green-600">{summary.imported}</p>
+          <p className="text-xs text-green-600 mt-1">Imported</p>
+        </div>
+        <div className={`${failed.length ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200'} border rounded-lg p-4 text-center`}>
+          <p className={`text-2xl  font-bold ${failed.length ? 'text-brand-red' : 'text-gray-500'}`}>{summary.failed}</p>
+          <p className={`text-xs mt-1 ${failed.length ? 'text-brand-red' : 'text-gray-500'}`}>Failed</p>
+        </div>
+      </div>
+
+      {/* Imported users */}
+      {imported.length > 0 && (
+        <div className="border border-gray-200 rounded-lg overflow-hidden">
+          <div className="bg-gray-50 px-4 py-2 flex items-center gap-2 text-sm font-semibold text-gray-700">
+            <CheckCircle2 className="w-4 h-4 text-green-600" /> Imported Users (temporary passwords)
+          </div>
+          <div className="max-h-52 overflow-y-auto custom-scrollbar">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-left text-xs text-gray-500">
+                <tr>
+                  <th className="px-4 py-2">Name</th>
+                  <th className="px-4 py-2">Username</th>
+                  <th className="px-4 py-2">Email</th>
+                  <th className="px-4 py-2">Role</th>
+                  <th className="px-4 py-2">Temp Password</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {imported.map((u) => (
+                  <tr key={u._id}>
+                    <td className="px-4 py-2 font-medium">{u.name}</td>
+                    <td className="px-4 py-2">{u.username}</td>
+                    <td className="px-4 py-2">{u.email}</td>
+                    <td className="px-4 py-2">{u.roles.join(', ')}</td>
+                    <td className="px-4 py-2"><code className="font-mono text-brand-red bg-gray-50 px-1.5 py-0.5 rounded">{u.tempPassword}</code></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Failed rows */}
+      {failed.length > 0 && (
+        <div className="border border-red-200 bg-red-50/30 rounded-lg overflow-hidden">
+          <div className="bg-red-50 px-4 py-2 flex items-center gap-2 text-sm font-semibold text-brand-red">
+            <AlertTriangle className="w-4 h-4" /> Failed Rows ({failed.length})
+          </div>
+          <div className="max-h-52 overflow-y-auto custom-scrollbar divide-y divide-red-100">
+            {failed.map((f, i) => (
+              <div key={i} className="px-4 py-2 flex items-start gap-3 text-sm">
+                <span className="text-xs font-mono bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded flex-shrink-0 mt-0.5">Row {f.row}</span>
+                <span className="text-gray-700">{f.message}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="flex justify-end gap-3 pt-2">
+        <button
+          onClick={onImportMore}
+          className="px-4 py-2 border border-gray-300 rounded-lg font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+        >
+          Import More
+        </button>
+        <button
+          onClick={onDone}
+          className="px-4 py-2 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors"
+        >
+          Done
+        </button>
+      </div>
     </div>
   );
 }

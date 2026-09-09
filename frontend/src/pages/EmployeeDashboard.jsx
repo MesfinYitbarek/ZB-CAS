@@ -115,7 +115,7 @@ export default function EmployeeDashboard() {
             <div>
               {/* Welcome */}
               <div className="flex items-center gap-2.5 mb-1">
-                <h1 className="text-2xl font-display font-bold text-brand-black">
+                <h1 className="text-xl  font-bold text-brand-black">
                   Welcome back, {user?.name?.split(' ')[0]} 👋
                 </h1>
                 {refreshing && <div className="w-4 h-4 border-2 border-brand-red border-t-transparent rounded-full animate-spin" />}
@@ -143,7 +143,7 @@ export default function EmployeeDashboard() {
                 onClick={() => load(period, true)} 
                 className="w-9 h-9 bg-white border border-gray-200 rounded-xl flex items-center justify-center text-gray-400 hover:text-gray-600 shadow-sm"
               >
-                <RefreshCw className="w-4 h-4" />
+                <RefreshCw className="w-3.5 h-3.5" />
               </button>
             </div>
           </div>
@@ -174,7 +174,7 @@ export default function EmployeeDashboard() {
               <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center mb-3">
                 <ClipboardList className="w-5 h-5 text-blue-600" />
               </div>
-              <div className="text-2xl font-bold text-gray-900 tracking-tight mb-0.5">{stats.pendingAssessments || 0}</div>
+              <div className="text-2xl  font-bold text-brand-black tracking-tight mb-0.5">{stats.pendingAssessments || 0}</div>
               <div className="text-xs font-semibold text-gray-700">Pending</div>
               <div className="text-xs text-gray-400 mt-0.5">{stats.completedAssessments || 0} completed</div>
             </div>
@@ -184,7 +184,7 @@ export default function EmployeeDashboard() {
                 <Award className="w-5 h-5 text-emerald-600" />
               </div>
               <div className="flex items-center gap-1.5 mb-0.5">
-                <div className="text-2xl font-bold text-gray-900 tracking-tight">{stats.avgScore || 0}%</div>
+                <div className="text-2xl  font-bold text-brand-black tracking-tight">{stats.avgScore || 0}%</div>
                 {trendDir === 'up' && <TrendingUp className="w-4 h-4 text-emerald-500" />}
                 {trendDir === 'down' && <TrendingDown className="w-4 h-4 text-red-400" />}
               </div>
@@ -196,7 +196,7 @@ export default function EmployeeDashboard() {
               <div className="w-10 h-10 bg-violet-50 rounded-xl flex items-center justify-center mb-3">
                 <Target className="w-5 h-5 text-violet-600" />
               </div>
-              <div className="text-2xl font-bold text-gray-900 tracking-tight mb-0.5">{stats.competenciesAssessed || 0}</div>
+              <div className="text-2xl  font-bold text-brand-black tracking-tight mb-0.5">{stats.competenciesAssessed || 0}</div>
               <div className="text-xs font-semibold text-gray-700">Competencies</div>
               <div className="text-xs text-gray-400 mt-0.5">Assessed overall</div>
             </div>
@@ -205,7 +205,7 @@ export default function EmployeeDashboard() {
               <div className="w-10 h-10 bg-amber-50 rounded-xl flex items-center justify-center mb-3">
                 <Calendar className="w-5 h-5 text-amber-600" />
               </div>
-              <div className="text-2xl font-bold text-gray-900 tracking-tight mb-0.5">{stats.periodResultCount || 0}</div>
+              <div className="text-2xl  font-bold text-brand-black tracking-tight mb-0.5">{stats.periodResultCount || 0}</div>
               <div className="text-xs font-semibold text-gray-700">Completed</div>
               <div className="text-xs text-gray-400 mt-0.5">{periodLabel}</div>
             </div>

@@ -1,20 +1,13 @@
 import logger from '../utils/logger.js';
 /* config/database.js
- * Establishes a single Mongoose connection to MongoDB Atlas.
- * Uses connection-pooling defaults and TLS enforcement (Atlas enforces TLS anyway).
+ * Verifies connectivity to PostgreSQL via Prisma.
+ * Hard-exits if the database is unreachable (matches previous Mongoose behavior).
  */
-import mongoose from 'mongoose';
-
 const connectDB = async () => {
   try {
-    const conn = await mongoose.connect(process.env.MONGO_URI, {
-      // --- connection-pool tuning ---
-      maxPoolSize: 10,        // max simultaneous connections
-      minPoolSize: 2,
-      socketTimeoutMS: 5000,  // how long the driver waits on a socket op
-      serverSelectionTimeoutMS: 5000,
-    });
-
+    const prisma = (await import('./prisma.js')).default;
+    // Simple query to confirm the connection is live before booting the server.
+    await prisma.$queryRaw`SELECT 1`;
     logger.info({ event: 'db_connected' });
   } catch (error) {
     console.error('[DB] Connection failed:', error.message);

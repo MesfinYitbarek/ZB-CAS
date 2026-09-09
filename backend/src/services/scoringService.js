@@ -1,36 +1,31 @@
 import logger from '../utils/logger.js';
-import Result from '../models/Result.js';
-import Assessment from '../models/Assessment.js';
-import Question from '../models/Question.js';
-import Response from '../models/Response.js';
-import Report from '../models/Report.js';
-import Recommendation from '../models/Recommendation.js';
-import User from '../models/User.js';
+import prisma from '../config/prisma.js';
 import { computeRawScore, computeWeightedScore, assignLevel } from '../utils/scoring.js';
 
-const SECRET_FIELDS = '+correctAnswer +correctAnswers +matchingPairs +correctOrder +categories';
-
 const calculateAndSaveResult = async (assessment, employeeId) => {
-  const emp = await User.findById(employeeId).lean();
+  const emp = await prisma.user.findUnique({ where: { id: employeeId } });
   if (!emp) return null;
 
   logger.debug({ event: 'scoring_start', employee: emp.name });
-  // removed
-  // removed
 
-  const responses = await Response.find({ assessmentId: assessment._id, employeeId }).lean();
-  const questions = assessment.questionIds?.length > 0
-      ? await Question.find({ _id: { $in: assessment.questionIds } }).select(SECRET_FIELDS).lean()
-      : [];
+  const responses = await prisma.response.findMany({
+    where: { assessmentId: assessment.id, employeeId },
+  });
+
+  const questionIds = (assessment.assessmentQuestions || []).map(aq => aq.questionId);
+  const questions = questionIds.length > 0
+    ? await prisma.question.findMany({ where: { id: { in: questionIds } } })
+    : [];
 
   const selfResponses = responses.filter(r => r.respondentType === 'self');
   const supervisorResp = responses.find(r => r.respondentType === 'supervisor' && r.submittedAt);
 
   // 1. Calculate Individual Components
-  // UPDATED: computeRawScore now returns questionDetails alongside rawScore & percentage
-  const selfRes = computeRawScore(questions, selfResponses);
+  // expose `_id` so the scoring util (which reads q._id.toString()) works
+  const scoredQuestions = questions.map(q => ({ ...q, _id: q.id }));
+  const selfRes = computeRawScore(scoredQuestions, selfResponses);
   const selfPerc = selfRes.percentage;
-  const selfQuestionDetails = selfRes.questionDetails; // NEW: per-question breakdown
+  const selfQuestionDetails = selfRes.questionDetails;
 
   const supPerc = Number(supervisorResp?.score) || 0;
 
@@ -40,75 +35,129 @@ const calculateAndSaveResult = async (assessment, employeeId) => {
     supervisorScore: supPerc,
     weightUsed: {},
     calculation: "",
-    // NEW: Store per-question answers, correct answers, and scores
-    questionDetails: selfQuestionDetails
+    questionDetails: selfQuestionDetails,
   };
 
   // 2. Apply Assessment Type Logic
   if (assessment.type === 'Combined') {
-      const weights = assessment.weight || { selfAssessment: 20, supervisor: 80 };
-      finalScore = computeWeightedScore(selfPerc, supPerc, weights);
-      scoreDetails.weightUsed = weights;
-      scoreDetails.calculation = `Weighted: (${selfPerc}% x ${weights.selfAssessment}%) + (${supPerc}% x ${weights.supervisor}%)`;
+    const weights = { selfAssessment: assessment.selfWeight, supervisor: assessment.supervisorWeight };
+    finalScore = computeWeightedScore(selfPerc, supPerc, weights);
+    scoreDetails.weightUsed = weights;
+    scoreDetails.calculation = `Weighted: (${selfPerc}% x ${weights.selfAssessment}%) + (${supPerc}% x ${weights.supervisor}%)`;
   } else if (assessment.type === 'SelfAssessment') {
-      finalScore = selfPerc;
-      scoreDetails.weightUsed = { selfAssessment: 100, supervisor: 0 };
-      scoreDetails.calculation = `Self-Assessment Only: ${finalScore}%`;
-  } else { // SupervisorOnly
-      finalScore = supPerc;
-      scoreDetails.weightUsed = { selfAssessment: 0, supervisor: 100 };
-      scoreDetails.calculation = `Supervisor Only Score: ${finalScore}%`;
+    finalScore = selfPerc;
+    scoreDetails.weightUsed = { selfAssessment: 100, supervisor: 0 };
+    scoreDetails.calculation = `Self-Assessment Only: ${finalScore}%`;
+  } else {
+    finalScore = supPerc;
+    scoreDetails.weightUsed = { selfAssessment: 0, supervisor: 100 };
+    scoreDetails.calculation = `Supervisor Only Score: ${finalScore}%`;
   }
 
   const level = assignLevel(finalScore);
-  const rec = await Recommendation.findOne({ competencyId: assessment.competencyId, level }).lean();
+  const rec = await prisma.recommendation.findFirst({
+    where: { competencyId: assessment.competencyId, level },
+  });
 
   logger.debug({ event: 'scoring_stage', type: assessment.type, finalScore, level });
-  logger.debug({ event: 'scoring_stage', type: assessment.type, finalScore, level });
 
-  // 3. Persist Result (now includes questionDetails in scoreDetails)
-  const result = await Result.findOneAndUpdate(
-      { userId: employeeId, assessmentId: assessment._id, competencyId: assessment.competencyId },
-      { finalScore, level, recommendation: rec?.recommendation || '', status: 'FINAL', scoreDetails },
-      { upsert: true, new: true }
-  );
+  // 3. Persist Result (upsert by user+assessment+competency)
+  const existingResult = await prisma.result.findFirst({
+    where: {
+      userId: employeeId,
+      assessmentId: assessment.id,
+      competencyId: assessment.competencyId,
+    },
+  });
 
-  // 4. Update HR Report Snapshot
-//   await Report.findOneAndUpdate(
-//       { assessmentId: assessment._id, 'user.userId': employeeId },
-//       {
-//           user: { userId: emp._id, name: emp.name, department: emp.department, position: emp.position, email: emp.email },
-//           competencyId: assessment.competencyId,
-//           competencyName: assessment.competencyId.name || 'Competency',
-//           finalScore, level, recommendation: rec?.recommendation || '', scoreDetails, updatedAt: new Date()
-//       },
-//       { upsert: true }
-//   );
+  const resultData = {
+    userId: employeeId,
+    assessmentId: assessment.id,
+    competencyId: assessment.competencyId,
+    finalScore,
+    level,
+    recommendation: rec?.recommendation || '',
+    status: 'FINAL',
+    scoreDetails,
+  };
 
-  logger.info({ event: 'score_saved', employeeId: emp._id, finalScore, level });
+  let result;
+  if (existingResult) {
+    result = await prisma.result.update({
+      where: { id: existingResult.id },
+      data: resultData,
+    });
+  } else {
+    result = await prisma.result.create({ data: resultData });
+  }
+
+  // Persist per-question details in the junction table
+  await prisma.resultQuestionDetail.deleteMany({ where: { resultId: result.id } });
+  if (selfQuestionDetails.length > 0) {
+    await prisma.resultQuestionDetail.createMany({
+      data: selfQuestionDetails.map((qd) => ({
+        resultId: result.id,
+        questionId: qd.questionId,
+        questionNumber: qd.questionNumber,
+        questionText: qd.questionText,
+        questionType: qd.questionType,
+        maxScore: qd.maxScore,
+        options: qd.options,
+        userAnswer: qd.userAnswer,
+        correctAnswer: qd.correctAnswer,
+        scoreAwarded: qd.scoreAwarded,
+        scorePercentage: qd.scorePercentage,
+        isCorrect: qd.isCorrect,
+        isPartial: qd.isPartial,
+        isUnanswered: qd.isUnanswered,
+      })),
+    });
+  }
+
+  logger.info({ event: 'score_saved', employeeId: emp.id, finalScore, level });
   return result;
 };
 
 export const scoreFullAssessment = async (assessmentId) => {
-  const assessment = await Assessment.findById(assessmentId).populate('competencyId');
+  const assessment = await prisma.assessment.findUnique({
+    where: { id: assessmentId },
+    include: { assessmentQuestions: { select: { questionId: true } } },
+  });
   if (!assessment) throw new Error('Assessment not found');
 
-  const filter = { status: { $in: ['ACTIVE', 'COMPLETED'] } };
-  if (assessment.target?.department) filter.department = assessment.target.department;
-  if (assessment.target?.position) filter.position = assessment.target.position;
+  // Only score employees who actually participated (have at least one response).
+  // Otherwise bulk/admin scoring assigns bogus 0% results to employees that
+  // never took the assessment.
+  const participated = await prisma.response.findMany({
+    where: { assessmentId: assessment.id },
+    select: { employeeId: true },
+    distinct: ['employeeId'],
+  });
+  const participantIds = participated.map(r => r.employeeId);
+  if (participantIds.length === 0) {
+    logger.info({ event: 'bulk_score_skip', reason: 'no_participants', assessmentId });
+    return [];
+  }
 
-  const employees = await User.find(filter).select('_id').lean();
+  const filter = { id: { in: participantIds } };
+  if (assessment.legacyDepartment) filter.department = assessment.legacyDepartment;
+  if (assessment.legacyPosition) filter.position = assessment.legacyPosition;
+
+  const employees = await prisma.user.findMany({ where: filter, select: { id: true } });
   logger.info({ event: 'bulk_score_start', count: employees.length });
 
   const results = [];
   for (const emp of employees) {
-      const res = await calculateAndSaveResult(assessment, emp._id);
-      if (res) results.push(res);
+    const res = await calculateAndSaveResult(assessment, emp.id);
+    if (res) results.push(res);
   }
   return results;
 };
 
 export const scoreIndividual = async (assessmentId, employeeId) => {
-  const assessment = await Assessment.findById(assessmentId).populate('competencyId');
+  const assessment = await prisma.assessment.findUnique({
+    where: { id: assessmentId },
+    include: { assessmentQuestions: { select: { questionId: true } } },
+  });
   return calculateAndSaveResult(assessment, employeeId);
 };

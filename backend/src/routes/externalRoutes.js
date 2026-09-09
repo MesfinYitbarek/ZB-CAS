@@ -10,9 +10,7 @@
  * PATCH /api/external/assessment-requests/:id   — update request status/linking (legacy)
  */
 import express from 'express';
-import ExternalRequest from '../models/ExternalRequest.js';
-import Competency from '../models/Competency.js';
-import Result from '../models/Result.js';
+import prisma from '../config/prisma.js';
 import logger from '../utils/logger.js';
 
 const router = express.Router();
@@ -22,14 +20,58 @@ const TYPE_TO_CATEGORY = {
   'TECHNICAL': 'Technical',
   'LEADERSHIP': 'Leadership',
   'MANAGERIAL': 'Managerial',
-  'CORE': 'Core-Behavioral',
-  'BEHAVIORAL': 'Core-Behavioral',
-  'PERSONAL': 'Core-Personal effectiveness',
+  'CORE': 'Core_Behavioral',
+  'BEHAVIORAL': 'Core_Behavioral',
+  'PERSONAL': 'Core_Personal_effectiveness',
+};
+
+// ── Map display category strings to CompetencyCategory enum values ──────────────
+const CATEGORY_TO_ENUM = {
+  'Technical': 'Technical',
+  'Leadership': 'Leadership',
+  'Managerial': 'Managerial',
+  'Core-Behavioral': 'Core_Behavioral',
+  'Core-Behavioral': 'Core_Behavioral',
+  'Core-Personal effectiveness': 'Core_Personal_effectiveness',
 };
 
 // ── Helper: strip level bracket from competency name for matching ───────────────
 // e.g. "leadership_SP (Expert)" → "leadership_sp"
 const stripLevel = (name) => (name || '').replace(/\s*\([^)]*\)\s*$/, '').toLowerCase().trim();
+
+// ── Helper: map ExternalTargetGroup enum → TargetGroup enum ─────────────────────
+const extTgToTg = (tg) => {
+  if (tg === 'MANAGERIAL') return 'managerial';
+  if (tg === 'NON_MANAGERIAL') return 'non_managerial';
+  return 'common';
+};
+
+// ── Helper: map legacy lowercase/hyphenated targetGroup to ExternalTargetGroup enum
+const toExtTargetGroup = (tg) => {
+  const upper = (tg || 'COMMON').toUpperCase().replace(/-/g, '_');
+  if (upper === 'NON_MANAGERIAL') return 'NON_MANAGERIAL';
+  if (upper === 'MANAGERIAL') return 'MANAGERIAL';
+  return 'COMMON';
+};
+
+// ── Helper: load junction extras onto a request object ──────────────────────────
+async function loadRequestExtras(request) {
+  const comps = await prisma.externalRequestCompetency.findMany({
+    where: { externalRequestId: request.id },
+  });
+  const links = await prisma.externalRequestLinkedAssessment.findMany({
+    where: { externalRequestId: request.id },
+    select: { assessmentId: true },
+  });
+  request.competencies = comps.map(c => ({
+    name: c.name,
+    type: c.type,
+    requiredLevel: c.requiredLevel,
+    targetGroup: c.targetGroup,
+  }));
+  request.linkedAssessmentIds = links.map(l => l.assessmentId);
+  return request;
+}
 
 // ── API Key middleware ──────────────────────────────────────────────────────────
 const validateApiKey = (req, res, next) => {
@@ -43,8 +85,6 @@ const validateApiKey = (req, res, next) => {
 };
 
 // ── POST /api/external/assessment-requests ──────────────────────────────────────
-// Receives a new assessment request from ZB_SP.
-// AUTO-creates competencies + ACTIVE assessments assigned specifically to the employee.
 router.post('/assessment-requests', validateApiKey, async (req, res) => {
   try {
     const { employeeName, employeeEmail, positionTitle, competencies, sourceAssessmentId } = req.body;
@@ -56,37 +96,44 @@ router.post('/assessment-requests', validateApiKey, async (req, res) => {
       });
     }
 
-    // Create the external request record first
-    const request = await ExternalRequest.create({
-      sourceSystem: 'ZB_SP',
-      sourceAssessmentId: sourceAssessmentId || null,
-      employeeName,
-      employeeEmail,
-      positionTitle,
-      competencies: competencies || [],
-      status: 'PENDING',
+    const request = await prisma.externalRequest.create({
+      data: {
+        sourceSystem: 'ZB_SP',
+        sourceAssessmentId: sourceAssessmentId || null,
+        employeeName,
+        employeeEmail,
+        positionTitle,
+        status: 'PENDING',
+      },
     });
+
+    if (competencies?.length) {
+      await prisma.externalRequestCompetency.createMany({
+        data: competencies.map(c => ({
+          externalRequestId: request.id,
+          name: c.name,
+          type: c.type || 'TECHNICAL',
+          requiredLevel: c.requiredLevel || 'Intermediate',
+          targetGroup: toExtTargetGroup(c.targetGroup),
+        })),
+      });
+    }
 
     // ── Auto-process: try to find user, create competencies + assessments ──────
     let autoCreated = { competencies: [], assessments: [], linkedUserId: null };
 
     try {
-      const User = (await import('../models/User.js')).default;
-      const Assessment = (await import('../models/Assessment.js')).default;
-
-      // Find CAS user by email
       const user = employeeEmail
-        ? await User.findOne({ email: employeeEmail.toLowerCase() }).lean()
+        ? await prisma.user.findUnique({ where: { email: employeeEmail.toLowerCase() } })
         : null;
 
+      let linkedUserId = null;
       if (user) {
-        // Auto-link the user
-        request.linkedUserId = user._id;
-        autoCreated.linkedUserId = user._id;
+        linkedUserId = user.id;
+        autoCreated.linkedUserId = user.id;
       }
 
-      // Auto-create competencies (level info goes in description, not name)
-      // If competency already exists, append user info to its description
+      // Auto-create competencies
       if (competencies?.length) {
         const d = new Date();
         const yy = d.getFullYear(), mm = String(d.getMonth() + 1).padStart(2, '0'), dd = String(d.getDate()).padStart(2, '0');
@@ -97,47 +144,57 @@ router.post('/assessment-requests', validateApiKey, async (req, res) => {
         const now = `${yy}-${mm}-${dd} ${h12}:${min} ${ampm}`;
 
         for (const comp of competencies) {
-          const category = TYPE_TO_CATEGORY[(comp.type || 'TECHNICAL').toUpperCase()] || 'Technical';
+          const rawCategory = TYPE_TO_CATEGORY[(comp.type || 'TECHNICAL').toUpperCase()] || 'Technical';
+          const category = CATEGORY_TO_ENUM[rawCategory] || rawCategory;
           const level = comp.requiredLevel || 'Intermediate';
-          let compName = comp.name;
-          // IMPORTANT: map MANAGERIAL -> managerial, NON_MANAGERIAL -> non-managerial
-          const targetGroup = (comp.targetGroup || 'COMMON').toLowerCase().replace(/_/g, '-');
+          const compName = comp.name;
+          const targetGroupEnum = toExtTargetGroup(comp.targetGroup);
+          const tgForCompetency = extTgToTg(targetGroupEnum);
           const displayGroup = (comp.targetGroup || 'COMMON').replace(/_/g, ' ');
           const userEntry = `• ${employeeName} — ${positionTitle} | Target Group: ${displayGroup} (${now})`;
 
-          // Case-insensitive lookup to avoid duplicates
-          const existing = await Competency.findOne({ name: { $regex: new RegExp(`^${compName}$`, 'i') } });
+          const existing = await prisma.competency.findFirst({
+            where: { name: { equals: compName, mode: 'insensitive' } },
+            include: { targetGroups: true },
+          });
 
           if (existing) {
-            // Check if this specific target group already exists on this competency
-            const tgIndex = existing.targetGroups?.findIndex(t => t.targetGroup === targetGroup);
-
-            if (tgIndex !== -1 && tgIndex !== undefined && existing.targetGroups) {
-              // Target group exists, append to its description
-              const currentDesc = existing.targetGroups[tgIndex].description || '';
+            const tgRow = existing.targetGroups.find(t => t.targetGroup === tgForCompetency);
+            if (tgRow) {
+              const currentDesc = tgRow.description || '';
               if (!currentDesc.includes(`${employeeName} — ${positionTitle}`) || !currentDesc.includes(String(d.getDate()).padStart(2, '0'))) {
-                existing.targetGroups[tgIndex].description = currentDesc
-                  ? `${currentDesc}\n${userEntry}`
-                  : `Created from ZB SP.\n${userEntry}`;
-                await existing.save();
+                await prisma.competencyTargetGroup.update({
+                  where: { id: tgRow.id },
+                  data: {
+                    description: currentDesc
+                      ? `${currentDesc}\n${userEntry}`
+                      : `Created from ZB SP.\n${userEntry}`,
+                  },
+                });
               }
             } else {
-              // Target group doesn't exist on this competency, add it
-              if (!existing.targetGroups) existing.targetGroups = [];
-              existing.targetGroups.push({ targetGroup, description: `Created from ZB SP.\n${userEntry}` });
-              await existing.save();
+              await prisma.competencyTargetGroup.create({
+                data: {
+                  competencyId: existing.id,
+                  targetGroup: tgForCompetency,
+                  description: `Created from ZB SP.\n${userEntry}`,
+                },
+              });
             }
             autoCreated.competencies.push(`${existing.name} (updated)`);
           } else {
-            // Competency completely brand new
             try {
-              await Competency.create({
-                name: compName,
-                category,
-                targetGroups: [{
-                  targetGroup,
-                  description: `Created from ZB SP.\n${userEntry}`,
-                }],
+              await prisma.competency.create({
+                data: {
+                  name: compName,
+                  category,
+                  targetGroups: {
+                    create: [{
+                      targetGroup: tgForCompetency,
+                      description: `Created from ZB SP.\n${userEntry}`,
+                    }],
+                  },
+                },
               });
               autoCreated.competencies.push(compName);
             } catch (e) {
@@ -147,14 +204,20 @@ router.post('/assessment-requests', validateApiKey, async (req, res) => {
         }
       }
 
-      if (user) await request.save();
+      if (linkedUserId) {
+        await prisma.externalRequest.update({
+          where: { id: request.id },
+          data: { linkedUserId },
+        });
+        request.linkedUserId = linkedUserId;
+      }
     } catch (autoErr) {
       logger.warn({ event: 'auto_process_warning', error: autoErr.message });
     }
 
     logger.info({
       event: 'external_request_received',
-      requestId: request._id,
+      requestId: request.id,
       employee: employeeName,
       source: 'ZB_SP',
       autoLinkedUser: !!autoCreated.linkedUserId,
@@ -164,7 +227,7 @@ router.post('/assessment-requests', validateApiKey, async (req, res) => {
     res.status(201).json({
       status: 'success',
       data: {
-        externalId: request._id.toString(),
+        externalId: request.id,
         status: request.status,
         autoLinked: !!autoCreated.linkedUserId,
         competenciesCreated: autoCreated.competencies,
@@ -180,31 +243,65 @@ router.post('/assessment-requests', validateApiKey, async (req, res) => {
 });
 
 // ── GET /api/external/assessment-requests ───────────────────────────────────────
-// List all external requests (for ZB CAS admin dashboard)
 router.get('/assessment-requests', async (req, res) => {
   try {
     const { status } = req.query;
-    const filter = {};
-    if (status) filter.status = status;
+    const where = {};
+    if (status) where.status = status;
 
-    const requests = await ExternalRequest.find(filter)
-      .populate('linkedUserId', 'name email')
-      .populate({ path: 'linkedAssessmentIds', select: 'status startDate endDate competencyId', populate: { path: 'competencyId', select: 'name' } })
-      .sort({ createdAt: -1 })
-      .lean();
+    const requests = await prisma.externalRequest.findMany({
+      where,
+      include: {
+        linkedUser: { select: { id: true, name: true, email: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
 
-    res.status(200).json({ status: 'success', data: { requests } });
+    // Load extras for each request
+    for (const r of requests) {
+      await loadRequestExtras(r);
+    }
+
+    // Batch-load linked assessment details
+    const allLinkedIds = requests.flatMap(r => r.linkedAssessmentIds || []);
+    const assessmentsMap = new Map();
+    if (allLinkedIds.length > 0) {
+      const assessments = await prisma.assessment.findMany({
+        where: { id: { in: allLinkedIds } },
+        include: { competency: { select: { name: true } } },
+      });
+      for (const a of assessments) {
+        assessmentsMap.set(a.id, a);
+      }
+    }
+
+    // Attach full linked assessment objects
+    const result = requests.map(r => {
+      const linkedAssessmentObjs = (r.linkedAssessmentIds || []).map(aid => {
+        const a = assessmentsMap.get(aid);
+        if (!a) return { _id: aid };
+        return {
+          _id: a.id,
+          status: a.status,
+          startDate: a.startDate,
+          endDate: a.endDate,
+          competencyId: a.competencyId,
+          competency: a.competency,
+        };
+      });
+      return { ...r, linkedAssessmentIds: r.linkedAssessmentIds, linkedAssessments: linkedAssessmentObjs };
+    });
+
+    res.status(200).json({ status: 'success', data: { requests: result } });
   } catch (error) {
     res.status(500).json({ status: 'error', message: error.message });
   }
 });
 
 // ── PATCH /api/external/assessment-requests/:id/mark-complete ───────────────────
-// One-click: finds ALL assessments user has taken that match the requested competencies,
-// auto-scores them, and marks the request as COMPLETED
 router.patch('/assessment-requests/:id/mark-complete', async (req, res) => {
   try {
-    const request = await ExternalRequest.findById(req.params.id);
+    const request = await prisma.externalRequest.findUnique({ where: { id: req.params.id } });
     if (!request) {
       return res.status(404).json({ status: 'fail', message: 'Request not found.' });
     }
@@ -213,16 +310,20 @@ router.patch('/assessment-requests/:id/mark-complete', async (req, res) => {
     }
 
     const { scoreIndividual } = await import('../services/scoringService.js');
-    const Response = (await import('../models/Response.js')).default;
-    const Assessment = (await import('../models/Assessment.js')).default;
 
     // Step 1: Find ALL assessments this user has submitted responses for
-    const allUserResponses = await Response.find({
-      employeeId: request.linkedUserId,
-      respondentType: 'self',
-    }).distinct('assessmentId');
+    const allUserResponses = await prisma.response.findMany({
+      where: {
+        employeeId: request.linkedUserId,
+        respondentType: 'self',
+      },
+      select: { assessmentId: true },
+      distinct: ['assessmentId'],
+    });
 
-    if (allUserResponses.length === 0) {
+    const allUserResponseIds = allUserResponses.map(r => r.assessmentId);
+
+    if (allUserResponseIds.length === 0) {
       return res.status(400).json({
         status: 'fail',
         message: 'The employee has not submitted any assessment answers yet.',
@@ -230,21 +331,26 @@ router.patch('/assessment-requests/:id/mark-complete', async (req, res) => {
     }
 
     // Step 2: Get those assessments with their competency names (exclude those with no competency)
-    const userAssessments = await Assessment.find({
-      _id: { $in: allUserResponses },
-      competencyId: { $ne: null },
-    }).populate('competencyId', 'name category').lean();
+    const userAssessments = await prisma.assessment.findMany({
+      where: {
+        id: { in: allUserResponseIds },
+        competencyId: { not: null },
+      },
+      include: { competency: { select: { id: true, name: true, category: true } } },
+    });
 
-    // Filter out assessments where competencyId didn't populate (deleted competencies)
-    const validAssessments = userAssessments.filter(a => a.competencyId?.name);
+    const validAssessments = userAssessments.filter(a => a.competency?.name);
 
     // Step 3: Strictly filter to ONLY assessments matching this request's competencies
-    const requestedComps = request.competencies?.map(c => stripLevel(c.name)) || [];
+    const requestComps = await prisma.externalRequestCompetency.findMany({
+      where: { externalRequestId: request.id },
+    });
+    const requestedComps = requestComps.map(c => stripLevel(c.name)) || [];
     let matchingAssessments = [];
 
     if (requestedComps.length > 0) {
       matchingAssessments = validAssessments.filter(a => {
-        const compName = stripLevel(a.competencyId?.name);
+        const compName = stripLevel(a.competency?.name);
         return requestedComps.some(rc =>
           compName.includes(rc) || rc.includes(compName)
         );
@@ -262,19 +368,22 @@ router.patch('/assessment-requests/:id/mark-complete', async (req, res) => {
     const scoredAssessments = [];
     for (const assessment of matchingAssessments) {
       try {
-        const result = await scoreIndividual(assessment._id.toString(), request.linkedUserId);
-        if (result) scoredAssessments.push(assessment._id.toString());
+        const result = await scoreIndividual(assessment.id, request.linkedUserId);
+        if (result) scoredAssessments.push(assessment.id);
       } catch (scoreErr) {
-        logger.warn({ event: 'auto_score_fail', assessmentId: assessment._id, error: scoreErr.message });
+        logger.warn({ event: 'auto_score_fail', assessmentId: assessment.id, error: scoreErr.message });
       }
     }
 
     // Step 5: Get all results for this user across matching assessments
-    const matchingIds = matchingAssessments.map(a => a._id);
-    const allResults = await Result.find({
-      userId: request.linkedUserId,
-      assessmentId: { $in: matchingIds },
-    }).sort({ createdAt: -1 }).lean(); // Sort newest first
+    const matchingIds = matchingAssessments.map(a => a.id);
+    const allResults = await prisma.result.findMany({
+      where: {
+        userId: request.linkedUserId,
+        assessmentId: { in: matchingIds },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
 
     if (allResults.length === 0) {
       return res.status(400).json({
@@ -286,32 +395,50 @@ router.patch('/assessment-requests/:id/mark-complete', async (req, res) => {
     // Keep only the MOST RECENT result per competency
     const assessmentToComp = {};
     matchingAssessments.forEach(a => {
-      assessmentToComp[a._id.toString()] = a.competencyId?._id?.toString() || a.competencyId?.toString();
+      assessmentToComp[a.id] = a.competency?.id || a.competencyId;
     });
 
     const latestResultsMap = new Map();
     for (const r of allResults) {
-      const compId = assessmentToComp[r.assessmentId.toString()];
+      const compId = assessmentToComp[r.assessmentId];
       if (compId && !latestResultsMap.has(compId)) {
-        latestResultsMap.set(compId, r); // First one is the newest
+        latestResultsMap.set(compId, r);
       }
     }
 
     // Step 6: Mark as completed and link the scored assessments
-    const assessmentIdsWithResults = Array.from(latestResultsMap.values()).map(r => r.assessmentId.toString());
-    request.linkedAssessmentIds = assessmentIdsWithResults;
-    request.status = 'COMPLETED';
-    await request.save();
+    const assessmentIdsWithResults = Array.from(latestResultsMap.values()).map(r => r.assessmentId);
+
+    // Delete existing linked assessments then create new ones
+    await prisma.externalRequestLinkedAssessment.deleteMany({
+      where: { externalRequestId: request.id },
+    });
+    if (assessmentIdsWithResults.length > 0) {
+      await prisma.externalRequestLinkedAssessment.createMany({
+        data: assessmentIdsWithResults.map(aid => ({
+          externalRequestId: request.id,
+          assessmentId: aid,
+        })),
+      });
+    }
+
+    await prisma.externalRequest.update({
+      where: { id: request.id },
+      data: { status: 'COMPLETED' },
+    });
+
+    // Reconstruct extras for response
+    await loadRequestExtras(request);
 
     logger.info({
       event: 'external_request_marked_complete',
-      requestId: request._id,
+      requestId: request.id,
       employee: request.employeeName,
       assessmentsScored: scoredAssessments.length,
       assessmentsLinked: assessmentIdsWithResults.length,
     });
 
-    // Fire webhook to ZB SP to generate system emails (ZB SP handles the Nodemailer logic)
+    // Fire webhook to ZB SP
     try {
       const ZB_SP_URL = process.env.ZB_SP_URL || 'http://localhost:5001';
       const ZB_SP_API_KEY = process.env.ZB_SP_API_KEY || 'zb-integration-key-2026';
@@ -322,7 +449,7 @@ router.patch('/assessment-requests/:id/mark-complete', async (req, res) => {
           'x-api-key': ZB_SP_API_KEY
         },
         body: JSON.stringify({
-          externalId: request._id,
+          externalId: request.id,
           employeeName: request.employeeName,
           positionTitle: request.positionTitle,
           event: 'MARKED_COMPLETE'
@@ -330,7 +457,6 @@ router.patch('/assessment-requests/:id/mark-complete', async (req, res) => {
       });
     } catch (whErr) {
       logger.error({ event: 'webhook_dispatch_error', error: whErr.message });
-      // We don't fail the CAS request if the webhook to SP fails
     }
 
     res.status(200).json({
@@ -350,30 +476,47 @@ router.patch('/assessment-requests/:id/mark-complete', async (req, res) => {
 
 
 // ── PATCH /api/external/assessment-requests/:id ─────────────────────────────────
-// Update request status/linking (legacy — kept for compatibility)
 router.patch('/assessment-requests/:id', async (req, res) => {
   try {
-    const request = await ExternalRequest.findById(req.params.id);
+    const request = await prisma.externalRequest.findUnique({ where: { id: req.params.id } });
     if (!request) {
       return res.status(404).json({ status: 'fail', message: 'Request not found.' });
     }
 
     const { status, linkedUserId, linkedAssessmentIds, notes } = req.body;
-    if (status) request.status = status;
-    if (linkedUserId) request.linkedUserId = linkedUserId;
+
+    const updateData = {};
+    if (status) updateData.status = status;
+    if (linkedUserId) updateData.linkedUserId = linkedUserId;
+    if (notes !== undefined) updateData.notes = notes;
+
+    await prisma.externalRequest.update({
+      where: { id: request.id },
+      data: updateData,
+    });
+
+    // Handle linkedAssessmentIds junction persistence
     if (linkedAssessmentIds && Array.isArray(linkedAssessmentIds)) {
-      const existing = (request.linkedAssessmentIds || []).map(id => id.toString());
-      linkedAssessmentIds.forEach(id => {
-        if (!existing.includes(id.toString())) {
-          request.linkedAssessmentIds.push(id);
-        }
+      const existing = await prisma.externalRequestLinkedAssessment.findMany({
+        where: { externalRequestId: request.id },
+        select: { assessmentId: true },
       });
+      const existingIds = existing.map(e => e.assessmentId);
+      const newIds = linkedAssessmentIds.filter(id => !existingIds.includes(id));
+      if (newIds.length > 0) {
+        await prisma.externalRequestLinkedAssessment.createMany({
+          data: newIds.map(aid => ({
+            externalRequestId: request.id,
+            assessmentId: aid,
+          })),
+        });
+      }
     }
-    if (notes !== undefined) request.notes = notes;
 
-    await request.save();
+    // Reconstruct extras for response
+    await loadRequestExtras(request);
 
-    // Fire webhook to ZB SP if it was marked as completed via legacy patch route
+    // Fire webhook to ZB SP if it was marked as completed
     if (status === 'COMPLETED') {
       try {
         const ZB_SP_URL = process.env.ZB_SP_URL || 'http://localhost:5001';
@@ -385,7 +528,7 @@ router.patch('/assessment-requests/:id', async (req, res) => {
             'x-api-key': ZB_SP_API_KEY
           },
           body: JSON.stringify({
-            externalId: request._id,
+            externalId: request.id,
             employeeName: request.employeeName,
             positionTitle: request.positionTitle,
             event: 'RESULTS_UPDATED'
@@ -403,10 +546,9 @@ router.patch('/assessment-requests/:id', async (req, res) => {
 });
 
 // ── GET /api/external/assessment-requests/:id/user-results ──────────────────────
-// Finds all assessments user has taken matching the requested competencies, auto-scores, returns results
 router.get('/assessment-requests/:id/user-results', async (req, res) => {
   try {
-    const request = await ExternalRequest.findById(req.params.id);
+    const request = await prisma.externalRequest.findUnique({ where: { id: req.params.id } });
     if (!request) {
       return res.status(404).json({ status: 'fail', message: 'Request not found.' });
     }
@@ -415,35 +557,44 @@ router.get('/assessment-requests/:id/user-results', async (req, res) => {
     }
 
     const { scoreIndividual } = await import('../services/scoringService.js');
-    const Response = (await import('../models/Response.js')).default;
-    const Assessment = (await import('../models/Assessment.js')).default;
 
     // Step 1: Find ALL assessments this user has submitted responses for
-    const userAssessmentIds = await Response.find({
-      employeeId: request.linkedUserId,
-      respondentType: 'self',
-    }).distinct('assessmentId');
+    const userAssessmentRows = await prisma.response.findMany({
+      where: {
+        employeeId: request.linkedUserId,
+        respondentType: 'self',
+      },
+      select: { assessmentId: true },
+      distinct: ['assessmentId'],
+    });
+
+    const userAssessmentIds = userAssessmentRows.map(r => r.assessmentId);
 
     if (userAssessmentIds.length === 0) {
       return res.status(200).json({ status: 'success', data: { assessments: [] } });
     }
 
-    // Step 2: Get those assessments with competency info (exclude those with no competency)
-    const userAssessments = await Assessment.find({
-      _id: { $in: userAssessmentIds },
-      competencyId: { $ne: null },
-    }).populate('competencyId', 'name category').lean();
+    // Step 2: Get those assessments with competency info
+    const userAssessments = await prisma.assessment.findMany({
+      where: {
+        id: { in: userAssessmentIds },
+        competencyId: { not: null },
+      },
+      include: { competency: { select: { id: true, name: true, category: true } } },
+    });
 
-    // Filter out assessments where competencyId didn't populate (deleted competencies)
-    const validAssessments = userAssessments.filter(a => a.competencyId?.name);
+    const validAssessments = userAssessments.filter(a => a.competency?.name);
 
-    // Step 3: Strictly filter to ONLY assessments matching this request's competencies
-    const requestedComps = request.competencies?.map(c => stripLevel(c.name)) || [];
+    // Step 3: Filter to only assessments matching this request's competencies
+    const requestComps = await prisma.externalRequestCompetency.findMany({
+      where: { externalRequestId: request.id },
+    });
+    const requestedComps = requestComps.map(c => stripLevel(c.name)) || [];
     let matchingAssessments = [];
 
     if (requestedComps.length > 0) {
       matchingAssessments = validAssessments.filter(a => {
-        const compName = stripLevel(a.competencyId?.name);
+        const compName = stripLevel(a.competency?.name);
         return requestedComps.some(rc =>
           compName.includes(rc) || rc.includes(compName)
         );
@@ -453,29 +604,41 @@ router.get('/assessment-requests/:id/user-results', async (req, res) => {
     // Step 4: Auto-score matching assessments
     for (const assessment of matchingAssessments) {
       try {
-        await scoreIndividual(assessment._id.toString(), request.linkedUserId);
+        await scoreIndividual(assessment.id, request.linkedUserId);
       } catch (e) {
         // Non-fatal
       }
     }
 
     // Step 5: Fetch results
-    const matchingIds = matchingAssessments.map(a => a._id);
-    const allResults = await Result.find({
-      userId: request.linkedUserId,
-      assessmentId: { $in: matchingIds },
-    })
-      .populate({ path: 'assessmentId', select: 'status startDate endDate competencyId', populate: { path: 'competencyId', select: 'name category' } })
-      .sort({ createdAt: -1 }) // Sort newest first
-      .lean();
+    const matchingIds = matchingAssessments.map(a => a.id);
+    const allResults = await prisma.result.findMany({
+      where: {
+        userId: request.linkedUserId,
+        assessmentId: { in: matchingIds },
+      },
+      include: {
+        assessment: {
+          select: {
+            id: true,
+            status: true,
+            startDate: true,
+            endDate: true,
+            competencyId: true,
+            competency: { select: { id: true, name: true, category: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
 
     // Keep only the MOST RECENT result per competency
     const latestResultsMap = new Map();
     for (const r of allResults) {
-      if (!r.assessmentId || !r.assessmentId.competencyId) continue;
-      const compId = r.assessmentId.competencyId._id.toString();
+      if (!r.assessment || !r.assessment.competency) continue;
+      const compId = r.assessment.competency.id;
       if (!latestResultsMap.has(compId)) {
-        latestResultsMap.set(compId, r); // First seen is newest
+        latestResultsMap.set(compId, r);
       }
     }
     const results = Array.from(latestResultsMap.values());
@@ -483,16 +646,16 @@ router.get('/assessment-requests/:id/user-results', async (req, res) => {
     // Group by assessment
     const assessmentMap = {};
     results.forEach(r => {
-      const aId = r.assessmentId?._id?.toString();
+      const aId = r.assessment?.id;
       if (!aId) return;
       if (!assessmentMap[aId]) {
         assessmentMap[aId] = {
           _id: aId,
-          competencyName: r.assessmentId?.competencyId?.name || 'Unknown',
-          category: r.assessmentId?.competencyId?.category || '',
-          status: r.assessmentId?.status,
-          startDate: r.assessmentId?.startDate,
-          endDate: r.assessmentId?.endDate,
+          competencyName: r.assessment?.competency?.name || 'Unknown',
+          category: r.assessment?.competency?.category || '',
+          status: r.assessment?.status,
+          startDate: r.assessment?.startDate,
+          endDate: r.assessment?.endDate,
           finalScore: r.finalScore,
           level: r.level,
           alreadyLinked: true,
@@ -507,16 +670,21 @@ router.get('/assessment-requests/:id/user-results', async (req, res) => {
 });
 
 // ── GET /api/external/assessment-results/:id ────────────────────────────────────
-// Return assessment results for a specific external request (called by ZB_SP Sync)
 router.get('/assessment-results/:id', validateApiKey, async (req, res) => {
   try {
-    const request = await ExternalRequest.findById(req.params.id)
-      .populate('linkedUserId', 'name email')
-      .lean();
+    const rawRequest = await prisma.externalRequest.findUnique({
+      where: { id: req.params.id },
+      include: {
+        linkedUser: { select: { id: true, name: true, email: true } },
+      },
+    });
 
-    if (!request) {
+    if (!rawRequest) {
       return res.status(404).json({ status: 'fail', message: 'External request not found.' });
     }
+
+    // Load extras
+    const request = await loadRequestExtras(rawRequest);
 
     // If not yet completed
     if (request.status !== 'COMPLETED' && request.status !== 'SYNCED') {
@@ -542,14 +710,21 @@ router.get('/assessment-results/:id', validateApiKey, async (req, res) => {
       });
     }
 
-    // Fetch results from ALL linked assessments for this user, sorted from newest to oldest
-    const allResults = await Result.find({
-      assessmentId: { $in: request.linkedAssessmentIds },
-      ...(request.linkedUserId ? { userId: request.linkedUserId } : {}),
-    })
-      .sort({ createdAt: -1 }) // Sort newest first
-      .populate('competencyId', 'name category')
-      .lean();
+    // Fetch results from ALL linked assessments for this user
+    const resultWhere = {
+      assessmentId: { in: request.linkedAssessmentIds },
+    };
+    if (request.linkedUserId) {
+      resultWhere.userId = request.linkedUserId;
+    }
+
+    const allResults = await prisma.result.findMany({
+      where: resultWhere,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        competency: { select: { id: true, name: true, category: true } },
+      },
+    });
 
     if (!allResults.length) {
       return res.status(200).json({
@@ -562,11 +737,11 @@ router.get('/assessment-results/:id', validateApiKey, async (req, res) => {
       });
     }
 
-    // Keep only the MOST RECENT result per competency to prevent old scores from overriding new ones
+    // Keep only the MOST RECENT result per competency
     const latestResultsMap = new Map();
     for (const r of allResults) {
-      if (!r.competencyId) continue;
-      const compIdStr = r.competencyId._id ? r.competencyId._id.toString() : r.competencyId.toString();
+      if (!r.competency) continue;
+      const compIdStr = r.competency.id;
       if (!latestResultsMap.has(compIdStr)) {
         latestResultsMap.set(compIdStr, r);
       }
@@ -574,19 +749,20 @@ router.get('/assessment-results/:id', validateApiKey, async (req, res) => {
 
     // Map ZB CAS results to the format ZB_SP expects
     const competencies = Array.from(latestResultsMap.values()).map((r) => {
-      const qDetails = r.scoreDetails?.questionDetails || [];
+      const scoreDet = r.scoreDetails || {};
+      const qDetails = scoreDet.questionDetails || [];
       const totalQuestions = qDetails.length;
       const correctAnswers = qDetails.filter(q => q.isCorrect).length;
       const totalScore = qDetails.reduce((s, q) => s + (q.scoreAwarded || 0), 0);
       const maxPossibleScore = qDetails.reduce((s, q) => s + (q.maxScore || 0), 0);
 
       return {
-        name: r.competencyId?.name || 'Unknown',
-        category: r.competencyId?.category || 'General',
+        name: r.competency?.name || 'Unknown',
+        category: r.competency?.category || 'General',
         level: r.level,
         score: r.finalScore,
-        selfScore: r.scoreDetails?.selfScore || null,
-        supervisorScore: r.scoreDetails?.supervisorScore || null,
+        selfScore: scoreDet.selfScore || null,
+        supervisorScore: scoreDet.supervisorScore || null,
         totalQuestions,
         correctAnswers,
         totalScore,
@@ -595,7 +771,10 @@ router.get('/assessment-results/:id', validateApiKey, async (req, res) => {
     });
 
     // Auto-update request status to SYNCED
-    await ExternalRequest.findByIdAndUpdate(req.params.id, { status: 'SYNCED' });
+    await prisma.externalRequest.update({
+      where: { id: req.params.id },
+      data: { status: 'SYNCED' },
+    });
 
     res.status(200).json({
       status: 'success',
@@ -613,18 +792,16 @@ router.get('/assessment-results/:id', validateApiKey, async (req, res) => {
 });
 
 // ── POST /api/external/assessment-requests/:id/link-user ────────────────────────
-// Attempt to link request to a ZB CAS user (called by ZB CAS admin frontend)
 router.post('/assessment-requests/:id/link-user', async (req, res) => {
   try {
-    const request = await ExternalRequest.findById(req.params.id);
+    const request = await prisma.externalRequest.findUnique({ where: { id: req.params.id } });
     if (!request) return res.status(404).json({ status: 'fail', message: 'Request not found.' });
 
     if (request.linkedUserId) {
       return res.status(400).json({ status: 'fail', message: 'Request is already linked to a user.' });
     }
 
-    const User = (await import('../models/User.js')).default;
-    const user = await User.findOne({ email: request.employeeEmail.toLowerCase() }).lean();
+    const user = await prisma.user.findUnique({ where: { email: request.employeeEmail.toLowerCase() } });
 
     if (!user) {
       return res.status(404).json({
@@ -633,8 +810,10 @@ router.post('/assessment-requests/:id/link-user', async (req, res) => {
       });
     }
 
-    request.linkedUserId = user._id;
-    await request.save();
+    await prisma.externalRequest.update({
+      where: { id: request.id },
+      data: { linkedUserId: user.id },
+    });
 
     res.status(200).json({
       status: 'success',
@@ -648,34 +827,45 @@ router.post('/assessment-requests/:id/link-user', async (req, res) => {
 });
 
 // ── POST /api/external/assessment-requests/:id/create-competencies ──────────────
-// Manual fallback to create competencies (kept for edge cases)
 router.post('/assessment-requests/:id/create-competencies', async (req, res) => {
   try {
-    const request = await ExternalRequest.findById(req.params.id);
+    const request = await prisma.externalRequest.findUnique({ where: { id: req.params.id } });
     if (!request) {
       return res.status(404).json({ status: 'fail', message: 'Request not found.' });
     }
 
-    if (!request.competencies?.length) {
+    const comps = await prisma.externalRequestCompetency.findMany({
+      where: { externalRequestId: request.id },
+    });
+
+    if (!comps.length) {
       return res.status(400).json({ status: 'fail', message: 'No competencies in this request.' });
     }
 
     const created = [];
     const skipped = [];
 
-    for (const comp of request.competencies) {
-      const category = TYPE_TO_CATEGORY[(comp.type || 'TECHNICAL').toUpperCase()] || 'Technical';
-      const existing = await Competency.findOne({ name: comp.name, category });
+    for (const comp of comps) {
+      const rawCategory = TYPE_TO_CATEGORY[(comp.type || 'TECHNICAL').toUpperCase()] || 'Technical';
+      const category = CATEGORY_TO_ENUM[rawCategory] || rawCategory;
+      const existing = await prisma.competency.findFirst({
+        where: { name: comp.name, category },
+      });
       if (existing) { skipped.push(comp.name); continue; }
 
       try {
-        const newComp = await Competency.create({
-          name: comp.name,
-          category,
-          targetGroups: [{
-            targetGroup: (comp.targetGroup || 'COMMON').toLowerCase().replace(/_/g, '-'),
-            description: `Auto-created from ZB SP request for ${request.positionTitle}`
-          }],
+        const tgForCompetency = extTgToTg(comp.targetGroup);
+        const newComp = await prisma.competency.create({
+          data: {
+            name: comp.name,
+            category,
+            targetGroups: {
+              create: [{
+                targetGroup: tgForCompetency,
+                description: `Auto-created from ZB SP request for ${request.positionTitle}`,
+              }],
+            },
+          },
         });
         created.push(newComp.name);
       } catch (err) {
@@ -683,7 +873,7 @@ router.post('/assessment-requests/:id/create-competencies', async (req, res) => 
       }
     }
 
-    logger.info({ event: 'competencies_created_from_request', requestId: request._id, created: created.length, skipped: skipped.length });
+    logger.info({ event: 'competencies_created_from_request', requestId: request.id, created: created.length, skipped: skipped.length });
 
     res.status(201).json({
       status: 'success',
@@ -700,15 +890,14 @@ router.post('/assessment-requests/:id/create-competencies', async (req, res) => 
 });
 
 // ── DELETE /api/external/assessment-requests/:id ────────────────────────────────
-// Delete an external request (called by ZB CAS admin frontend)
 router.delete('/assessment-requests/:id', async (req, res) => {
   try {
-    const request = await ExternalRequest.findById(req.params.id);
+    const request = await prisma.externalRequest.findUnique({ where: { id: req.params.id } });
     if (!request) {
       return res.status(404).json({ status: 'fail', message: 'Request not found.' });
     }
 
-    await ExternalRequest.findByIdAndDelete(req.params.id);
+    await prisma.externalRequest.delete({ where: { id: req.params.id } });
 
     logger.info({ event: 'external_request_deleted', requestId: req.params.id });
 

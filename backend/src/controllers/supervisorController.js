@@ -1,7 +1,4 @@
-import User from '../models/User.js';
-import Result from '../models/Result.js';
-import Assessment from '../models/Assessment.js';
-import Response from '../models/Response.js';
+import prisma from '../config/prisma.js';
 import AppError from '../utils/AppError.js';
 import asyncHandler from '../utils/asyncHandler.js';
 
@@ -12,41 +9,51 @@ export const getSupervisorDashboardStats = asyncHandler(async (req, res) => {
   try {
     const supervisorId = req.user.id;
 
-    // 1️⃣ Get team members supervised by this user
-    const teamMembers = await User.find({ supervisorId, role: 'EMPLOYEE' });
+    // 1. Get team members supervised by this user
+    const teamMembers = await prisma.user.findMany({
+      where: { supervisorId, roles: { has: 'EMPLOYEE' } },
+    });
 
-    // 2️⃣ Get all results for the team
-    const teamResults = await Result.find({ userId: { $in: teamMembers.map(m => m._id) } });
+    const teamIds = teamMembers.map(m => m.id);
 
-    // Calculate stats
+    // 2. Get all results for the team
+    const teamResults = teamIds.length
+      ? await prisma.result.findMany({ where: { userId: { in: teamIds } } })
+      : [];
+
     const completedEvaluations = teamResults.filter(r => r.status === 'FINAL').length;
     const teamAvgScore = teamResults.length > 0
       ? Math.round(teamResults.reduce((sum, r) => sum + r.finalScore, 0) / teamResults.length)
       : 0;
 
-    // 3️⃣ Get all active assessments
-    const activeAssessments = await Assessment.find({ status: 'ACTIVE' });
+    // 3. Get all active assessments
+    const activeAssessments = await prisma.assessment.findMany({ where: { status: 'ACTIVE' } });
 
-    // 4️⃣ Find pending assessments for supervisor
+    // 4. Find pending assessments for supervisor
     const pendingEvaluations = [];
 
     for (const assessment of activeAssessments) {
       if (assessment.type !== 'SupervisorOnly' && assessment.type !== 'Combined') continue;
 
-      for (const member of teamMembers) {
-        const responses = await Response.find({ assessmentId: assessment._id, userId: member._id });
+      const responses = teamIds.length
+        ? await prisma.response.findMany({
+            where: { assessmentId: assessment.id, employeeId: { in: teamIds } },
+          })
+        : [];
 
-        const supervisorResponse = responses.find(r => r.respondentType === 'supervisor');
-        const employeeResponse = responses.find(r => r.respondentType === 'employee');
+      for (const member of teamMembers) {
+        const memberResponses = responses.filter(r => r.employeeId === member.id);
+        const supervisorResponse = memberResponses.find(r => r.respondentType === 'supervisor');
+        const employeeResponse = memberResponses.find(r => r.respondentType === 'self');
 
         const selfComplete = assessment.type === 'Combined' ? !!employeeResponse?.submittedAt : true;
 
         if (!supervisorResponse?.submittedAt && selfComplete) {
           pendingEvaluations.push({
-            assessmentId: assessment._id,
+            assessmentId: assessment.id,
             assessmentName: assessment.description,
             type: assessment.type,
-            employeeId: member._id,
+            employeeId: member.id,
             employeeName: member.name,
           });
         }
@@ -62,9 +69,9 @@ export const getSupervisorDashboardStats = asyncHandler(async (req, res) => {
           teamAvgScore,
           pendingEvaluations: pendingEvaluations.length,
         },
-        teamMembers,
+        teamMembers: teamMembers.map(m => ({ _id: m.id, ...m })),
         pendingEvaluations,
-        teamResults,
+        teamResults: teamResults.map(r => ({ _id: r.id, ...r })),
       },
     });
   } catch (err) {
@@ -73,76 +80,25 @@ export const getSupervisorDashboardStats = asyncHandler(async (req, res) => {
   }
 });
 
-// ─── GET EVALUATION PROGRESS ────────────────────────────────────────────────
-// export const getEvaluationProgress = asyncHandler(async (req, res, next) => {
-//   const { assessmentId, employeeId } = req.params;
-//   const supervisorId = req.user.id;
-
-//   // Verify supervisor has access to this employee
-//   const employee = await User.findOne({
-//     _id: employeeId,
-//     supervisorId: supervisorId
-//   });
-
-//   if (!employee) {
-//     return next(new AppError('Access denied or employee not found.', 403));
-//   }
-
-//   const assessment = await Assessment.findById(assessmentId).lean();
-//   if (!assessment) {
-//     return next(new AppError('Assessment not found.', 404));
-//   }
-
-//   // Count total questions
-//   const totalQuestions = assessment.questionIds.length;
-
-//   // Count supervisor's answered questions for this employee
-//   const answeredCount = await Response.countDocuments({
-//     assessmentId,
-//     employeeId,
-//     userId: supervisorId,
-//     respondentType: 'supervisor',
-//     selectedAnswer: { $ne: null }
-//   });
-
-//   // Check if already submitted
-//   const submitted = await Response.findOne({
-//     assessmentId,
-//     employeeId,
-//     userId: supervisorId,
-//     respondentType: 'supervisor',
-//     submittedAt: { $ne: null }
-//   });
-
-//   res.status(200).json({
-//     status: 'success',
-//     data: {
-//       totalQuestions,
-//       answeredCount,
-//       percentage: totalQuestions > 0 
-//         ? Math.round((answeredCount / totalQuestions) * 100)
-//         : 0,
-//       isSubmitted: !!submitted
-//     }
-//   });
-// });
-
 // ─── GET PENDING EVALUATIONS ─────────────────────────────────────────────────
 export const getPendingEvaluations = asyncHandler(async (req, res) => {
   const supervisorId = req.user.id;
   const now = new Date();
 
   // Get supervisor's team
-  const teamMembers = await User.find({ supervisorId, status: 'ACTIVE' })
-    .select('_id name email position department').lean();
+  const teamMembers = await prisma.user.findMany({
+    where: { supervisorId, status: 'ACTIVE' },
+    select: { id: true, name: true, email: true, position: true, department: true },
+  });
 
   // Include ACTIVE and SCHEDULED supervisor/combined assessments
-  const assessments = await Assessment.find({
-    status: { $in: ['ACTIVE', 'SCHEDULED'] },
-    $or: [{ type: 'SupervisorOnly' }, { type: 'Combined' }],
-  })
-    .populate('competencyId', 'name category')
-    .lean();
+  const assessments = await prisma.assessment.findMany({
+    where: {
+      status: { in: ['ACTIVE', 'SCHEDULED'] },
+      OR: [{ type: 'SupervisorOnly' }, { type: 'Combined' }],
+    },
+    include: { competency: { select: { id: true, name: true, category: true } } },
+  });
 
   const pendingEvaluations = [];
 
@@ -151,33 +107,35 @@ export const getPendingEvaluations = asyncHandler(async (req, res) => {
       assessment.status === 'SCHEDULED' ||
       (assessment.startDate && new Date(assessment.startDate) > now);
 
-    for (const member of teamMembers) {
-      // Check supervisor response (may exist if they already submitted)
-      const supervisorResponse = await Response.findOne({
-        assessmentId: assessment._id,
-        employeeId: member._id,
+    const supervisorResponses = await prisma.response.findMany({
+      where: {
+        assessmentId: assessment.id,
+        employeeId: { in: teamMembers.map(m => m.id) },
         respondentType: 'supervisor',
-      }).lean();
+      },
+      select: { employeeId: true, submittedAt: true },
+    });
+    const submittedMap = {};
+    supervisorResponses.forEach(r => { submittedMap[r.employeeId] = !!r.submittedAt; });
 
-      const supervisorSubmitted = !!(supervisorResponse?.submittedAt);
-
-      // Combined is visible to supervisor as soon as it's scheduled/active.
+    for (const member of teamMembers) {
+      const supervisorSubmitted = !!submittedMap[member.id];
 
       const daysLeft = assessment.endDate
         ? Math.ceil((new Date(assessment.endDate) - now) / (1000 * 60 * 60 * 24))
         : null;
 
       pendingEvaluations.push({
-        assessmentId: assessment._id,
+        assessmentId: assessment.id,
         assessmentDescription: assessment.description,
         assessmentType: assessment.type,
-        competency: assessment.competencyId,
+        competency: assessment.competency,
         startDate: assessment.startDate,
         endDate: assessment.endDate,
         employee: member,
-        weight: assessment.weight,
+        weight: { self: assessment.selfWeight, supervisor: assessment.supervisorWeight },
         isScheduled,
-        supervisorSubmitted, // already evaluated — UI shows "Update" instead of "Evaluate"
+        supervisorSubmitted,
         priority: isScheduled ? 'SCHEDULED' : getPriority(assessment.endDate),
         daysRemaining: daysLeft,
       });
@@ -191,42 +149,8 @@ export const getPendingEvaluations = asyncHandler(async (req, res) => {
     return new Date(a.endDate) - new Date(b.endDate);
   });
 
-  res.status(200).json({
-    status: 'success',
-    data: { pendingEvaluations },
-  });
+  res.status(200).json({ status: 'success', data: { pendingEvaluations } });
 });
-
-// ─── UPDATE EVALUATION STATUS ────────────────────────────────────────────────
-// export const updateEvaluationStatus = asyncHandler(async (req, res, next) => {
-//   const { assessmentId, employeeId } = req.params;
-//   const { status } = req.body;
-
-//   const assessment = await Assessment.findById(assessmentId);
-//   if (!assessment) {
-//     return next(new AppError('Assessment not found.', 404));
-//   }
-
-//   // Find the evaluation
-//   const evaluation = assessment.supervisorEvaluations.find(
-//     eval => eval.employeeId.toString() === employeeId && 
-//             eval.supervisorId.toString() === req.user.id
-//   );
-
-//   if (!evaluation) {
-//     return next(new AppError('Evaluation not found or access denied.', 404));
-//   }
-
-//   evaluation.status = status;
-//   evaluation.completedAt = status === 'COMPLETED' ? new Date() : null;
-  
-//   await assessment.save();
-
-//   res.status(200).json({
-//     status: 'success',
-//     data: { evaluation }
-//   });
-// });
 
 // Helper functions
 function getPriority(endDate) {

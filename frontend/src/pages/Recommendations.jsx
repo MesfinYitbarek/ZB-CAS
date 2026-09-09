@@ -229,14 +229,13 @@ export default function Recommendations() {
       <div className="px-5 pt-5 pb-3 flex-shrink-0">
         <div className="flex items-center justify-between mb-3">
           <div>
-            <h1 className="text-2xl font-display font-bold text-brand-black tracking-tight">Recommendations</h1>
-            <p className="text-sm text-gray-400 mt-0.5">Development paths per competency, group &amp; level</p>
+            <h1 className="text-xl  font-bold text-brand-black tracking-tight">Recommendations</h1>
           </div>
           <button
             onClick={openCreate}
-            className="flex items-center gap-2 px-5 py-2.5 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors"
           >
-            <Plus className="w-4 h-4" /> Add New
+            <Plus className="w-3.5 h-3.5" /> Add New
           </button>
         </div>
 

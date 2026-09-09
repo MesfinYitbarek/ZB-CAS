@@ -39,6 +39,16 @@
   }
   body {
     @apply bg-gray-50 text-brand-black font-sans antialiased;
+    line-height: 1.35;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    line-height: 1.2;
+  }
+  p {
+    margin-block: 0.25rem;
+  }
+  button, input, select, textarea {
+    font: inherit;
   }
 }
 

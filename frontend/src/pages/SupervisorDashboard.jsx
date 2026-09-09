@@ -76,7 +76,7 @@ export default function SupervisorDashboard() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 sticky top-0 bg-[#f8f9fb] z-10 pb-2">
             <div>
               <div className="flex items-center gap-2.5 mb-1">
-                <h1 className="text-2xl font-display font-bold text-brand-black">
+                <h1 className="text-xl  font-bold text-brand-black">
                   Hi, {user?.name?.split(' ')[0]} 👋
                 </h1>
                 {refreshing && <div className="w-4 h-4 border-2 border-brand-red border-t-transparent rounded-full animate-spin" />}
@@ -104,7 +104,7 @@ export default function SupervisorDashboard() {
                 onClick={() => load(period, true)} 
                 className="w-9 h-9 bg-white border border-gray-200 rounded-xl flex items-center justify-center text-gray-400 hover:text-gray-600 shadow-sm"
               >
-                <RefreshCw className="w-4 h-4" />
+                <RefreshCw className="w-3.5 h-3.5" />
               </button>
             </div>
           </div>
@@ -147,7 +147,7 @@ export default function SupervisorDashboard() {
                   </div>
                   {link && <ChevronRight className="w-4 h-4 text-gray-300" />}
                 </div>
-                <div className="text-2xl font-bold text-gray-900 tracking-tight mb-0.5">{value}</div>
+                <div className="text-2xl  font-bold text-brand-black tracking-tight mb-0.5">{value}</div>
                 <div className="text-xs font-semibold text-gray-700">{label}</div>
                 <div className="text-xs text-gray-400 mt-0.5">{sub}</div>
               </div>

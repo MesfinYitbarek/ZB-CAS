@@ -3,11 +3,9 @@
  *  A03 – escapeRegex applied to all regex search fields
  *  A09 – All console.log replaced with structured logger
  */
-import Assessment from '../models/Assessment.js';
-import User from '../models/User.js';
+import prisma from '../config/prisma.js';
 import AppError from '../utils/AppError.js';
 import asyncHandler from '../utils/asyncHandler.js';
-import { escapeRegex } from '../middleware/security.js';
 import logger from '../utils/logger.js';
 import {
   sendAssessmentNotification,
@@ -19,90 +17,106 @@ import {
   notifySupervisorReminder,
   notifyDeadlineReminder,
 } from '../services/notificationService.js';
-import mongoose from 'mongoose';
 import { scheduleAssessmentTimers, clearAssessmentTimers } from '../services/schedulerService.js';
+import { logActivity } from '../services/activityService.js';
 
 // ─── AUTO-ACTIVATE HELPER ────────────────────────────────────────────────────
 // Exported so schedulerService can call it on a cron schedule
 export const autoActivateScheduledAssessments = async () => {
   const now = new Date();
-  const result = await Assessment.updateMany(
-    { status: 'SCHEDULED', startDate: { $lte: now } },
-    { $set: { status: 'ACTIVE' } }
-  );
-  return result.modifiedCount || 0;
+  const result = await prisma.assessment.updateMany({
+    where: { status: 'SCHEDULED', startDate: { lte: now } },
+    data: { status: 'ACTIVE' },
+  });
+  return result.count || 0;
 };
 
 // ─── AUTO-COMPLETE HELPER ────────────────────────────────────────────────────
 // Exported so schedulerService can call it on a cron schedule
 export const autoCompleteExpiredAssessments = async () => {
   const now = new Date();
-  const result = await Assessment.updateMany(
-    { status: 'ACTIVE', endDate: { $lte: now } },
-    { $set: { status: 'COMPLETED' } }
-  );
-  return result.modifiedCount || 0;
+  const result = await prisma.assessment.updateMany({
+    where: { status: 'ACTIVE', endDate: { lte: now } },
+    data: { status: 'COMPLETED' },
+  });
+  return result.count || 0;
 };
 
+// ─── SELECT include (competency + creator + target audience) ─────────────────
+const assessmentInclude = {
+  competency: { select: { id: true, name: true, category: true, targetGroups: true } },
+  creator: { select: { id: true, name: true, email: true } },
+  audienceDepartments: { select: { department: true } },
+  audienceEmployees: { select: { employeeId: true, employee: { select: { id: true, name: true, email: true, department: true, position: true } } } },
+  assessmentQuestions: { select: { order: true, question: true } },
+  supervisorEvaluations: { select: { id: true, employeeId: true, supervisorId: true, status: true, completedAt: true } },
+};
 
-// ─── DUPLICATE / CLONE ────────────────────────────────────────────────────────
-// Creates a DRAFT copy of an existing assessment with a new date range.
-export const duplicateAssessment = asyncHandler(async (req, res, next) => {
-  const { startDate, endDate } = req.body;
-
-  if (!startDate || !endDate)
-    return next(new AppError('New startDate and endDate are required.', 400));
-  if (new Date(endDate) <= new Date(startDate))
-    return next(new AppError('End date must be after start date.', 400));
-
-  const source = await Assessment.findById(req.params.id).lean();
-  if (!source) return next(new AppError('Assessment not found.', 404));
-
-  const clone = await Assessment.create({
-    competencyId:       source.competencyId,
-    targetGroup:        source.targetGroup,
-    purpose:            source.purpose,
-    description:        source.description ? `${source.description} (copy)` : '',
-    targetAudience:     source.targetAudience,
-    target:             source.target,
-    questionIds:        source.questionIds,
-    timeLimit:          source.timeLimit,
-    type:               source.type,
-    weight:             source.weight,
-    reminderDaysBefore: source.reminderDaysBefore,
-    reminderSent:       false,
-    startDate:          new Date(startDate),
-    endDate:            new Date(endDate),
-    status:             'DRAFT',
-    createdBy:          req.user.id,
-  });
-
-  const populated = await Assessment.findById(clone._id)
-    .populate('competencyId', 'name category')
-    .populate('createdBy', 'name email')
-    .lean();
-
-  logger.info({ event: 'assessment_duplicated', sourceId: source._id, cloneId: clone._id, by: req.user.id });
-
-  res.status(201).json({ status: 'success', data: { assessment: populated } });
+const toLegacy = (a) => ({
+  _id:             a.id,
+  id:              a.id,
+  competencyId:    a.competency || a.competencyId,
+  targetGroup:     a.targetGroup,
+  purpose:         a.purpose,
+  description:     a.description,
+  reminderDaysBefore: a.reminderDaysBefore,
+  reminderSent:    a.reminderSent,
+  targetAudience: {
+    type:         a.audienceType,
+    departments:  a.audienceDepartments.map(d => d.department),
+    employeeIds:  a.audienceEmployees.map(e => e.employee),
+  },
+  target: {
+    department: a.legacyDepartment,
+    position:   a.legacyPosition,
+  },
+  questionIds: a.assessmentQuestions
+    ? a.assessmentQuestions.map(q => ({ ...q.question, _id: q.question.id }))
+    : [],
+  startDate:     a.startDate,
+  endDate:       a.endDate,
+  timeLimit:     a.timeLimit,
+  type:          a.type,
+  weight: {
+    selfAssessment: a.selfWeight,
+    supervisor:     a.supervisorWeight,
+  },
+  status:              a.status,
+  createdBy:           a.creator || a.createdById,
+  createdAt:           a.createdAt,
+  updatedAt:           a.updatedAt,
+  supervisorEvaluations: a.supervisorEvaluations.map(e => ({
+    _id:          e.id,
+    employeeId:   e.employeeId,
+    supervisorId: e.supervisorId,
+    status:       e.status,
+    completedAt:  e.completedAt,
+  })),
 });
 
 // ─── RESOLVE EMPLOYEES HELPER ────────────────────────────────────────────────
 const resolveEmployees = async (assessment) => {
   const base = { status: 'ACTIVE' };
-  const ta = assessment.targetAudience || {};
-  const taType = ta.type;
+  const taType = assessment.audienceType;
 
-  if (taType === 'ALL_DEPARTMENTS') return User.find(base).lean();
-  if (taType === 'DEPARTMENT_ALL' && ta.departments?.length)
-    return User.find({ ...base, department: { $in: ta.departments } }).lean();
-  if (taType === 'SPECIFIC_EMPLOYEES' && ta.employeeIds?.length)
-    return User.find({ ...base, _id: { $in: ta.employeeIds } }).lean();
+  if (taType === 'ALL_DEPARTMENTS') {
+    return prisma.user.findMany({ where: base });
+  }
+  if (taType === 'DEPARTMENT_ALL' && assessment.audienceDepartments?.length) {
+    return prisma.user.findMany({
+      where: { ...base, department: { in: assessment.audienceDepartments.map(d => d.department) } },
+    });
+  }
+  if (taType === 'SPECIFIC_EMPLOYEES' && assessment.audienceEmployees?.length) {
+    return prisma.user.findMany({
+      where: { ...base, id: { in: assessment.audienceEmployees.map(e => e.employeeId) } },
+    });
+  }
 
   const filter = { ...base };
-  if (assessment.target?.department) filter.department = assessment.target.department;
-  if (assessment.target?.position)   filter.position   = assessment.target.position;
-  return User.find(filter).lean();
+  if (assessment.legacyDepartment) filter.department = assessment.legacyDepartment;
+  if (assessment.legacyPosition)   filter.position   = assessment.legacyPosition;
+  return prisma.user.findMany({ where: filter });
 };
 
 // ─── VALIDATE TARGET AUDIENCE ────────────────────────────────────────────────
@@ -135,21 +149,50 @@ export const createAssessment = asyncHandler(async (req, res, next) => {
   if (!validateTargetAudience(targetAudience, next)) return;
 
   const legacyTarget = deriveLegacyTarget(targetAudience);
+  const ta = targetAudience || { type: 'ALL_DEPARTMENTS', departments: [], employeeIds: [] };
 
-  const assessment = await Assessment.create({
-    competencyId, targetGroup, purpose, description,
-    targetAudience: targetAudience || { type: 'ALL_DEPARTMENTS', departments: [], employeeIds: [] },
-    reminderDaysBefore: reminderDaysBefore ? Number(reminderDaysBefore) : null,
-    target: legacyTarget, questionIds, startDate, endDate,
-    timeLimit: timeLimit || null, type,
-    weight: type === 'Combined'
-      ? { selfAssessment: weight?.selfAssessment || 20, supervisor: weight?.supervisor || 80 }
-      : { selfAssessment: 0, supervisor: 0 },
-    status: 'DRAFT',
-    createdBy: req.user.id,
+  const assessment = await prisma.assessment.create({
+    data: {
+      competencyId,
+      targetGroup,
+      purpose,
+      description,
+      legacyDepartment: legacyTarget.department,
+      legacyPosition:   legacyTarget.position,
+      reminderDaysBefore: reminderDaysBefore ? Number(reminderDaysBefore) : null,
+      audienceType:     ta.type || 'ALL_DEPARTMENTS',
+      targetAudience:  { create: { type: ta.type || 'ALL_DEPARTMENTS' } },
+      audienceDepartments: { create: (ta.departments || []).map(d => ({ department: d })) },
+      audienceEmployees:   { create: (ta.employeeIds || []).map(id => ({ employeeId: id })) },
+      assessmentQuestions: {
+        create: (questionIds || []).map((qid, idx) => ({ questionId: qid, order: idx })),
+      },
+      startDate: new Date(startDate),
+      endDate:   new Date(endDate),
+      timeLimit: timeLimit || null,
+      type,
+      selfWeight: type === 'Combined'
+        ? (weight?.selfAssessment || 20)
+        : 0,
+      supervisorWeight: type === 'Combined'
+        ? (weight?.supervisor || 80)
+        : 0,
+      status: 'DRAFT',
+      createdBy: req.user.id,
+    },
+    include: assessmentInclude,
   });
 
-  res.status(201).json({ status: 'success', data: { assessment } });
+  await logActivity({
+    req,
+    action: 'created',
+    entity: 'Assessment',
+    entityId: assessment.id,
+    description: `Assessment "${assessment.description || assessment.purpose}" created`,
+    metadata: { type: assessment.type, targetGroup: assessment.targetGroup, status: assessment.status },
+  });
+
+  res.status(201).json({ status: 'success', data: { assessment: toLegacy(assessment) } });
 });
 
 // ─── LIST ─────────────────────────────────────────────────────────────────────
@@ -159,33 +202,41 @@ export const getAssessments = asyncHandler(async (req, res) => {
 
   const { status, competencyId, page = 1, limit = 6 } = req.query;
 
-  const filter = {};
-  if (status)       filter.status       = status;
-  if (competencyId) filter.competencyId = competencyId;
+  const where = {};
+  if (status)       where.status       = status;
+  if (competencyId) where.competencyId = competencyId;
 
   if (req.user.role !== 'HR_ADMIN') {
-    const me = await User.findById(req.user.id).lean();
-    filter.$or = [
-      { 'targetAudience.type': 'ALL_DEPARTMENTS' },
-      { 'targetAudience.type': 'DEPARTMENT_ALL', 'targetAudience.departments': me.department },
-      { 'targetAudience.type': 'SPECIFIC_EMPLOYEES', 'targetAudience.employeeIds': me._id },
-      { 'target.department': me.department },
-      { 'target.department': null, 'target.position': null },
+    const me = await prisma.user.findUnique({ where: { id: req.user.id } });
+    where.OR = [
+      { audienceType: 'ALL_DEPARTMENTS' },
+      { audienceDepartments: { some: { department: me.department } } },
+      { audienceEmployees: { some: { employeeId: me.id } } },
+      { legacyDepartment: me.department, legacyPosition: { not: null } },
+      { legacyDepartment: null, legacyPosition: null },
     ];
   }
 
   const skip = (parseInt(page, 10) - 1) * parseInt(limit, 10);
 
   const [assessments, total] = await Promise.all([
-    Assessment.find(filter)
-      .populate('competencyId', 'name category')
-      .populate('createdBy', 'name email')
-      .skip(skip).limit(parseInt(limit, 10))
-      .sort({ startDate: -1 }).lean(),
-    Assessment.countDocuments(filter),
+    prisma.assessment.findMany({
+      where,
+      include: assessmentInclude,
+      skip,
+      take: parseInt(limit, 10),
+      orderBy: { startDate: 'desc' },
+    }),
+    prisma.assessment.count({ where }),
   ]);
 
-  res.status(200).json({ status: 'success', data: { assessments, pagination: { total, page: parseInt(page, 10), limit: parseInt(limit, 10) } } });
+  res.status(200).json({
+    status: 'success',
+    data: {
+      assessments: assessments.map(toLegacy),
+      pagination: { total, page: parseInt(page, 10), limit: parseInt(limit, 10) },
+    },
+  });
 });
 
 // ─── GET ONE ─────────────────────────────────────────────────────────────────
@@ -193,27 +244,29 @@ export const getAssessment = asyncHandler(async (req, res, next) => {
   await autoActivateScheduledAssessments();
   await autoCompleteExpiredAssessments();
 
-  const raw = await Assessment.findById(req.params.id);
-  if (!raw) return next(new AppError('Assessment not found.', 404));
+  let assessment = await prisma.assessment.findUnique({
+    where: { id: req.params.id },
+    include: assessmentInclude,
+  });
+  if (!assessment) return next(new AppError('Assessment not found.', 404));
 
-  if (raw.status === 'SCHEDULED' && new Date(raw.startDate) <= new Date()) {
-    raw.status = 'ACTIVE';
-    await raw.save({ validateBeforeSave: false });
+  if (assessment.status === 'SCHEDULED' && new Date(assessment.startDate) <= new Date()) {
+    assessment = await prisma.assessment.update({
+      where: { id: assessment.id },
+      data: { status: 'ACTIVE' },
+      include: assessmentInclude,
+    });
   }
 
-  const assessment = await Assessment.findById(req.params.id)
-    .populate('competencyId', 'name category targetGroups')
-    .populate('createdBy', 'name email')
-    .populate('questionIds', '-correctAnswer')
-    .populate('targetAudience.employeeIds', 'name email department position')
-    .lean();
-
-  res.status(200).json({ status: 'success', data: { assessment } });
+  res.status(200).json({ status: 'success', data: { assessment: toLegacy(assessment) } });
 });
 
 // ─── UPDATE (DRAFT only) ─────────────────────────────────────────────────────
 export const updateAssessment = asyncHandler(async (req, res, next) => {
-  const assessment = await Assessment.findById(req.params.id);
+  const assessment = await prisma.assessment.findUnique({
+    where: { id: req.params.id },
+    include: assessmentInclude,
+  });
   if (!assessment) return next(new AppError('Assessment not found.', 404));
 
   if (assessment.status !== 'DRAFT') {
@@ -222,23 +275,93 @@ export const updateAssessment = asyncHandler(async (req, res, next) => {
 
   if (req.body.targetAudience && !validateTargetAudience(req.body.targetAudience, next)) return;
 
-  const allowedFields = ['description', 'target', 'questionIds', 'startDate', 'endDate', 'timeLimit', 'type', 'weight', 'targetGroup', 'purpose', 'targetAudience', 'reminderDaysBefore'];
-  allowedFields.forEach((f) => { if (req.body[f] !== undefined) assessment[f] = req.body[f]; });
+  const data = {};
+  ['description', 'startDate', 'endDate', 'timeLimit', 'targetGroup', 'purpose'].forEach((f) => {
+    if (req.body[f] !== undefined) {
+      data[f] = req.body[f] instanceof Date ? req.body[f] : req.body[f];
+    }
+  });
 
-  if (req.body.targetAudience) assessment.target = deriveLegacyTarget(req.body.targetAudience);
-  if (req.body.reminderDaysBefore !== undefined) {
-    assessment.reminderDaysBefore = req.body.reminderDaysBefore ? Number(req.body.reminderDaysBefore) : null;
-    assessment.reminderSent = false;
+  if (req.body.startDate !== undefined) data.startDate = new Date(req.body.startDate);
+  if (req.body.endDate !== undefined)   data.endDate   = new Date(req.body.endDate);
+
+  if (req.body.type !== undefined) {
+    data.type = req.body.type;
+    const weight = req.body.weight || {};
+    if (req.body.type === 'Combined') {
+      data.selfWeight = weight.selfAssessment || 20;
+      data.supervisorWeight = weight.supervisor || 80;
+    } else {
+      data.selfWeight = weight.selfAssessment || 0;
+      data.supervisorWeight = weight.supervisor || 0;
+    }
   }
 
-  await assessment.save();
-  res.status(200).json({ status: 'success', data: { assessment } });
+  if (req.body.targetAudience) {
+    const legacyTarget = deriveLegacyTarget(req.body.targetAudience);
+    data.legacyDepartment = legacyTarget.department;
+    data.legacyPosition   = legacyTarget.position;
+  }
+
+  if (req.body.reminderDaysBefore !== undefined) {
+    data.reminderDaysBefore = req.body.reminderDaysBefore ? Number(req.body.reminderDaysBefore) : null;
+    data.reminderSent = false;
+  }
+
+  const tx = [];
+  if (Object.keys(data).length > 0) {
+    tx.push(prisma.assessment.update({ where: { id: assessment.id }, data }));
+  }
+
+  // Replace questionIds
+  if (req.body.questionIds !== undefined) {
+    tx.push(prisma.assessmentQuestion.deleteMany({ where: { assessmentId: assessment.id } }));
+    tx.push(prisma.assessmentQuestion.createMany({
+      data: (req.body.questionIds || []).map((qid, idx) => ({ assessmentId: assessment.id, questionId: qid, order: idx })),
+    }));
+  }
+
+  // Replace target audience (depts + employees)
+  if (req.body.targetAudience) {
+    const ta = req.body.targetAudience;
+    tx.push(prisma.assessmentTargetAudienceDepartment.deleteMany({ where: { assessmentId: assessment.id } }));
+    tx.push(prisma.assessmentTargetAudienceEmployee.deleteMany({ where: { assessmentId: assessment.id } }));
+    const createDept = { data: (ta.departments || []).map(d => ({ assessmentId: assessment.id, department: d })) };
+    tx.push(prisma.assessmentTargetAudienceDepartment.createMany(createDept));
+    const createEmp = { data: (ta.employeeIds || []).map(id => ({ assessmentId: assessment.id, employeeId: id })) };
+    tx.push(prisma.assessmentTargetAudienceEmployee.createMany(createEmp));
+    tx.push(prisma.assessTargetAudience.upsert({
+      where: { assessmentId: assessment.id },
+      create: { assessmentId: assessment.id, type: ta.type || 'ALL_DEPARTMENTS' },
+      update: { type: ta.type || 'ALL_DEPARTMENTS' },
+    }));
+  }
+
+  if (tx.length > 0) await prisma.$transaction(tx);
+
+  const updated = await prisma.assessment.findUnique({
+    where: { id: assessment.id },
+    include: assessmentInclude,
+  });
+
+  await logActivity({
+    req,
+    action: 'updated',
+    entity: 'Assessment',
+    entityId: updated.id,
+    description: `Assessment "${updated.description || updated.purpose}" updated`,
+  });
+
+  res.status(200).json({ status: 'success', data: { assessment: toLegacy(updated) } });
 });
 
 // ─── TRANSITION STATUS ────────────────────────────────────────────────────────
 export const updateStatus = asyncHandler(async (req, res, next) => {
   const { status } = req.body;
-  const assessment = await Assessment.findById(req.params.id);
+  const assessment = await prisma.assessment.findUnique({
+    where: { id: req.params.id },
+    include: assessmentInclude,
+  });
   if (!assessment) return next(new AppError('Assessment not found.', 404));
 
   const transitions = { DRAFT: ['SCHEDULED'], ACTIVE: ['COMPLETED'], COMPLETED: ['ARCHIVED'] };
@@ -247,45 +370,63 @@ export const updateStatus = asyncHandler(async (req, res, next) => {
     return next(new AppError(`Cannot transition from ${assessment.status} to ${status}.`, 400));
   }
 
-  assessment.status = status;
+  let newStatus = status;
 
   if (status === 'SCHEDULED' && (assessment.type === 'Combined' || assessment.type === 'SupervisorOnly')) {
     const employees = await resolveEmployees(assessment);
-    assessment.supervisorEvaluations = employees
+    // Rebuild supervisor evaluations
+    const evals = employees
       .filter(emp => emp.supervisorId)
-      .map(emp => ({ employeeId: emp._id, supervisorId: emp.supervisorId, status: 'PENDING' }));
+      .map(emp => ({ assessmentId: assessment.id, employeeId: emp.id, supervisorId: emp.supervisorId }));
+    await prisma.supervisorEvaluation.deleteMany({ where: { assessmentId: assessment.id } });
+    if (evals.length > 0) {
+      await prisma.supervisorEvaluation.createMany({ data: evals });
+    }
   }
 
-  await assessment.save({ validateBeforeSave: false });
+  const saved = await prisma.assessment.update({
+    where: { id: assessment.id },
+    data: { status: newStatus },
+    include: assessmentInclude,
+  });
 
   // Arm / cancel real-time timers
-  if (status === 'SCHEDULED') {
-    scheduleAssessmentTimers(assessment);
+  if (newStatus === 'SCHEDULED') {
+    scheduleAssessmentTimers(saved);
   } else {
-    clearAssessmentTimers(assessment._id);
+    clearAssessmentTimers(assessment.id);
   }
 
-  if (status === 'SCHEDULED') {
-    const employees = await resolveEmployees(assessment);
+  if (newStatus === 'SCHEDULED') {
+    const employees = await resolveEmployees(saved);
     employees.forEach((emp) => {
-      sendAssessmentNotification(emp, assessment);
-      notifyAssessmentAssigned(emp._id, assessment.description, assessment._id);
+      sendAssessmentNotification(emp, saved);
+      notifyAssessmentAssigned(emp.id, saved.description, saved.id);
     });
 
-    if (assessment.type === 'Combined' || assessment.type === 'SupervisorOnly') {
+    if (saved.type === 'Combined' || saved.type === 'SupervisorOnly') {
       const supervisorIds = [...new Set(employees.map((e) => e.supervisorId).filter(Boolean))];
-      const supervisors = await User.find({ _id: { $in: supervisorIds } }).lean();
+      const supervisors = await prisma.user.findMany({ where: { id: { in: supervisorIds } } });
       supervisors.forEach((sup) => {
-        const supEmployees = employees.filter((e) => e.supervisorId?.toString() === sup._id.toString());
+        const supEmployees = employees.filter((e) => e.supervisorId === sup.id);
         supEmployees.forEach((emp) => {
-          sendSupervisorReminder(sup, emp.name, assessment);
-          notifySupervisorReminder(sup._id, emp.name, assessment.description, assessment._id);
+          sendSupervisorReminder(sup, emp.name, saved);
+          notifySupervisorReminder(sup.id, emp.name, saved.description, saved.id);
         });
       });
     }
   }
 
-  res.status(200).json({ status: 'success', data: { assessment } });
+  await logActivity({
+    req,
+    action: 'status_changed',
+    entity: 'Assessment',
+    entityId: saved.id,
+    description: `Assessment "${saved.description || saved.purpose}" ${assessment.status} → ${newStatus}`,
+    metadata: { from: assessment.status, to: newStatus },
+  });
+
+  res.status(200).json({ status: 'success', data: { assessment: toLegacy(saved) } });
 });
 
 // ─── GET ACTIVE ASSESSMENTS FOR CURRENT USER ─────────────────────────────────
@@ -293,68 +434,143 @@ export const getActiveAssessments = asyncHandler(async (req, res) => {
   await autoActivateScheduledAssessments();
   await autoCompleteExpiredAssessments();
 
-  const me = await User.findById(req.user.id).lean();
+  const me = await prisma.user.findUnique({ where: { id: req.user.id } });
   if (!me) return res.status(404).json({ status: 'fail', message: 'User not found' });
 
-  const userId = typeof me._id === 'string' ? new mongoose.Types.ObjectId(me._id) : me._id;
+  logger.debug({ event: 'active_assessments_query', userId: me.id, department: me.department });
 
-  // FIX A09: replaced console.log with logger.debug
-  logger.debug({ event: 'active_assessments_query', userId: userId.toString(), department: me.department });
-
-  const filter = {
-    status: { $in: ['SCHEDULED', 'ACTIVE'] },
-    $or: [
-      { 'targetAudience.type': 'ALL_DEPARTMENTS' },
-      { 'targetAudience.type': 'DEPARTMENT_ALL', 'targetAudience.departments': me.department },
-      { 'targetAudience.type': 'SPECIFIC_EMPLOYEES', 'targetAudience.employeeIds': userId },
+  const where = {
+    status: { in: ['SCHEDULED', 'ACTIVE'] },
+    OR: [
+      { audienceType: 'ALL_DEPARTMENTS' },
+      { audienceDepartments: { some: { department: me.department } } },
+      { audienceEmployees: { some: { employeeId: me.id } } },
     ],
   };
 
-  const assessments = await Assessment.find(filter)
-    .populate('competencyId', 'name category')
-    .populate('questionIds', '-correctAnswer')
-    .sort({ startDate: 1 }).lean();
+  const assessments = await prisma.assessment.findMany({
+    where,
+    include: assessmentInclude,
+    orderBy: { startDate: 'asc' },
+  });
 
-  logger.debug({ event: 'active_assessments_found', count: assessments.length, userId: userId.toString() });
+  logger.debug({ event: 'active_assessments_found', count: assessments.length, userId: me.id });
 
-  res.status(200).json({ status: 'success', results: assessments.length, data: { assessments } });
+  res.status(200).json({ status: 'success', results: assessments.length, data: { assessments: assessments.map(toLegacy) } });
+});
+
+// ─── DUPLICATE / CLONE ────────────────────────────────────────────────────────
+export const duplicateAssessment = asyncHandler(async (req, res, next) => {
+  const { startDate, endDate } = req.body;
+
+  if (!startDate || !endDate)
+    return next(new AppError('New startDate and endDate are required.', 400));
+  if (new Date(endDate) <= new Date(startDate))
+    return next(new AppError('End date must be after start date.', 400));
+
+  const source = await prisma.assessment.findUnique({
+    where: { id: req.params.id },
+    include: assessmentInclude,
+  });
+  if (!source) return next(new AppError('Assessment not found.', 404));
+
+  const clone = await prisma.assessment.create({
+    data: {
+      competencyId:       source.competencyId,
+      targetGroup:        source.targetGroup,
+      purpose:            source.purpose,
+      description:        source.description ? `${source.description} (copy)` : '',
+      legacyDepartment:   source.legacyDepartment,
+      legacyPosition:     source.legacyPosition,
+      reminderDaysBefore: source.reminderDaysBefore,
+      reminderSent:       false,
+      audienceType:        source.audienceType,
+      targetAudience:      { create: { type: source.audienceType } },
+      audienceDepartments: { create: source.audienceDepartments.map(d => ({ department: d.department })) },
+      audienceEmployees:   { create: source.audienceEmployees.map(e => ({ employeeId: e.employeeId })) },
+      assessmentQuestions: {
+        create: source.assessmentQuestions.map(q => ({ questionId: q.questionId, order: q.order })),
+      },
+      timeLimit:       source.timeLimit,
+      type:            source.type,
+      selfWeight:      source.selfWeight,
+      supervisorWeight: source.supervisorWeight,
+      startDate:       new Date(startDate),
+      endDate:         new Date(endDate),
+      status:          'DRAFT',
+      createdBy:       req.user.id,
+    },
+    include: assessmentInclude,
+  });
+
+  logger.info({ event: 'assessment_duplicated', sourceId: source.id, cloneId: clone.id, by: req.user.id });
+
+  await logActivity({
+    req,
+    action: 'duplicated',
+    entity: 'Assessment',
+    entityId: clone.id,
+    description: `Assessment "${clone.description || clone.purpose}" duplicated`,
+    metadata: { sourceId: source.id },
+  });
+
+  res.status(201).json({ status: 'success', data: { assessment: toLegacy(clone) } });
 });
 
 // ─── DELETE ───────────────────────────────────────────────────────────────────
 export const deleteAssessments = asyncHandler(async (req, res, next) => {
-  const assessment = await Assessment.findByIdAndDelete(req.params.id);
+  const assessment = await prisma.assessment.findUnique({ where: { id: req.params.id } });
   if (!assessment) return next(new AppError('Assessment not found.', 404));
   clearAssessmentTimers(req.params.id);
+  await prisma.assessment.delete({ where: { id: req.params.id } });
+
+  await logActivity({
+    req,
+    action: 'deleted',
+    entity: 'Assessment',
+    entityId: req.params.id,
+    description: `Assessment "${assessment.description || assessment.purpose}" deleted`,
+    metadata: { status: assessment.status, type: assessment.type },
+  });
+
   res.status(200).json({ status: 'success', message: 'Assessment deleted.' });
 });
 
 // ─── SEARCH EMPLOYEES ─────────────────────────────────────────────────────────
-// FIX A03: escapeRegex applied to name and position search inputs
 export const searchEmployees = asyncHandler(async (req, res) => {
   const { name, department, position } = req.query;
-  const filter = { status: 'ACTIVE' };
-  if (name)       filter.name     = { $regex: escapeRegex(name), $options: 'i' };
-  if (department) filter.department = department;
-  if (position)   filter.position = { $regex: escapeRegex(position), $options: 'i' };
+  const where = { status: 'ACTIVE' };
+  if (name)       where.name       = { contains: name, mode: 'insensitive' };
+  if (department) where.department = department;
+  if (position)   where.position   = { contains: position, mode: 'insensitive' };
 
-  const employees = await User.find(filter)
-    .select('name email department position employeeId')
-    .limit(50).lean();
+  const employees = await prisma.user.findMany({
+    where,
+    select: { id: true, name: true, email: true, department: true, position: true, employeeId: true },
+    take: 50,
+  });
 
-  res.status(200).json({ status: 'success', data: { employees } });
+  res.status(200).json({ status: 'success', data: { employees: employees.map(e => ({ ...e, _id: e.id })) } });
 });
 
 // ─── GET ALL DEPARTMENTS ──────────────────────────────────────────────────────
 export const getDepartments = asyncHandler(async (req, res) => {
-  const departments = await User.distinct('department', { status: 'ACTIVE', department: { $ne: null, $ne: '' } });
-  res.status(200).json({ status: 'success', data: { departments: departments.filter(Boolean).sort() } });
+  const result = await prisma.user.findMany({
+    where: { status: 'ACTIVE', department: { not: null } },
+    select: { department: true },
+    distinct: ['department'],
+  });
+  const departments = result.map(r => r.department).filter(Boolean).sort();
+  res.status(200).json({ status: 'success', data: { departments } });
 });
 
-// ─── SEND REMINDER EMAILS ─────────────────────────────────────────────────────
 // ─── PROCESS REMINDERS (called by scheduler AND HTTP endpoint) ──────────────
 export const processPendingReminders = async () => {
   const now = new Date();
-  const assessments = await Assessment.find({ status: 'ACTIVE', reminderDaysBefore: { $ne: null }, reminderSent: false }).lean();
+  const assessments = await prisma.assessment.findMany({
+    where: { status: 'ACTIVE', reminderDaysBefore: { not: null }, reminderSent: false },
+    include: assessmentInclude,
+  });
   let processedCount = 0;
 
   for (const assessment of assessments) {
@@ -364,10 +580,10 @@ export const processPendingReminders = async () => {
       const employees = await resolveEmployees(assessment);
       employees.forEach(emp => {
         sendAssessmentReminderEmail(emp, assessment);
-        const daysLeft = Math.max(1, Math.ceil((new Date(assessment.endDate) - new Date()) / 86400000));
-        notifyDeadlineReminder(emp._id, assessment.description, daysLeft, assessment._id);
+        const dl = Math.max(1, Math.ceil((new Date(assessment.endDate) - new Date()) / 86400000));
+        notifyDeadlineReminder(emp.id, assessment.description, dl, assessment.id);
       });
-      await Assessment.findByIdAndUpdate(assessment._id, { reminderSent: true });
+      await prisma.assessment.update({ where: { id: assessment.id }, data: { reminderSent: true } });
       processedCount++;
     }
   }
@@ -380,32 +596,32 @@ export const sendReminderEmails = asyncHandler(async (req, res) => {
 });
 
 // ─── SEND SUPERVISOR EVAL REMINDER (HR_ADMIN) ────────────────────────────────
-// POST /api/assessments/:id/supervisor-reminder
-// Body: { supervisorId }  — sends email + in-app notification to that supervisor
 export const sendSupervisorEvalReminder = asyncHandler(async (req, res, next) => {
-  const assessment = await Assessment.findById(req.params.id)
-    .populate('competencyId', 'name').lean();
+  const assessment = await prisma.assessment.findUnique({
+    where: { id: req.params.id },
+    include: { competency: { select: { id: true, name: true } }, supervisorEvaluations: true },
+  });
   if (!assessment) return next(new AppError('Assessment not found.', 404));
 
   const { supervisorId } = req.body;
   if (!supervisorId) return next(new AppError('supervisorId is required.', 400));
 
-  const supervisor = await User.findById(supervisorId).lean();
+  const supervisor = await prisma.user.findUnique({ where: { id: supervisorId } });
   if (!supervisor) return next(new AppError('Supervisor not found.', 404));
 
   // Which employees is this supervisor evaluating in this assessment?
   const evalEntries = (assessment.supervisorEvaluations || []).filter(
-    e => e.supervisorId?.toString() === supervisorId.toString() && e.status === 'PENDING'
+    e => e.supervisorId === supervisorId && e.status === 'PENDING'
   );
   if (!evalEntries.length) {
     return res.status(200).json({ status: 'success', message: 'No pending evaluations for this supervisor.' });
   }
 
   const employeeIds = evalEntries.map(e => e.employeeId);
-  const employees = await User.find({ _id: { $in: employeeIds } }).select('name').lean();
+  const employees = await prisma.user.findMany({ where: { id: { in: employeeIds } }, select: { name: true } });
   const empNames = employees.map(e => e.name).join(', ');
 
-  const assessmentDescription = assessment.description || assessment.competencyId?.name || 'Assessment';
+  const assessmentDescription = assessment.description || assessment.competency?.name || 'Assessment';
 
   // Email
   sendSupervisorReminder(supervisor, empNames, {
@@ -418,10 +634,10 @@ export const sendSupervisorEvalReminder = asyncHandler(async (req, res, next) =>
     supervisorId,
     empNames,
     assessmentDescription,
-    assessment._id
+    assessment.id
   );
 
-  logger.info({ event: 'supervisor_eval_reminder_sent', assessmentId: assessment._id, supervisorId, sentBy: req.user.id });
+  logger.info({ event: 'supervisor_eval_reminder_sent', assessmentId: assessment.id, supervisorId, sentBy: req.user.id });
 
   res.status(200).json({
     status: 'success',

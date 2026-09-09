@@ -234,8 +234,7 @@ export default function UserManual() {
               {(() => { const Icon = activeVideo.icon; return <Icon className="w-5 h-5" style={{ color: guide.color }} />; })()}
             </div>
             <div>
-              <h1 className="text-lg font-bold text-gray-900 leading-tight">{activeVideo.title}</h1>
-              <p className="text-sm text-gray-500 mt-0.5">{activeVideo.description}</p>
+              <h1 className="text-lg  font-bold text-brand-black leading-tight">{activeVideo.title}</h1>
             </div>
           </div>
 

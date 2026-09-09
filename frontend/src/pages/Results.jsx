@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+﻿import { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import {
@@ -11,9 +12,9 @@ import {
 } from 'lucide-react';
 import api from '../utils/api';
 
-// ─── helpers ─────────────────────────────────────────────────────────────────
+// â”€â”€â”€ helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const formatAnswer = (answer, questionType) => {
-  if (answer === null || answer === undefined) return '—';
+  if (answer === null || answer === undefined) return 'â€”';
   const type = (questionType || '').toLowerCase();
   if (typeof answer === 'string' || typeof answer === 'number') {
     if (type === 'rating') return `${answer} / 5`;
@@ -21,14 +22,14 @@ const formatAnswer = (answer, questionType) => {
     return String(answer);
   }
   if (Array.isArray(answer)) {
-    if (type === 'ordering') return answer.map((item, idx) => `${idx + 1}. ${item}`).join(' → ');
-    if (type === 'matching') return answer.map(p => `${p.left} → ${p.right}`).join('; ');
+    if (type === 'ordering') return answer.map((item, idx) => `${idx + 1}. ${item}`).join(' â†’ ');
+    if (type === 'matching') return answer.map(p => `${p.left} â†’ ${p.right}`).join('; ');
     return answer.join(', ');
   }
   if (typeof answer === 'object') {
     const entries = Object.entries(answer);
-    if (entries.length === 0) return '—';
-    return entries.map(([k, v]) => `${k} → ${v}`).join('; ');
+    if (entries.length === 0) return 'â€”';
+    return entries.map(([k, v]) => `${k} â†’ ${v}`).join('; ');
   }
   return String(answer);
 };
@@ -50,7 +51,7 @@ const PURPOSE_COLORS = [
   'bg-violet-50 text-violet-700', 'bg-fuchsia-50 text-fuchsia-700',
 ];
 
-// ─── small components ─────────────────────────────────────────────────────────
+// â”€â”€â”€ small components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const LevelBadge = ({ level }) => (
   <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border ${LEVEL_COLORS[level] || 'bg-gray-100 text-gray-600'}`}>
     {level}
@@ -74,354 +75,7 @@ const ScoreBar = ({ score, type }) => {
   );
 };
 
-// ─── Question detail components (admin only) ──────────────────────────────────
-const QuestionDetailRow = ({ detail, isExpanded, onToggle }) => {
-  const scoreColor = detail.isCorrect ? 'text-green-700' : detail.isPartial ? 'text-yellow-700' : detail.isUnanswered ? 'text-gray-400' : 'text-red-700';
-  return (
-    <div className="border border-gray-200 rounded-lg overflow-hidden">
-      <button onClick={onToggle} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors text-left">
-        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
-          <span className="text-xs font-bold text-gray-600">{detail.questionNumber || '?'}</span>
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-gray-900 truncate">{detail.questionText}</p>
-          <div className="flex items-center gap-2 mt-0.5">
-            <span className="text-xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded">{detail.questionType}</span>
-            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${detail.isUnanswered ? 'bg-gray-100 text-gray-600' : detail.isCorrect ? 'bg-green-100 text-green-700' : detail.isPartial ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>
-              {detail.isUnanswered ? 'Unanswered' : detail.isCorrect ? 'Correct' : detail.isPartial ? 'Partial' : 'Incorrect'}
-            </span>
-          </div>
-        </div>
-        <div className="flex-shrink-0 text-right">
-          <p className={`text-sm font-bold ${scoreColor}`}>{detail.scoreAwarded} / {detail.maxScore}</p>
-          <p className="text-xs text-gray-400">{detail.scorePercentage ?? 0}%</p>
-        </div>
-        {isExpanded ? <ChevronUp className="w-4 h-4 text-gray-400 flex-shrink-0" /> : <ChevronDown className="w-4 h-4 text-gray-400 flex-shrink-0" />}
-      </button>
-      {isExpanded && (
-        <div className="px-4 pb-4 pt-2 bg-gray-50 border-t border-gray-200">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Answer Given</p>
-              <div className={`text-sm p-2 rounded border ${detail.isUnanswered ? 'bg-gray-50 border-gray-200 text-gray-400 italic' : detail.isCorrect ? 'bg-green-50 border-green-200 text-green-800' : detail.isPartial ? 'bg-yellow-50 border-yellow-200 text-yellow-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
-                {detail.isUnanswered ? 'No answer provided' : formatAnswer(detail.userAnswer, detail.questionType)}
-              </div>
-            </div>
-            <div>
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Correct Answer</p>
-              <div className="text-sm p-2 rounded border bg-blue-50 border-blue-200 text-blue-800">
-                {formatAnswer(detail.correctAnswer, detail.questionType)}
-              </div>
-            </div>
-          </div>
-          <div className="mt-3">
-            <div className="w-full bg-gray-200 rounded-full h-2">
-              <div className={`h-2 rounded-full ${detail.isCorrect ? 'bg-green-500' : detail.isPartial ? 'bg-yellow-500' : detail.isUnanswered ? 'bg-gray-300' : 'bg-red-500'}`}
-                style={{ width: `${detail.scorePercentage ?? 0}%` }} />
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
-
-const QuestionDetailsSection = ({ questionDetails, summary, loading }) => {
-  const [expanded, setExpanded] = useState({});
-  const [filterType, setFilterType] = useState('all');
-  if (loading) return <div className="text-center py-6 text-gray-400 text-sm">Loading questions...</div>;
-  if (!questionDetails?.length) return <div className="text-center py-6 text-gray-400 text-sm">No question details available.</div>;
-  const filtered = questionDetails.filter(d => {
-    if (filterType === 'correct') return d.isCorrect;
-    if (filterType === 'partial') return d.isPartial;
-    if (filterType === 'incorrect') return !d.isCorrect && !d.isPartial && !d.isUnanswered;
-    if (filterType === 'unanswered') return d.isUnanswered;
-    return true;
-  });
-  return (
-    <div className="bg-gray-50 rounded-xl p-4">
-      <div className="flex items-center justify-between mb-3">
-        <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-2"><ListChecks className="w-4 h-4 text-indigo-600" />Question Breakdown</h4>
-        <button onClick={() => setExpanded(prev => Object.keys(prev).some(k => prev[k]) ? {} : Object.fromEntries(questionDetails.map((_, i) => [i, true])))}
-          className="text-xs text-indigo-600 font-medium">
-          {Object.values(expanded).some(Boolean) ? 'Collapse All' : 'Expand All'}
-        </button>
-      </div>
-      {summary && (
-        <div className="grid grid-cols-5 gap-2 mb-3">
-          {[['Total', summary.totalQuestions, 'text-gray-700'], ['Correct', summary.fullyCorrect, 'text-green-700'], ['Partial', summary.partialCredit, 'text-yellow-700'], ['Wrong', summary.incorrect, 'text-red-700'], ['Skipped', summary.unanswered, 'text-gray-400']].map(([label, val, cls]) => (
-            <div key={label} className="bg-white rounded-lg p-2 text-center border border-gray-200">
-              <p className={`text-base font-bold ${cls}`}>{val}</p>
-              <p className="text-xs text-gray-500">{label}</p>
-            </div>
-          ))}
-        </div>
-      )}
-      <div className="flex gap-1.5 flex-wrap mb-3">
-        {[['all', 'All'], ['correct', 'Correct'], ['partial', 'Partial'], ['incorrect', 'Incorrect'], ['unanswered', 'Skipped']].map(([k, label]) => (
-          <button key={k} onClick={() => setFilterType(k)}
-            className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${filterType === k ? 'bg-indigo-600 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`}>
-            {label}
-          </button>
-        ))}
-      </div>
-      <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
-        {filtered.map((d, i) => (
-          <QuestionDetailRow key={i} detail={d} isExpanded={!!expanded[i]} onToggle={() => setExpanded(prev => ({ ...prev, [i]: !prev[i] }))} />
-        ))}
-      </div>
-    </div>
-  );
-};
-
-// ─── Result detail modal ──────────────────────────────────────────────────────
-const ResultDetailModal = ({ result, isOpen, onClose, isAdmin, questionDetails, questionSummary, loadingQuestions, securityData, loadingSecurity }) => {
-  if (!isOpen || !result) return null;
-
-  // Helper function to format violation type for display
-  const formatViolationType = (type) => {
-    const types = {
-      'FULLSCREEN_EXIT': 'Fullscreen Exit',
-      'TAB_SWITCH': 'Tab Switch',
-      'WINDOW_BLUR': 'Window Blur',
-      'RIGHT_CLICK': 'Right Click',
-      'COPY_ATTEMPT': 'Copy Attempt',
-      'PRINT_ATTEMPT': 'Print Attempt',
-      'DEV_TOOLS': 'Developer Tools'
-    };
-    return types[type] || type.replace(/_/g, ' ');
-  };
-
-  // Helper function to get violation icon and color
-  const getViolationStyle = (type) => {
-    const styles = {
-      'FULLSCREEN_EXIT': { bg: 'bg-orange-100', text: 'text-orange-700', icon: '⛔' },
-      'TAB_SWITCH': { bg: 'bg-yellow-100', text: 'text-yellow-700', icon: '↹' },
-      'WINDOW_BLUR': { bg: 'bg-blue-100', text: 'text-blue-700', icon: '👁️' },
-      'RIGHT_CLICK': { bg: 'bg-red-100', text: 'text-red-700', icon: '🖱️' },
-      'COPY_ATTEMPT': { bg: 'bg-purple-100', text: 'text-purple-700', icon: '📋' },
-      'PRINT_ATTEMPT': { bg: 'bg-indigo-100', text: 'text-indigo-700', icon: '🖨️' },
-      'DEV_TOOLS': { bg: 'bg-pink-100', text: 'text-pink-700', icon: '🔧' }
-    };
-    return styles[type] || { bg: 'bg-gray-100', text: 'text-gray-700', icon: '⚠️' };
-  };
-
-  const scoreColor = result.finalScore >= 75 ? 'text-green-600' : result.finalScore >= 50 ? 'text-amber-600' : 'text-red-600';
-  const scoreBarColor = result.assessmentType === 'Combined' ? 'bg-purple-500' : result.assessmentType === 'SupervisorOnly' ? 'bg-orange-500' : 'bg-brand-red';
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="fixed inset-0 bg-black/40 backdrop-blur-[2px]" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh]">
-
-        {/* ── Header ── */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 flex-shrink-0">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-brand-red/10 flex items-center justify-center">
-              <FileText className="w-4 h-4 text-brand-red" />
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-gray-900">Result Details</h3>
-              {result.completedAt && (
-                <p className="text-[11px] text-gray-400">
-                  {new Date(result.completedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                </p>
-              )}
-            </div>
-          </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition">
-            <XCircle className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* ── Scrollable body ── */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-4">
-
-          {/* ── Employee (admin only) ── */}
-          {isAdmin && (
-            <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
-              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-brand-red to-red-700 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-                {(result.userName || '?').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-gray-900 truncate">{result.userName || '—'}</p>
-                <p className="text-xs text-gray-400 truncate">{result.userEmail || '—'}</p>
-              </div>
-              <div className="text-right flex-shrink-0">
-                <p className="text-xs text-gray-500">{result.userDepartment || '—'}</p>
-                <p className="text-xs text-gray-400 font-mono">{result.employeeId || '—'}</p>
-              </div>
-            </div>
-          )}
-
-          {/* ── Competency + Assessment meta ── */}
-          <div className="rounded-xl border border-gray-100 overflow-hidden">
-            {/* Competency row */}
-            <div className="px-4 py-3 bg-gray-50 flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-0.5">Competency</p>
-                <p className="text-sm font-bold text-gray-900 truncate">{result.competencyName || '—'}</p>
-                <p className="text-[11px] text-gray-400 mt-0.5">{result.competencyCategory || ''}</p>
-              </div>
-              <TypeBadge type={result.assessmentType} />
-            </div>
-
-            {/* Meta rows */}
-            <div className="divide-y divide-gray-50">
-              {result.assessmentDescription && (
-                <div className="px-4 py-2.5 flex items-baseline gap-2">
-                  <span className="text-[11px] font-semibold text-gray-400 w-24 flex-shrink-0">Description</span>
-                  <span className="text-sm text-gray-700">{result.assessmentDescription}</span>
-                </div>
-              )}
-              {result.purpose && result.purpose !== 'N/A' && (
-                <div className="px-4 py-2.5 flex items-baseline gap-2">
-                  <span className="text-[11px] font-semibold text-gray-400 w-24 flex-shrink-0">Purpose</span>
-                  <span className="text-sm text-gray-700">{result.purpose}</span>
-                </div>
-              )}
-              {result.targetGroup && result.targetGroup !== 'N/A' && (
-                <div className="px-4 py-2.5 flex items-baseline gap-2">
-                  <span className="text-[11px] font-semibold text-gray-400 w-24 flex-shrink-0">Target Group</span>
-                  <span className="text-sm text-gray-700 capitalize">{result.targetGroup.replace('-', ' ')}</span>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* ── Score block ── */}
-          <div className="rounded-xl border border-gray-100 overflow-hidden">
-            {/* Score header with final score prominent */}
-            <div className="px-4 py-3 bg-gray-50 flex items-center justify-between">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Score</p>
-              <div className="flex items-center gap-2">
-                <LevelBadge level={result.level} />
-                <span className={`text-lg font-black ${scoreColor}`}>{result.finalScore.toFixed(1)}%</span>
-              </div>
-            </div>
-
-            {/* Score bar */}
-            <div className="px-4 pt-2.5 pb-1">
-              <div className="w-full bg-gray-100 rounded-full h-2">
-                <div className={`h-2 rounded-full transition-all ${scoreBarColor}`} style={{ width: `${Math.min(result.finalScore, 100)}%` }} />
-              </div>
-            </div>
-
-            {/* Score breakdown rows */}
-            <div className="divide-y divide-gray-50 pb-1">
-              {result.selfScore !== null && result.selfScore !== undefined && (
-                <div className="px-4 py-2.5 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <User className="w-3.5 h-3.5 text-blue-400" />
-                    <span className="text-[11px] font-semibold text-gray-400">Self Score</span>
-                  </div>
-                  <span className="text-sm font-bold text-gray-800">{result.selfScore.toFixed(1)}%</span>
-                </div>
-              )}
-              {result.supervisorScore !== null && result.supervisorScore !== undefined && (
-                <div className="px-4 py-2.5 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Users className="w-3.5 h-3.5 text-purple-400" />
-                    <span className="text-[11px] font-semibold text-gray-400">Supervisor Score</span>
-                  </div>
-                  <span className="text-sm font-bold text-gray-800">{result.supervisorScore.toFixed(1)}%</span>
-                </div>
-              )}
-              {result.isCombined && result.weightUsed && (
-                <div className="px-4 py-2.5 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Scale className="w-3.5 h-3.5 text-orange-400" />
-                    <span className="text-[11px] font-semibold text-gray-400">Weighting</span>
-                  </div>
-                  <span className="text-xs text-gray-500">
-                    Self&nbsp;<strong>{result.weightUsed.selfAssessment}%</strong>
-                    &nbsp;·&nbsp;
-                    Supervisor&nbsp;<strong>{result.weightUsed.supervisor}%</strong>
-                  </span>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* ── Recommendation ── */}
-          {result.recommendation && (
-            <div className="rounded-xl border border-blue-100 bg-blue-50 overflow-hidden">
-              <div className="px-4 py-2.5 border-b border-blue-100 flex items-center gap-2">
-                <Info className="w-3.5 h-3.5 text-blue-500" />
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-blue-600">Development Recommendation</p>
-              </div>
-              <p className="px-4 py-3 text-sm text-blue-900 leading-relaxed">{result.recommendation}</p>
-            </div>
-          )}
-
-          {/* ── Question details (admin) ── */}
-          {isAdmin && (
-            <QuestionDetailsSection
-              questionDetails={questionDetails}
-              summary={questionSummary}
-              loading={loadingQuestions}
-            />
-          )}
-
-          {/* ── Security (admin) ── */}
-          {isAdmin && securityData && (
-            <div className="rounded-xl border border-gray-100 overflow-hidden">
-              <div className="px-4 py-2.5 bg-gray-50 flex items-center justify-between border-b border-gray-100">
-                <div className="flex items-center gap-2">
-                  <Shield className="w-3.5 h-3.5 text-orange-400" />
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Security</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  {securityData.summary?.isHighRisk && (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-600 flex items-center gap-1">
-                      <AlertCircle className="w-3 h-3" /> HIGH RISK
-                    </span>
-                  )}
-                  <span className="text-xs font-bold text-gray-600">{securityData.summary?.totalViolations || 0} violations</span>
-                </div>
-              </div>
-
-              {securityData.violations && securityData.violations.length > 0 ? (
-                <div className="divide-y divide-gray-50 max-h-52 overflow-y-auto">
-                  {securityData.violations.map((v, i) => {
-                    const style = getViolationStyle(v.type);
-                    return (
-                      <div key={i} className="px-4 py-2.5 flex items-center gap-3">
-                        <span className={`w-6 h-6 rounded-full ${style.bg} flex items-center justify-center text-xs flex-shrink-0`}>{style.icon}</span>
-                        <div className="flex-1 min-w-0">
-                          <p className={`text-xs font-semibold ${style.text}`}>{formatViolationType(v.type)}</p>
-                          {v.details && <p className="text-[11px] text-gray-400 truncate">{v.details}</p>}
-                        </div>
-                        <span className="text-[11px] text-gray-400 flex-shrink-0 tabular-nums">
-                          {new Date(v.timestamp).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="px-4 py-3 flex items-center gap-2 text-green-600">
-                  <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
-                  <p className="text-xs font-medium">No violations detected</p>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* ── Footer ── */}
-        <div className="flex-shrink-0 px-5 py-3 border-t border-gray-100 flex justify-end">
-          <button onClick={onClose} className="px-5 py-2 bg-brand-red text-white rounded-lg text-sm font-semibold hover:bg-red-700 transition-colors">
-            Close
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-
-// ─── pagination ────────────────────────────────────────────────────────────────
+// â”€â”€â”€ pagination â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const Paginator = ({ pagination, goToPage }) => {
   if (!pagination.total || pagination.total <= pagination.limit) return null;
   const tp = pagination.totalPages;
@@ -430,7 +84,7 @@ const Paginator = ({ pagination, goToPage }) => {
   const pages = Array.from({ length: Math.min(5, tp) }, (_, i) => start + i);
   return (
     <div className="flex flex-col sm:flex-row justify-between items-center gap-3 pt-3 border-t border-gray-100">
-      <p className="text-sm text-gray-500">Showing {(cp - 1) * pagination.limit + 1}–{Math.min(cp * pagination.limit, pagination.total)} of <strong>{pagination.total}</strong></p>
+      <p className="text-sm text-gray-500">Showing {(cp - 1) * pagination.limit + 1}â€“{Math.min(cp * pagination.limit, pagination.total)} of <strong>{pagination.total}</strong></p>
       <div className="flex items-center gap-1">
         <button onClick={() => goToPage(cp - 1)} disabled={cp === 1} className="p-2 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"><ChevronLeft className="w-4 h-4" /></button>
         {pages.map(p => <button key={p} onClick={() => goToPage(p)} className={`w-9 h-9 rounded-lg text-sm font-medium ${cp === p ? 'bg-brand-red text-white' : 'border border-gray-200 text-gray-700 hover:bg-gray-50'}`}>{p}</button>)}
@@ -440,14 +94,15 @@ const Paginator = ({ pagination, goToPage }) => {
   );
 };
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // MAIN COMPONENT
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 export default function Results() {
   const { user, isAdmin } = useAuth();
   const { show } = useToast();
+  const nav = useNavigate();
 
-  // ── filter options loaded from API ────────────────────────────────────────
+  // â”€â”€ filter options loaded from API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [filterOptions, setFilterOptions] = useState({
     departments: [], positions: [], competencies: [], assessments: [],
     levels: ['Basic', 'Intermediate', 'Advanced', 'Expert'],
@@ -456,13 +111,13 @@ export default function Results() {
     purposes: ['Career Development', 'Succession Planning', 'Performance Improvement', 'Training Needs Analysis', 'Promotion Readiness', 'Other'],
   });
 
-  // ── results state ─────────────────────────────────────────────────────────
+  // â”€â”€ results state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [results, setResults] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(false);
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 0 });
 
-  // ── filters ───────────────────────────────────────────────────────────────
+  // â”€â”€ filters â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState({
     search: '', assessmentId: '', competencyId: '', department: '',
@@ -472,26 +127,17 @@ export default function Results() {
   });
   const [pendingFilters, setPendingFilters] = useState({ ...filters });
 
-  // ── modal state ───────────────────────────────────────────────────────────
-  const [selectedResult, setSelectedResult] = useState(null);
-  const [showModal, setShowModal] = useState(false);
-  const [questionDetails, setQuestionDetails] = useState([]);
-  const [questionSummary, setQuestionSummary] = useState(null);
-  const [loadingQuestions, setLoadingQuestions] = useState(false);
-  const [securityData, setSecurityData] = useState(null);
-  const [loadingSecurity, setLoadingSecurity] = useState(false);
-
-  // ── finalise state ────────────────────────────────────────────────────────
+  // â”€â”€ finalise state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [finalisingId, setFinalisingId] = useState(null);
 
-  // ── load filter options ────────────────────────────────────────────────────
+  // â”€â”€ load filter options â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     api.get('/results/filter-options')
       .then(({ data }) => setFilterOptions(prev => ({ ...prev, ...data.data })))
       .catch(() => {});
   }, []);
 
-  // ── load results ──────────────────────────────────────────────────────────
+  // â”€â”€ load results â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const loadResults = useCallback(async (page = 1) => {
     setLoading(true);
     try {
@@ -513,7 +159,7 @@ export default function Results() {
 
   useEffect(() => { loadResults(1); }, [filters]);
 
-  // ── apply pending filters ─────────────────────────────────────────────────
+  // â”€â”€ apply pending filters â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const applyFilters = () => { setFilters({ ...pendingFilters }); };
   const clearFilters = () => {
     const empty = { search: '', assessmentId: '', competencyId: '', department: '', position: '', level: '', status: '', assessmentType: '', targetGroup: '', purpose: '', dateFrom: '', dateTo: '', sortBy: 'createdAt', sortDir: 'desc' };
@@ -522,68 +168,42 @@ export default function Results() {
   };
   const activeFilterCount = Object.entries(filters).filter(([k, v]) => v && !['sortBy', 'sortDir'].includes(k)).length;
 
-  // ── open detail modal ─────────────────────────────────────────────────────
-  const openDetail = async (result) => {
-    setSelectedResult(result);
-    setShowModal(true);
-    setQuestionDetails([]);
-    setQuestionSummary(null);
-    setSecurityData(null);
-
-    // Only fetch question details for admins
-    if (isAdmin) {
-      setLoadingQuestions(true);
-      try {
-        const { data } = await api.get(`/results/${result._id}/question-details`);
-        setQuestionDetails(data.data.questionDetails || []);
-        setQuestionSummary(data.data.summary || null);
-      } catch { /* no question details */ }
-      setLoadingQuestions(false);
-
-      setLoadingSecurity(true);
-      try {
-        const userId = typeof result.userId === 'object' ? result.userId._id : result.userId;
-        const { data } = await api.get(`/responses/security-violations/${result.assessmentId?._id || result.assessmentId}/${userId}`);
-        setSecurityData(data.data.securityRecord || null);
-      } catch { /* no security data */ }
-      setLoadingSecurity(false);
-    }
+  // â”€â”€ open result detail page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  const openDetail = (result) => {
+    nav(`/results/${result._id}`);
   };
 
-  // ── Ref for the table header to handle sticky positioning ─────────────────
+  // â”€â”€ Ref for the table header to handle sticky positioning â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const tableContainerRef = useRef(null);
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // RENDER — fixed outer shell, scrollable rows only
-  // ─────────────────────────────────────────────────────────────────────────
+  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // RENDER â€” fixed outer shell, scrollable rows only
+  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   return (
-    /* Full-height fixed container — fills whatever space the app shell gives */
+    /* Full-height fixed container â€” fills whatever space the app shell gives */
     <div className="flex flex-col h-full overflow-hidden">
 
-      {/* ── Sticky top section (header + filters + stats + count bar) ── */}
+      {/* â”€â”€ Sticky top section (header + filters + stats + count bar) â”€â”€ */}
       <div className="flex-shrink-0 px-7 pt-7 pb-0  z-20 shadow-sm sticky top-0">
 
         {/* Page header */}
-        <div className="flex justify-between items-start mb-4 flex-wrap gap-4">
+        <div className="flex justify-between items-start mb-3 flex-wrap gap-4">
           <div>
-            <h1 className="text-2xl font-display font-bold text-brand-black">
+            <h1 className="text-xl  font-bold text-brand-black">
               {isAdmin ? 'Assessment Results' : 'My Results'}
             </h1>
-            <p className="text-gray-500 mt-1">
-              {isAdmin ? 'View, filter, and manage all employee assessment results.' : 'Track your assessment performance and progress.'}
-            </p>
           </div>
           <div className="flex items-center gap-2">
             <button
               onClick={() => { setPendingFilters({ ...filters }); setShowFilters(v => !v); }}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border font-semibold text-sm transition-all ${showFilters || activeFilterCount > 0 ? 'border-brand-red bg-brand-red/10 text-brand-red' : 'border-gray-300 text-gray-700 hover:bg-gray-50'}`}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border font-semibold text-sm transition-all ${showFilters || activeFilterCount > 0 ? 'border-brand-red bg-brand-red/10 text-brand-red' : 'border-gray-300 text-gray-700 hover:bg-gray-50'}`}
             >
-              <SlidersHorizontal className="w-4 h-4" />
+              <SlidersHorizontal className="w-3.5 h-3.5" />
               Filters
               {activeFilterCount > 0 && <span className="w-5 h-5 rounded-full bg-brand-red text-white text-xs flex items-center justify-center">{activeFilterCount}</span>}
             </button>
-            <button onClick={() => loadResults(pagination.page)} className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 text-sm font-semibold transition-colors">
-              <RefreshCw className="w-4 h-4" />
+            <button onClick={() => loadResults(pagination.page)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 text-sm font-semibold transition-colors">
+              <RefreshCw className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
@@ -737,7 +357,7 @@ export default function Results() {
         </div>
       </div>
 
-      {/* ── Scrollable table area with sticky header inside ── */}
+      {/* â”€â”€ Scrollable table area with sticky header inside â”€â”€ */}
       <div className="flex-1 overflow-hidden flex flex-col px-7 pb-7 min-h-0">
         {loading ? (
           <div className="flex items-center justify-center flex-1">
@@ -776,13 +396,22 @@ export default function Results() {
                     <tr key={result._id} className="hover:bg-gray-50/70 transition-colors">
                       {isAdmin && <>
                         <td className="px-5 py-4">
-                          <div className="font-semibold text-sm text-gray-900 whitespace-nowrap">{result.userName}</div>
-                          <div className="text-xs text-gray-400 whitespace-nowrap">{result.userPosition}</div>
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-brand-red to-red-700 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                              {(result.userName || '?').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()}
+                            </div>
+                            <div>
+                              <div className="font-semibold text-sm text-gray-900 whitespace-nowrap">{result.userName}</div>
+                              <div className="text-xs text-gray-400 whitespace-nowrap">{result.userPosition || result.userDepartment}</div>
+                            </div>
+                          </div>
                         </td>
                       </>}
                       <td className="px-5 py-4">
                         <div className="font-medium text-sm text-gray-900 whitespace-nowrap">{result.competencyName}</div>
-                        
+                        {result.assessmentDescription && result.assessmentDescription !== 'N/A' && (
+                          <div className="text-xs text-gray-400 whitespace-nowrap max-w-[220px] truncate">{result.assessmentDescription}</div>
+                        )}
                       </td>
                       <td className="px-5 py-4">
                         <div className="flex flex-col gap-1">
@@ -792,7 +421,9 @@ export default function Results() {
                           )}
                         </div>
                       </td>
-                      <td className="px-5 py-4">{result.finalScore}</td>
+                      <td className="px-5 py-4">
+                        <ScoreBar score={result.finalScore} type={result.assessmentType} />
+                      </td>
                       <td className="px-5 py-4"><LevelBadge level={result.level} /></td>
                       <td className="px-5 py-4">
                         <div className="flex items-center gap-1.5 text-xs text-gray-500 whitespace-nowrap">
@@ -805,9 +436,8 @@ export default function Results() {
                         <div className="flex items-center gap-2 whitespace-nowrap">
                           <button onClick={() => openDetail(result)}
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors">
-                            <Eye className="w-3.5 h-3.5" /> Details
+                            <Eye className="w-3.5 h-3.5" /> View Result
                           </button>
-                          
                         </div>
                       </td>
                     </tr>
@@ -816,25 +446,13 @@ export default function Results() {
               </table>
             </div>
 
-            {/* Pagination — fixed at bottom of the card */}
+            {/* Pagination â€” fixed at bottom of the card */}
             <div className="flex-shrink-0 px-5 py-3 border-t border-gray-100 bg-white">
               <Paginator pagination={pagination} goToPage={p => loadResults(p)} />
             </div>
           </div>
         )}
       </div>
-
-      <ResultDetailModal
-        result={selectedResult}
-        isOpen={showModal}
-        onClose={() => setShowModal(false)}
-        isAdmin={isAdmin}
-        questionDetails={questionDetails}
-        questionSummary={questionSummary}
-        loadingQuestions={loadingQuestions}
-        securityData={securityData}
-        loadingSecurity={loadingSecurity}
-      />
     </div>
   );
 }

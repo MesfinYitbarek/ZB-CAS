@@ -11,13 +11,13 @@
  * emitted on their personal room immediately after DB insert.
  * Uses global._io set by socketService after server boot — no circular dep.
  */
-import Notification from '../models/Notification.js';
+import prisma from '../config/prisma.js';
 import logger from '../utils/logger.js';
 
 /**
  * Create a notification and push it over Socket.IO if the user is online.
  *
- * @param {string|ObjectId} userId
+ * @param {string} userId
  * @param {string}          type    — one of NOTIFICATION_TYPES
  * @param {string}          title   — short headline
  * @param {string}          [body]  — longer description
@@ -27,13 +27,16 @@ import logger from '../utils/logger.js';
  */
 export const notify = async (userId, type, title, body = '', link = null, meta = null) => {
   try {
-    const doc = await Notification.create({ userId, type, title, body, link, meta });
+    const doc = await prisma.notification.create({
+      data: { userId, type, title, body, link, meta },
+    });
 
     // Push real-time to the user's socket room (room = userId string)
     const io = global._io;
     if (io) {
       io.to(String(userId)).emit('notification:new', {
-        _id:       doc._id,
+        _id:       doc.id,
+        id:        doc.id,
         type:      doc.type,
         title:     doc.title,
         body:      doc.body,

@@ -224,10 +224,7 @@ export default function SupervisorEvaluation() {
             <ChevronLeft className="w-4 h-4" />
           </button>
           <div>
-            <h1 className="text-sm font-bold text-gray-900">Supervisor Evaluation</h1>
-            <p className="text-xs text-gray-400 mt-0.5">
-              {assessment.competencyId?.name || 'Competency Assessment'}
-            </p>
+            <h1 className="text-sm  font-bold text-brand-black">Supervisor Evaluation</h1>
           </div>
         </div>
 
@@ -304,7 +301,7 @@ export default function SupervisorEvaluation() {
 
             {/* Big score display */}
             <div className="flex items-center justify-center gap-1.5 mb-4">
-              <span className={`text-6xl font-black tabular-nums ${sl.color}`}>{score}</span>
+              <span className={`text-6xl  font-black tabular-nums ${sl.color}`}>{score}</span>
               <span className="text-lg text-gray-300 font-light self-end mb-2">/ 100</span>
             </div>
 

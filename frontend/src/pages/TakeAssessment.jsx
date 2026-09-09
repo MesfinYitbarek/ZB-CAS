@@ -760,8 +760,7 @@ export default function TakeAssessment() {
           <div className="w-16 h-16 rounded-full bg-blue-100 flex items-center justify-center mx-auto mb-4">
             <Clock className="w-8 h-8 text-blue-600" />
           </div>
-          <h2 className="text-xl font-display font-bold text-brand-black text-center mb-1">Assessment Scheduled</h2>
-          <p className="text-xs text-gray-500 text-center mb-5">This assessment has not started yet</p>
+          <h2 className="text-xl  font-bold text-brand-black text-center mb-5">Assessment Scheduled</h2>
 
           <div className="bg-gray-50 rounded-lg p-4 mb-5 border border-gray-200">
             <p className="text-sm font-bold text-gray-900 mb-1 flex items-center gap-2">
@@ -832,8 +831,7 @@ export default function TakeAssessment() {
           <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4">
             <div className="w-10 h-10 border-4 border-red-600 border-t-transparent rounded-full animate-spin" />
           </div>
-          <h2 className="text-xl font-display font-bold text-brand-black mb-2">Calculating Results...</h2>
-          <p className="text-xs text-gray-500">Please wait while we score your assessment.</p>
+          <h2 className="text-xl  font-bold text-brand-black mb-2">Calculating Results...</h2>
         </div>
       </div>
     );
@@ -847,13 +845,12 @@ export default function TakeAssessment() {
           <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
             <CheckCircle className="w-8 h-8 text-green-600" />
           </div>
-          <h2 className="text-xl font-display font-bold text-brand-black text-center mb-1">Assessment Completed!</h2>
-          <p className="text-xs text-gray-500 text-center mb-4">Your results are ready</p>
+          <h2 className="text-xl  font-bold text-brand-black text-center mb-4">Assessment Completed!</h2>
 
           <div className="bg-gradient-to-br from-red-50 to-red-100 rounded-xl p-5 mb-4 border border-red-200">
             <div className="text-center mb-4">
               <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-white shadow mb-2">
-                <div className="text-3xl font-display font-bold text-red-600">{result.finalScore}%</div>
+                <div className="text-3xl  font-bold text-red-600">{result.finalScore}%</div>
               </div>
               <div className="flex items-center justify-center gap-2 mb-1">
                 <Award className="w-4 h-4 text-red-600" />
@@ -920,8 +917,7 @@ export default function TakeAssessment() {
           <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
             <CheckCircle className="w-8 h-8 text-green-600" />
           </div>
-          <h2 className="text-xl font-display font-bold text-brand-black mb-1">Submitted!</h2>
-          <p className="text-xs text-gray-500 mb-4">Assessment submitted successfully.</p>
+          <h2 className="text-xl  font-bold text-brand-black mb-4">Submitted!</h2>
           <button 
             onClick={() => {
               if (assessment?.type === 'CombinedAssessment') {
@@ -1036,10 +1032,9 @@ export default function TakeAssessment() {
           </div>
 
           {/* Competency name only in header */}
-          <h2 className="text-base font-display font-bold text-brand-black mb-1 truncate">
+          <h2 className="text-base  font-bold text-brand-black mb-1 truncate">
             {assessment.competencyId?.name || 'Assessment'}
           </h2>
-          <p className="text-[11px] text-gray-400 mb-2">{assessment.type}</p>
 
           <div className="flex items-center gap-2">
             <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">

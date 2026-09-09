@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+﻿import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Plus, Calendar, Clock, ChevronLeft, ChevronRight, Target, Users, Eye,
   AlertCircle, Check, X, Shuffle, Edit2, Bell, Briefcase, Search, Copy,
-  LayoutGrid, CalendarDays, ChevronDown, ChevronUp
+  LayoutGrid, CalendarDays, ChevronDown, ChevronUp, Table2
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
@@ -20,7 +20,7 @@ const PURPOSES = [
   'Other',
 ];
 
-// ─── Status / type config ─────────────────────────────────────────────────────
+// â”€â”€â”€ Status / type config â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const STATUS_META = {
   DRAFT:     { dot: 'bg-gray-400',    bar: 'bg-gray-300',    badge: 'bg-gray-100 text-gray-700',     label: 'Draft'     },
   SCHEDULED: { dot: 'bg-blue-500',    bar: 'bg-blue-400',    badge: 'bg-blue-100 text-blue-800',     label: 'Scheduled' },
@@ -35,7 +35,7 @@ const TYPE_META = {
   Combined:       { badge: 'bg-purple-100 text-purple-800', short: 'Both'},
 };
 
-// ─── Calendar helpers ─────────────────────────────────────────────────────────
+// â”€â”€â”€ Calendar helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const DAY_NAMES  = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
@@ -51,146 +51,7 @@ function assessmentCoversDate(a, year, month, day) {
          cell <= new Date(end.getFullYear(), end.getMonth(), end.getDate());
 }
 
-// ─── Gantt / Timeline helpers ─────────────────────────────────────────────────
-function GanttView({ items, onAssessmentClick }) {
-  const now = new Date();
-
-  // Compute visible date range: earliest start - 3 days … latest end + 3 days
-  const allDates = items.flatMap(a => [new Date(a.startDate), new Date(a.endDate)]);
-  const minDate = allDates.length
-    ? new Date(Math.min(...allDates.map(d => d.getTime())))
-    : new Date();
-  const maxDate = allDates.length
-    ? new Date(Math.max(...allDates.map(d => d.getTime())))
-    : new Date(now.getTime() + 30 * 86400000);
-
-  minDate.setDate(minDate.getDate() - 3);
-  maxDate.setDate(maxDate.getDate() + 3);
-
-  const totalMs   = maxDate - minDate;
-  const totalDays = Math.ceil(totalMs / 86400000);
-
-  const toPercent = (date) => {
-    const d = new Date(date);
-    return ((d - minDate) / totalMs) * 100;
-  };
-  const widthPercent = (start, end) => {
-    const s = Math.max(new Date(start) - minDate, 0);
-    const e = Math.min(new Date(end)   - minDate, totalMs);
-    return ((e - s) / totalMs) * 100;
-  };
-
-  // Build tick marks (every ~7 days if range > 21 days, else every day)
-  const tickInterval = totalDays > 60 ? 14 : totalDays > 21 ? 7 : totalDays > 7 ? 3 : 1;
-  const ticks = [];
-  for (let i = 0; i <= totalDays; i += tickInterval) {
-    const d = new Date(minDate.getTime() + i * 86400000);
-    ticks.push({ left: (i / totalDays) * 100, label: `${MONTH_NAMES[d.getMonth()].slice(0,3)} ${d.getDate()}` });
-  }
-
-  const nowPct = ((now - minDate) / totalMs) * 100;
-
-  if (!items.length) {
-    return (
-      <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-        <CalendarDays className="w-12 h-12 mb-3 opacity-40" />
-        <p className="text-sm">No assessments to display on the timeline.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="overflow-x-auto">
-      <div className="min-w-[640px]">
-        {/* Tick header */}
-        <div className="relative h-7 border-b border-gray-100 mb-1 ml-48">
-          {ticks.map((t, i) => (
-            <div key={i} className="absolute top-0 flex flex-col items-center" style={{ left: `${t.left}%` }}>
-              <span className="text-[10px] text-gray-400 whitespace-nowrap -translate-x-1/2">{t.label}</span>
-              <div className="w-px h-2 bg-gray-200 mt-0.5" />
-            </div>
-          ))}
-        </div>
-
-        {/* Rows */}
-        <div className="space-y-1.5">
-          {items.map((a) => {
-            const sm = STATUS_META[a.status] || STATUS_META.DRAFT;
-            const tm = TYPE_META[a.type]     || TYPE_META.SelfAssessment;
-            const left  = toPercent(a.startDate);
-            const width = widthPercent(a.startDate, a.endDate);
-
-            return (
-              <div key={a._id} className="flex items-center group">
-                {/* Label col */}
-                <div className="w-48 flex-shrink-0 pr-3 flex items-center gap-1.5 overflow-hidden">
-                  <div className={`w-2 h-2 rounded-full flex-shrink-0 ${sm.dot}`} />
-                  <span
-                    className="text-xs font-medium text-gray-700 truncate cursor-pointer hover:text-brand-red transition-colors"
-                    title={a.competencyId?.name}
-                    onClick={() => onAssessmentClick(a)}
-                  >
-                    {a.competencyId?.name || '—'}
-                  </span>
-                </div>
-
-                {/* Bar area */}
-                <div className="flex-1 relative h-7">
-                  {/* Background grid lines */}
-                  {ticks.map((t, i) => (
-                    <div key={i} className="absolute top-0 bottom-0 w-px bg-gray-100" style={{ left: `${t.left}%` }} />
-                  ))}
-
-                  {/* Today line */}
-                  {nowPct >= 0 && nowPct <= 100 && (
-                    <div className="absolute top-0 bottom-0 w-0.5 bg-brand-red/60 z-10" style={{ left: `${nowPct}%` }}>
-                      <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-brand-red" />
-                    </div>
-                  )}
-
-                  {/* Assessment bar */}
-                  <div
-                    className={`absolute top-1 bottom-1 rounded-md cursor-pointer transition-all group-hover:brightness-95 ${sm.bar} flex items-center px-2 overflow-hidden`}
-                    style={{ left: `${Math.max(left, 0)}%`, width: `${Math.max(width, 0.5)}%`, minWidth: 4 }}
-                    onClick={() => onAssessmentClick(a)}
-                    title={`${a.competencyId?.name} · ${sm.label}`}
-                  >
-                    {width > 5 && (
-                      <span className="text-[10px] font-semibold text-white truncate whitespace-nowrap">
-                        {a.competencyId?.name}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Status badge */}
-                <div className={`ml-2 flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold ${sm.badge}`}>
-                  {sm.label}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Legend */}
-        <div className="flex items-center gap-4 mt-5 pt-4 border-t border-gray-100 flex-wrap">
-          {Object.entries(STATUS_META).map(([k, v]) => (
-            <div key={k} className="flex items-center gap-1.5">
-              <div className={`w-3 h-2 rounded-sm ${v.bar}`} />
-              <span className="text-[11px] text-gray-500">{v.label}</span>
-            </div>
-          ))}
-          <div className="flex items-center gap-1.5">
-            <div className="w-0.5 h-3 bg-brand-red/60" />
-            <span className="text-[11px] text-gray-500">Today</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Monthly Calendar View ────────────────────────────────────────────────────
+// â”€â”€â”€ Monthly Calendar View â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function CalendarView({ items, onAssessmentClick }) {
   const today = new Date();
   const [calYear,  setCalYear]  = useState(today.getFullYear());
@@ -213,7 +74,7 @@ function CalendarView({ items, onAssessmentClick }) {
   // Pad to full weeks
   while (cells.length % 7 !== 0) cells.push(null);
 
-  // Map day → assessments
+  // Map day â†’ assessments
   const dayMap = useMemo(() => {
     const m = {};
     items.forEach(a => {
@@ -282,7 +143,7 @@ function CalendarView({ items, onAssessmentClick }) {
                             ${sm.bar} text-white opacity-90 hover:opacity-100 transition-opacity`}
                           title={a.competencyId?.name}
                         >
-                          {isStart ? '▶ ' : ''}{a.competencyId?.name}
+                          {isStart ? 'â–¶ ' : ''}{a.competencyId?.name}
                         </div>
                       );
                     })}
@@ -302,7 +163,7 @@ function CalendarView({ items, onAssessmentClick }) {
   );
 }
 
-// ─── Assessment detail side-panel (shown when clicking calendar item) ─────────
+// â”€â”€â”€ Assessment detail side-panel (shown when clicking calendar item) â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function AssessmentPanel({ assessment, isAdmin, isSupervisor, isEmployee, onClose, onNavigate, onStatusChange, onScoreResults }) {
   if (!assessment) return null;
   const a  = assessment;
@@ -324,7 +185,7 @@ function AssessmentPanel({ assessment, isAdmin, isSupervisor, isEmployee, onClos
           <div className="flex items-start justify-between mb-3">
             <div className="flex-1 min-w-0">
               <h3 className="text-base font-bold text-brand-black leading-tight truncate pr-2">
-                {a.competencyId?.name || '—'}
+                {a.competencyId?.name || 'â€”'}
               </h3>
               {a.purpose && (
                 <span className="text-xs text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full mt-1 inline-block">
@@ -432,13 +293,13 @@ function AssessmentPanel({ assessment, isAdmin, isSupervisor, isEmployee, onClos
 }
 
 
-// ─── Main component ───────────────────────────────────────────────────────────
+// â”€â”€â”€ Main component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export default function Assessments() {
   const { isAdmin, isSupervisor, isEmployee, user } = useAuth();
   const nav = useNavigate();
   const { show } = useToast();
 
-  // ── State ──────────────────────────────────────────────────────────────────
+  // â”€â”€ State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [competencies, setCompetencies] = useState([]);
@@ -449,7 +310,7 @@ export default function Assessments() {
   const [employeeSearch, setEmployeeSearch] = useState({ name: '', department: '', position: '' });
   const [filterStatus, setFilterStatus] = useState('');
   const [modal, setModal] = useState(null);
-  const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'calendar' | 'gantt'
+  const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'calendar'
   const [selectedAssessment, setSelectedAssessment] = useState(null);
 
   const [questionSelectionMode, setQuestionSelectionMode] = useState('auto');
@@ -485,7 +346,7 @@ export default function Assessments() {
   const [duplicateDates, setDuplicateDates] = useState({ startDate: '', endDate: '', startTime: '09:00', endTime: '17:00' });
   const [duplicating, setDuplicating] = useState(false);
 
-  // ── Auto-fill description from competency targetGroup ───────────────────
+  // â”€â”€ Auto-fill description from competency targetGroup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     if (!form.competencyId || !form.targetGroup) return;
     const selectedComp = competencies.find(c => c._id === form.competencyId);
@@ -496,14 +357,14 @@ export default function Assessments() {
     }
   }, [form.competencyId, form.targetGroup, competencies]);
 
-  // ── Load on mount ─────────────────────────────────────────────────────────
+  // â”€â”€ Load on mount â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     api.get('/competencies').then(({ data }) => setCompetencies(data.data.competencies)).catch(() => {});
     api.get('/assessments/employees/departments').then(({ data }) => setDepartments(data.data.departments)).catch(() => {});
     if (isSupervisor) loadSupervisorStats();
   }, [isSupervisor]);
 
-  // ── Derive target groups ──────────────────────────────────────────────────
+  // â”€â”€ Derive target groups â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     if (form.competencyId) {
       const sel = competencies.find(c => c._id === form.competencyId);
@@ -516,7 +377,7 @@ export default function Assessments() {
     }
   }, [form.competencyId, competencies]);
 
-  // ── Load questions ────────────────────────────────────────────────────────
+  // â”€â”€ Load questions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     if (form.competencyId && form.targetGroup) {
       api.get('/questions', { params: { competencyId: form.competencyId, targetGroup: form.targetGroup } })
@@ -543,7 +404,7 @@ export default function Assessments() {
     }
   };
 
-  // ── For calendar/gantt we fetch ALL assessments (no pagination) ───────────
+  // â”€â”€ For calendar/gantt we fetch ALL assessments (no pagination) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [allItems, setAllItems] = useState([]);
 
   const fetchAllAssessments = useCallback(async () => {
@@ -590,16 +451,16 @@ export default function Assessments() {
 
   useEffect(() => { fetchAssessments(); }, [fetchAssessments]);
   useEffect(() => {
-    if (viewMode === 'calendar' || viewMode === 'gantt') fetchAllAssessments();
+    if (viewMode === 'calendar') fetchAllAssessments();
   }, [viewMode, fetchAllAssessments]);
 
-  // ── Calendar display items (filtered by status if set) ───────────────────
+  // â”€â”€ Calendar display items (filtered by status if set) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const calendarItems = useMemo(() => {
     if (!filterStatus) return allItems;
     return allItems.filter(a => a.status === filterStatus);
   }, [allItems, filterStatus]);
 
-  // ── Employee search ───────────────────────────────────────────────────────
+  // â”€â”€ Employee search â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const handleEmployeeSearch = async () => {
     try {
       const { data } = await api.get('/assessments/employees/search', { params: employeeSearch });
@@ -813,29 +674,22 @@ export default function Assessments() {
     setPagination({ page: 1, limit: newLimit, total: pagination.total, totalPages: Math.ceil(pagination.total / newLimit) });
   };
 
-  // ─────────────────────────────────────────────────────────────────────────
+  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   return (
     <div className="h-[calc(100vh-4rem)] flex flex-col p-7">
 
-      {/* ── Sticky Header ──────────────────────────────────────────────────── */}
-      <div className="flex justify-between items-start mb-6 flex-shrink-0">
+      {/* â”€â”€ Sticky Header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      <div className="flex justify-between items-start mb-3 flex-shrink-0">
         <div>
-          <h1 className="text-2xl font-display font-bold text-brand-black">Assessments</h1>
-          <p className="text-gray-500 mt-1">
-            {isAdmin
-              ? 'Create, schedule, and manage assessments.'
-              : isSupervisor
-                ? 'Your active assessments and evaluations.'
-                : 'Your scheduled and active assessments.'}
-          </p>
+          <h1 className="text-xl  font-bold text-brand-black">Assessments</h1>
         </div>
         <div className="flex gap-3">
           {isSupervisor && supervisorStats.pendingEvaluations > 0 && (
             <button
               onClick={() => nav('/supervisor/pending')}
-              className="relative px-4 py-2 bg-orange-100 text-orange-700 rounded-lg border border-orange-200 hover:bg-orange-200 transition-colors font-semibold flex items-center gap-2"
+              className="relative px-3 py-1.5 bg-orange-100 text-orange-700 rounded-lg border border-orange-200 hover:bg-orange-200 transition-colors font-semibold flex items-center gap-1.5"
             >
-              <Target className="w-4 h-4" />
+              <Target className="w-3.5 h-3.5" />
               Pending Evaluations
               <span className="bg-orange-600 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
                 {supervisorStats.pendingEvaluations}
@@ -843,56 +697,52 @@ export default function Assessments() {
             </button>
           )}
           {isAdmin && (
-            <button onClick={openCreate} className="flex items-center gap-2 px-5 py-2.5 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors">
-              <Plus className="w-4 h-4" /> Create Assessment
+            <button onClick={openCreate} className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors">
+              <Plus className="w-3.5 h-3.5" /> Create Assessment
             </button>
           )}
         </div>
       </div>
 
-      {/* ── Supervisor stats ─────────────────────────────────────────────── */}
+      {/* â”€â”€ Supervisor stats â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {isSupervisor && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 flex-shrink-0">
           <div className="bg-white rounded-xl p-5 shadow-card border border-gray-100">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center"><Target className="w-5 h-5 text-blue-600" /></div>
-              <div><div className="text-xs text-gray-500 uppercase font-semibold">Pending Evaluations</div><div className="text-2xl font-bold text-brand-black">{supervisorStats.pendingEvaluations}</div></div>
+              <div><div className="text-xs text-gray-500 uppercase font-semibold">Pending Evaluations</div><div className="text-2xl  font-bold text-brand-black">{supervisorStats.pendingEvaluations}</div></div>
             </div>
           </div>
           <div className="bg-white rounded-xl p-5 shadow-card border border-gray-100">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center"><Users className="w-5 h-5 text-green-600" /></div>
-              <div><div className="text-xs text-gray-500 uppercase font-semibold">Completed</div><div className="text-2xl font-bold text-brand-black">{supervisorStats.completedEvaluations}</div></div>
+              <div><div className="text-xs text-gray-500 uppercase font-semibold">Completed</div><div className="text-2xl  font-bold text-brand-black">{supervisorStats.completedEvaluations}</div></div>
             </div>
           </div>
           <div className="bg-white rounded-xl p-5 shadow-card border border-gray-100">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center"><Eye className="w-5 h-5 text-purple-600" /></div>
-              <div><div className="text-xs text-gray-500 uppercase font-semibold">Active Assessments</div><div className="text-2xl font-bold text-brand-black">{items.filter(a => a.status === 'ACTIVE' && requiresSupervisorEvaluation(a)).length}</div></div>
+              <div><div className="text-xs text-gray-500 uppercase font-semibold">Active Assessments</div><div className="text-2xl  font-bold text-brand-black">{items.filter(a => a.status === 'ACTIVE' && requiresSupervisorEvaluation(a)).length}</div></div>
             </div>
           </div>
         </div>
       )}
 
-      {/* ── Filters + View Toggle ─────────────────────────────────────────── */}
+      {/* â”€â”€ Filters + View Toggle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="flex justify-between items-center mb-6 flex-shrink-0 gap-4 flex-wrap">
-        {/* Status filters */}
+{/* Status filter dropdown */}
         <div className="flex gap-2 flex-wrap">
           {isAdmin && (
-            <>
-              <button
-                onClick={() => { setFilterStatus(''); setPagination(prev => ({ ...prev, page: 1 })); }}
-                className={`px-4 py-2 rounded-lg border-2 font-semibold text-sm transition-all ${filterStatus === '' ? 'border-brand-red bg-brand-red/10 text-brand-red' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'}`}
-              >All</button>
+            <select
+              value={filterStatus}
+              onChange={(e) => { setFilterStatus(e.target.value); setPagination(prev => ({ ...prev, page: 1 })); }}
+              className="h-9 px-3 rounded-lg border border-gray-200 bg-white text-sm font-medium text-gray-700 focus:outline-none focus:border-red-400 focus:ring-1 focus:ring-red-100 cursor-pointer"
+            >
+              <option value="">All Statuses</option>
               {STATUS_ORDER.map(s => (
-                <button key={s}
-                  onClick={() => { setFilterStatus(s); setPagination(prev => ({ ...prev, page: 1 })); }}
-                  className={`px-4 py-2 rounded-lg border-2 font-semibold text-sm transition-all ${filterStatus === s ? 'border-brand-red bg-brand-red/10 text-brand-red' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'}`}
-                >
-                  {STATUS_META[s]?.label || s}
-                </button>
+                <option key={s} value={s}>{STATUS_META[s]?.label || s}</option>
               ))}
-            </>
+            </select>
           )}
           {!isAdmin && (
             <p className="text-sm text-gray-500 self-center">
@@ -921,9 +771,8 @@ export default function Assessments() {
           {/* View mode toggle */}
           <div className="flex items-center bg-gray-100 rounded-xl p-1 gap-0.5">
             {[
-              { key: 'grid',     Icon: LayoutGrid,   label: 'Cards'    },
+              { key: 'grid',     Icon: Table2,        label: 'Table'     },
               { key: 'calendar', Icon: CalendarDays, label: 'Calendar' },
-              { key: 'gantt',    Icon: Calendar,     label: 'Timeline' },
             ].map(({ key, Icon, label }) => (
               <button
                 key={key}
@@ -943,7 +792,7 @@ export default function Assessments() {
         </div>
       </div>
 
-      {/* ── Scrollable Content ────────────────────────────────────────────── */}
+      {/* â”€â”€ Scrollable Content â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="flex-1 overflow-y-auto custom-scrollbar">
         {loading && viewMode === 'grid' ? (
           <div className="flex items-center justify-center p-16">
@@ -951,138 +800,127 @@ export default function Assessments() {
           </div>
         ) : (
           <>
-            {/* ── GRID VIEW ──────────────────────────────────────────────── */}
+            {/* â”€â”€ TABLE VIEW â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
             {viewMode === 'grid' && (
               <>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-                  {items.length === 0 && (
-                    <div className="col-span-full text-center py-16 text-gray-400">
-                      {isSupervisor ? 'No assessments requiring your evaluation at the moment.'
-                        : isEmployee ? 'No scheduled or active assessments for you at the moment.'
-                          : 'No assessments found.'}
-                    </div>
-                  )}
-                  {items.map((a) => {
-                    const next  = getNextStatus(a.status);
-                    const isActive    = a.status === 'ACTIVE';
-                    const isScheduled = a.status === 'SCHEDULED';
-                    const sm = STATUS_META[a.status] || STATUS_META.DRAFT;
-                    const requiresSup = requiresSupervisorEvaluation(a);
+                <div className="bg-white rounded-xl shadow-card border border-gray-100 overflow-hidden mb-6">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left text-xs uppercase tracking-wide text-gray-500 border-b border-gray-200 bg-gray-50">
+                          <th className="px-4 py-2.5 font-semibold">Competency</th>
+                          <th className="px-4 py-2.5 font-semibold">Status</th>
+                          <th className="px-4 py-2.5 font-semibold">Audience</th>
+                          <th className="px-4 py-2.5 font-semibold">Schedule</th>
+                          <th className="px-4 py-2.5 font-semibold text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {items.length === 0 && (
+                          <tr>
+                            <td colSpan={5} className="text-center py-16 text-gray-400">
+                              {isSupervisor ? 'No assessments requiring your evaluation at the moment.'
+                                : isEmployee ? 'No scheduled or active assessments for you at the moment.'
+                                  : 'No assessments found.'}
+                            </td>
+                          </tr>
+                        )}
+                        {items.map((a) => {
+                          const next  = getNextStatus(a.status);
+                          const isActive    = a.status === 'ACTIVE';
+                          const isScheduled = a.status === 'SCHEDULED';
+                          const sm = STATUS_META[a.status] || STATUS_META.DRAFT;
+                          const requiresSup = requiresSupervisorEvaluation(a);
 
-                    return (
-                      <div key={a._id} className="bg-white rounded-xl shadow-card hover:shadow-card-hover transition-all border border-gray-100 overflow-hidden">
-                        <div className={`h-2 ${sm.bar}`} />
-                        <div className="p-5">
-                          <div className="flex justify-between items-start mb-3">
-                            <span className={`px-2 py-1 rounded-full text-xs font-bold ${TYPE_META[a.type]?.badge || 'bg-gray-100 text-gray-800'}`}>{a.type}</span>
-                            <span className={`px-2 py-1 rounded-full text-xs font-bold ${sm.badge}`}>{sm.label}</span>
-                          </div>
-                          <h3 className="text-base font-bold text-brand-black mb-1 line-clamp-2">
-                            {a.competencyId?.name || 'No competency'}
-                          </h3>
-                          {a.purpose && (
-                            <span className="inline-block mb-2 text-xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full font-medium">{a.purpose}</span>
-                          )}
-                          {a.targetGroup && (
-                            <span className="ml-1 text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">{a.targetGroup}</span>
-                          )}
-                          <div className="text-xs text-gray-500 mb-3 flex items-center gap-1">
-                            <Users className="w-3 h-3" />
-                            {formatTargetAudience(a)}
-                          </div>
-                          {isScheduled && (
-                            <div className="bg-blue-50 border-l-4 border-blue-500 rounded p-2 mb-3">
-                              <div className="text-xs text-blue-800 font-semibold flex items-center gap-1">
-                                <Clock className="w-3 h-3" /> Starts {getTimeUntil(a.startDate)}
-                              </div>
-                              <div className="text-[10px] text-blue-600 mt-0.5">
-                                {new Date(a.startDate).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                              </div>
-                            </div>
-                          )}
-                          <div className="flex gap-4 text-xs text-gray-400 mb-4">
-                            <span className="flex items-center gap-1">
-                              <Calendar className="w-3 h-3" />
-                              {new Date(a.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                            </span>
-                            <span className="flex items-center gap-1">
-                              <Clock className="w-3 h-3" />
-                              {a.timeLimit ? `${a.timeLimit} min` : 'No limit'}
-                            </span>
-                          </div>
-                          {a.type === 'Combined' && (
-                            <div className="text-xs text-gray-600 bg-gray-50 p-2 rounded-lg mb-3">
-                              <div className="flex justify-between">
-                                <span>Self: {a.weight?.selfAssessment || 20}%</span>
-                                <span>Supervisor: {a.weight?.supervisor || 80}%</span>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                        <div className="border-t border-gray-100 px-3 py-1 flex justify-between items-center bg-gray-50">
-                          {isAdmin && next && a.status !== 'SCHEDULED' && (
-                            <button onClick={() => changeStatus(a._id, next)}
-                              className="px-3 py-1.5 text-xs font-semibold text-brand-red border border-brand-red rounded-lg hover:bg-brand-red-muted transition-colors">
-                              Move to {STATUS_META[next]?.label || next}
-                            </button>
-                          )}
-                          {isAdmin && isScheduled && (
-                            <span className="text-xs text-blue-600 flex items-center gap-1 font-medium">
-                              <Clock className="w-3 h-3" />
-                              Auto-activates {new Date(a.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                            </span>
-                          )}
-                          {!isAdmin && isActive && a.type === 'SelfAssessment' && (
-                            <button onClick={() => nav(`/assessments/${a._id}/take`)}
-                              className="px-3 py-1.5 text-xs font-semibold bg-brand-red text-white rounded-lg hover:bg-brand-red-dark transition-colors">
-                              Start Assessment
-                            </button>
-                          )}
-                          {isEmployee && isActive && a.type === 'Combined' && (
-                            <button onClick={() => nav(`/assessments/${a._id}/take`)}
-                              className="px-3 py-1.5 text-xs font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-                              Start Self-Assessment
-                            </button>
-                          )}
-                          {isEmployee && a.type === 'SupervisorOnly' && (
-                            <span className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-gray-100 text-gray-500 border border-gray-200 cursor-default select-none">
-                              <Eye className="w-3 h-3" /> View Only
-                            </span>
-                          )}
-                          {!isAdmin && isScheduled && a.type !== 'SupervisorOnly' && (
-                            <span className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-50 text-blue-600 border border-blue-100 cursor-default select-none">
-                              <Clock className="w-3 h-3" /> Upcoming
-                            </span>
-                          )}
-                          {isSupervisor && isActive && requiresSup && (
-                            <button onClick={() => nav(`/assessments/${a._id}/evaluate`)}
-                              className="px-3 py-1.5 text-xs font-semibold bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
-                              Evaluate Team
-                            </button>
-                          )}
-                          {isAdmin && a.status === 'COMPLETED' && a.type === 'Combined' && (
-                            <button onClick={() => handleScoreResults(a._id)}
-                              className="px-3 py-1.5 text-xs font-semibold text-white bg-purple-600 rounded-lg hover:bg-purple-700 transition-colors flex items-center gap-1">
-                              <Target className="w-3 h-3" /> Score Combined Results
-                            </button>
-                          )}
-                          {isAdmin && (
-                            <div className="flex items-center gap-3">
-                              <button onClick={() => openDuplicate(a)}
-                                className="text-xs font-semibold text-gray-400 hover:text-brand-red transition-colors flex items-center gap-1"
-                                title="Re use as new draft">
-                                <Copy className="w-3 h-3" /> Re Use
-                              </button>
-                              <button onClick={() => nav(`/assessments/${a._id}`)}
-                                className="text-xs font-semibold text-gray-500 hover:text-brand-red transition-colors flex items-center gap-1">
-                                Details <ChevronRight className="w-3 h-3" />
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
+                          return (
+                            <tr key={a._id} className="hover:bg-gray-50 transition-colors align-top">
+                              <td className="px-4 py-3 min-w-[220px]">
+                                <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-bold ${TYPE_META[a.type]?.badge || 'bg-gray-100 text-gray-800'}`}>{a.type}</span>
+                                <p className="font-semibold text-brand-black mt-1.5">{a.competencyId?.name || 'No competency'}</p>
+                              </td>
+                              <td className="px-4 py-3">
+                                <span className={`inline-block px-2 py-1 rounded-full text-xs font-bold ${sm.badge}`}>{sm.label}</span>
+                              </td>
+                              <td className="px-4 py-3 text-xs text-gray-600">
+                                <span className="flex items-center gap-1">
+                                  <Users className="w-3 h-3 text-gray-400" />
+                                  {formatTargetAudience(a)}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-xs text-gray-600 whitespace-nowrap">
+                                <span className="flex items-center gap-1">
+                                  <Calendar className="w-3 h-3 text-gray-400" />
+                                  {new Date(a.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                  <span className="text-gray-300">Â·</span>
+                                  {a.timeLimit ? `${a.timeLimit} min` : 'No limit'}
+                                </span>
+                                {isScheduled && (
+                                  <p className="text-blue-600 font-semibold mt-1">{getTimeUntil(a.startDate)}</p>
+                                )}
+                              </td>
+                              <td className="px-4 py-3">
+                                <div className="flex items-center justify-end gap-2 flex-wrap">
+                                  {isAdmin && next && a.status !== 'SCHEDULED' && (
+                                    <button onClick={() => changeStatus(a._id, next)}
+                                      className="px-3 py-1.5 text-xs font-semibold text-brand-red border border-brand-red rounded-lg hover:bg-brand-red-muted transition-colors">
+                                      Move to {STATUS_META[next]?.label || next}
+                                    </button>
+                                  )}
+                                  {!isAdmin && isActive && a.type === 'SelfAssessment' && (
+                                    <button onClick={() => nav(`/assessments/${a._id}/take`)}
+                                      className="px-3 py-1.5 text-xs font-semibold bg-brand-red text-white rounded-lg hover:bg-brand-red-dark transition-colors">
+                                      Start Assessment
+                                    </button>
+                                  )}
+                                  {isEmployee && isActive && a.type === 'Combined' && (
+                                    <button onClick={() => nav(`/assessments/${a._id}/take`)}
+                                      className="px-3 py-1.5 text-xs font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                                      Start Self-Assessment
+                                    </button>
+                                  )}
+                                  {isEmployee && a.type === 'SupervisorOnly' && (
+                                    <span className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-gray-100 text-gray-500 border border-gray-200 cursor-default select-none">
+                                      <Eye className="w-3 h-3" /> View Only
+                                    </span>
+                                  )}
+                                  {!isAdmin && isScheduled && a.type !== 'SupervisorOnly' && (
+                                    <span className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-50 text-blue-600 border border-blue-100 cursor-default select-none">
+                                      <Clock className="w-3 h-3" /> Upcoming
+                                    </span>
+                                  )}
+                                  {isSupervisor && isActive && requiresSup && (
+                                    <button onClick={() => nav(`/assessments/${a._id}/evaluate`)}
+                                      className="px-3 py-1.5 text-xs font-semibold bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
+                                      Evaluate Team
+                                    </button>
+                                  )}
+                                  {isAdmin && a.status === 'COMPLETED' && a.type === 'Combined' && (
+                                    <button onClick={() => handleScoreResults(a._id)}
+                                      className="px-3 py-1.5 text-xs font-semibold text-white bg-purple-600 rounded-lg hover:bg-purple-700 transition-colors flex items-center gap-1">
+                                      <Target className="w-3 h-3" /> Score Results
+                                    </button>
+                                  )}
+                                  {isAdmin && (
+                                    <div className="flex items-center gap-3">
+                                      <button onClick={() => openDuplicate(a)}
+                                        className="text-xs font-semibold text-gray-400 hover:text-brand-red transition-colors flex items-center gap-1"
+                                        title="Re use as new draft">
+                                        <Copy className="w-3 h-3" /> Re Use
+                                      </button>
+                                      <button onClick={() => nav(`/assessments/${a._id}`)}
+                                        className="text-xs font-semibold text-gray-500 hover:text-brand-red transition-colors flex items-center gap-1">
+                                        Details <ChevronRight className="w-3 h-3" />
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
 
                 {/* Pagination */}
@@ -1122,7 +960,7 @@ export default function Assessments() {
               </>
             )}
 
-            {/* ── CALENDAR VIEW ──────────────────────────────────────────── */}
+            {/* â”€â”€ CALENDAR VIEW â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
             {viewMode === 'calendar' && (
               <div className="bg-white rounded-2xl border border-gray-100 shadow-card p-6">
                 <div className="flex items-center justify-between mb-4">
@@ -1138,28 +976,11 @@ export default function Assessments() {
               </div>
             )}
 
-            {/* ── GANTT / TIMELINE VIEW ───────────────────────────────────── */}
-            {viewMode === 'gantt' && (
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-card p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-sm font-bold text-gray-800 flex items-center gap-2">
-                    <Calendar className="w-4 h-4 text-brand-red" /> Timeline / Gantt
-                  </h2>
-                  <span className="text-xs text-gray-400">
-                    Click a bar or name to see details
-                  </span>
-                </div>
-                <GanttView
-                  items={calendarItems}
-                  onAssessmentClick={setSelectedAssessment}
-                />
-              </div>
-            )}
           </>
         )}
       </div>
 
-      {/* ── Assessment detail panel ────────────────────────────────────────── */}
+      {/* â”€â”€ Assessment detail panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {selectedAssessment && (
         <AssessmentPanel
           assessment={selectedAssessment}
@@ -1173,7 +994,7 @@ export default function Assessments() {
         />
       )}
 
-      {/* ── Score confirm dialog ───────────────────────────────────────────── */}
+      {/* â”€â”€ Score confirm dialog â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {scoreConfirm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-lg max-w-md w-full p-6">
@@ -1190,7 +1011,7 @@ export default function Assessments() {
         </div>
       )}
 
-      {/* ── Duplicate modal ─────────────────────────────────────────────────── */}
+      {/* â”€â”€ Duplicate modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {duplicateSource && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6">
@@ -1232,7 +1053,7 @@ export default function Assessments() {
               <button onClick={handleDuplicate} disabled={duplicating || !duplicateDates.startDate || !duplicateDates.endDate}
                 className="flex-1 py-2.5 bg-brand-red text-white rounded-xl text-sm font-semibold hover:bg-brand-red-dark disabled:opacity-60 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2">
                 {duplicating ? (
-                  <><div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" /><span>Duplicating…</span></>
+                  <><div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" /><span>Duplicatingâ€¦</span></>
                 ) : (
                   <><Copy className="w-3.5 h-3.5" /><span>Create copy</span></>
                 )}
@@ -1242,7 +1063,7 @@ export default function Assessments() {
         </div>
       )}
 
-      {/* ── Create Assessment Modal ────────────────────────────────────────── */}
+      {/* â”€â”€ Create Assessment Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <Modal open={modal === 'create'} onClose={() => setModal(null)} title="Create Assessment" large>
         <div className="space-y-5">
           {/* Basic Information */}
@@ -1255,7 +1076,7 @@ export default function Assessments() {
                 <label className="block text-sm font-semibold text-gray-700 mb-1.5">Competency *</label>
                 <select value={form.competencyId} onChange={e => setForm(prev => ({ ...prev, competencyId: e.target.value }))}
                   className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm" required>
-                  <option value="">— Select Competency —</option>
+                  <option value="">â€” Select Competency â€”</option>
                   {competencies.map(c => <option key={c._id} value={c._id}>{c.name} ({c.category})</option>)}
                 </select>
               </div>
@@ -1263,7 +1084,7 @@ export default function Assessments() {
                 <label className="block text-sm font-semibold text-gray-700 mb-1.5">Target Group *</label>
                 <select value={form.targetGroup} onChange={e => setForm(prev => ({ ...prev, targetGroup: e.target.value }))}
                   className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm disabled:bg-gray-100 disabled:cursor-not-allowed" required disabled={!form.competencyId}>
-                  <option value="">{form.competencyId ? '— Select Target Group —' : '— Select a competency first —'}</option>
+                  <option value="">{form.competencyId ? 'â€” Select Target Group â€”' : 'â€” Select a competency first â€”'}</option>
                   {targetGroups.map(tg => <option key={tg} value={tg}>{tg.charAt(0).toUpperCase() + tg.slice(1).replace('-', ' ')}</option>)}
                 </select>
               </div>
@@ -1280,7 +1101,7 @@ export default function Assessments() {
                 <label className="block text-sm font-semibold text-gray-700 mb-1.5">Purpose *</label>
                 <select value={form.purpose} onChange={e => setForm(prev => ({ ...prev, purpose: e.target.value }))}
                   className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm" required>
-                  <option value="">— Select Purpose —</option>
+                  <option value="">â€” Select Purpose â€”</option>
                   {PURPOSES.map(p => <option key={p} value={p}>{p}</option>)}
                 </select>
               </div>
@@ -1411,7 +1232,7 @@ export default function Assessments() {
               {form.targetAudience.type === 'SPECIFIC_EMPLOYEES' && (
                 <div className="space-y-2">
                   <div className="grid grid-cols-3 gap-2">
-                    <input type="text" placeholder="Search by name…" value={employeeSearch.name}
+                    <input type="text" placeholder="Search by nameâ€¦" value={employeeSearch.name}
                       onChange={e => setEmployeeSearch(prev => ({ ...prev, name: e.target.value }))}
                       onKeyDown={e => e.key === 'Enter' && handleEmployeeSearch()}
                       className="border border-gray-300 rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-brand-red" />
@@ -1420,7 +1241,7 @@ export default function Assessments() {
                       <option value="">All Departments</option>
                       {departments.map(d => <option key={d} value={d}>{d}</option>)}
                     </select>
-                    <input type="text" placeholder="Filter by position…" value={employeeSearch.position}
+                    <input type="text" placeholder="Filter by positionâ€¦" value={employeeSearch.position}
                       onChange={e => setEmployeeSearch(prev => ({ ...prev, position: e.target.value }))}
                       onKeyDown={e => e.key === 'Enter' && handleEmployeeSearch()}
                       className="border border-gray-300 rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-brand-red" />
@@ -1446,7 +1267,7 @@ export default function Assessments() {
                               className="w-4 h-4 accent-brand-red flex-shrink-0" />
                             <div className="flex-1 min-w-0">
                               <p className="text-xs font-semibold text-gray-800 truncate">{emp.name}</p>
-                              <p className="text-xs text-gray-400">{emp.department} · {emp.position}</p>
+                              <p className="text-xs text-gray-400">{emp.department} Â· {emp.position}</p>
                             </div>
                             {selected && <Check className="w-3 h-3 text-brand-red flex-shrink-0" />}
                           </label>

@@ -191,23 +191,22 @@ export default function Competencies() {
   return (
     <div className="p-7 bg-gradient-to-br from-gray-50 to-white h-[calc(100vh-4rem)] flex flex-col">
       {/* HEADER */}
-      <div className="flex justify-between items-start mb-6 flex-shrink-0">
+      <div className="flex justify-between items-start mb-3 flex-shrink-0">
         <div>
-          <h1 className="text-2xl font-bold text-brand-black">Competencies</h1>
-          <p className="text-gray-500 mt-1">Define and manage competency framework.</p>
+          <h1 className="text-xl  font-bold text-brand-black">Competencies</h1>
         </div>
         <button
           onClick={openCreate}
-          className="flex items-center gap-2 px-5 py-2.5 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-transform hover:scale-105"
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-transform hover:scale-105"
         >
-          <Plus className="w-4 h-4" /> Add Competency
+          <Plus className="w-3.5 h-3.5" /> Add Competency
         </button>
       </div>
 
       {/* FILTERS */}
-      <div className="flex flex-col gap-3 mb-6 flex-shrink-0">
+      <div className="flex flex-wrap items-center gap-3 mb-6 flex-shrink-0">
         {/* Search bar */}
-        <div className="relative max-w-sm">
+        <div className="relative flex-1 min-w-[220px] max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
           <input
             type="text"
@@ -223,34 +222,28 @@ export default function Competencies() {
           )}
         </div>
 
-        <div className="flex justify-between items-center gap-4">
-        <div className="flex gap-2 flex-wrap">
+        {/* Category dropdown */}
+        <select
+          value={catFilter}
+          onChange={(e) => handleCatFilter(e.target.value)}
+          className="h-9 px-3 rounded-lg border border-gray-200 bg-white text-sm font-medium text-gray-700 focus:outline-none focus:border-red-400 focus:ring-1 focus:ring-red-100 cursor-pointer"
+        >
           {CATEGORIES.map((c) => (
-            <button
-              key={c}
-              onClick={() => handleCatFilter(c)}
-              className={`px-4 py-2 rounded-lg border-2 text-sm font-semibold transition-all hover:shadow-md ${
-                catFilter === c
-                  ? CAT_COLORS[c] || 'border-brand-red bg-brand-red/10 text-brand-red'
-                  : 'border-gray-200 bg-white text-gray-600'
-              }`}
-            >
-              {c}
-            </button>
+            <option key={c} value={c}>{c}</option>
           ))}
-        </div>
+        </select>
 
+        {/* Page size */}
         <select
           value={pagination.limit}
           onChange={handlePageSizeChange}
-          className="px-3 py-1.5 border rounded-lg"
+          className="h-9 px-3 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 cursor-pointer"
         >
-          <option value="6">6</option>
-          <option value="12">12</option>
-          <option value="24">24</option>
-          <option value="48">48</option>
+          <option value="6">6 / page</option>
+          <option value="12">12 / page</option>
+          <option value="24">24 / page</option>
+          <option value="48">48 / page</option>
         </select>
-      </div>
       </div>
 
       {/* CONTENT - Scrollable */}
@@ -260,49 +253,65 @@ export default function Competencies() {
             <div className="w-10 h-10 border-4 border-brand-red border-t-transparent rounded-full animate-spin" />
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-6">
-            {items.map((c) => (
-              <div
-                key={c._id}
-                className="group relative bg-white/90 backdrop-blur-sm rounded-xl border border-gray-200/70 p-4 transition-all hover:shadow-xl hover:-translate-y-1"
-              >
-                <h3 className="font-semibold text-brand-black mb-2 line-clamp-2 pr-4">
-                  {c.name}
-                </h3>
-
-                {/* Tags - Category first, then target groups below */}
-                <div className="flex flex-wrap gap-2 mb-3">
-                  <span className={`px-2 py-0.5 rounded-md text-[11px] font-semibold ${CAT_COLORS[c.category]}`}>
-                    {c.category}
-                  </span>
-                </div>
-                <div className="flex flex-wrap gap-2 mb-4">
-                  {c.targetGroups?.map((tg) => (
-                    <span
-                      key={tg.targetGroup}
-                      className={`px-2 py-0.5 rounded-md text-[11px] ${TG_COLORS[tg.targetGroup]}`}
-                    >
-                      {tg.targetGroup}
-                    </span>
+          <div className="bg-white rounded-xl border border-gray-200/70 overflow-hidden mb-6">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs uppercase tracking-wide text-gray-500 border-b border-gray-200 bg-gray-50">
+                    <th className="px-4 py-2.5 font-semibold">Competency</th>
+                    <th className="px-4 py-2.5 font-semibold">Category</th>
+                    <th className="px-4 py-2.5 font-semibold">Target Groups</th>
+                    <th className="px-4 py-2.5 font-semibold text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {items.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="text-center py-16 text-gray-400">
+                        No competencies found.
+                      </td>
+                    </tr>
+                  )}
+                  {items.map((c) => (
+                    <tr key={c._id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-4 py-3 font-semibold text-brand-black whitespace-nowrap">
+                        {c.name}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`px-2 py-0.5 rounded-md text-[11px] font-semibold ${CAT_COLORS[c.category]}`}>
+                          {c.category}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap gap-1.5">
+                          {c.targetGroups?.map((tg) => (
+                            <span
+                              key={tg.targetGroup}
+                              className={`px-2 py-0.5 rounded-md text-[11px] ${TG_COLORS[tg.targetGroup]}`}
+                            >
+                              {tg.targetGroup}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-end gap-1">
+                          <button onClick={() => setViewItem(c)} className="p-1.5 rounded-md hover:bg-blue-50 transition" title="View">
+                            <Eye className="w-4 h-4 text-blue-600" />
+                          </button>
+                          <button onClick={() => openEdit(c)} className="p-1.5 rounded-md hover:bg-gray-100 transition" title="Edit">
+                            <Edit2 className="w-4 h-4 text-gray-600" />
+                          </button>
+                          <button onClick={() => handleDelete(c._id)} className="p-1.5 rounded-md hover:bg-red-50 transition" title="Delete">
+                            <Trash2 className="w-4 h-4 text-red-600" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
                   ))}
-                </div>
-
-                {/* Bottom row: Only actions (no questions count anymore) */}
-                <div className="flex items-center justify-end text-xs text-gray-400 border-t pt-3">
-                  <div className="flex gap-1">
-                    <button onClick={() => setViewItem(c)} className="p-1.5 rounded-md hover:bg-blue-50 transition">
-                      <Eye className="w-4 h-4 text-blue-600" />
-                    </button>
-                    <button onClick={() => openEdit(c)} className="p-1.5 rounded-md hover:bg-gray-100 transition">
-                      <Edit2 className="w-4 h-4 text-gray-600" />
-                    </button>
-                    <button onClick={() => handleDelete(c._id)} className="p-1.5 rounded-md hover:bg-red-50 transition">
-                      <Trash2 className="w-4 h-4 text-red-600" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </div>

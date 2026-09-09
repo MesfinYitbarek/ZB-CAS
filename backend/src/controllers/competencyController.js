@@ -1,37 +1,53 @@
-import Competency from '../models/Competency.js';
-import Question from '../models/Question.js';
-import Recommendation from '../models/Recommendation.js';
+import prisma from '../config/prisma.js';
 import AppError from '../utils/AppError.js';
 import asyncHandler from '../utils/asyncHandler.js';
+import { logActivity } from '../services/activityService.js';
 
 const TARGET_GROUPS = ['managerial', 'non-managerial', 'common'];
+
+const withTargetGroups = (competency) => ({
+  _id:          competency.id,
+  id:           competency.id,
+  name:         competency.name,
+  category:     competency.category,
+  targetGroups: competency.targetGroups.map(tg => ({
+    targetGroup: tg.targetGroup,
+    description: tg.description,
+  })),
+  createdAt:    competency.createdAt,
+  updatedAt:    competency.updatedAt,
+});
 
 // ─── LIST ─────────────────────────────────────────────────────────────────────
 export const getCompetencies = asyncHandler(async (req, res) => {
   const { category, search, page = 1, limit = 50 } = req.query;
 
-  const filter = {};
-  if (category) filter.category = category;
+  const where = {};
+  if (category) where.category = category;
   if (search && search.trim()) {
-    const regex = new RegExp(search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-    filter.$or = [{ name: regex }, { category: regex }];
+    where.OR = [
+      { name:     { contains: search.trim(), mode: 'insensitive' } },
+      { category: { contains: search.trim(), mode: 'insensitive' } },
+    ];
   }
 
   const skip = (parseInt(page, 10) - 1) * parseInt(limit, 10);
 
   const [competencies, total] = await Promise.all([
-    Competency.find(filter)
-      .skip(skip)
-      .limit(parseInt(limit, 10))
-      .sort({ name: 1 })
-      .lean(),
-    Competency.countDocuments(filter),
+    prisma.competency.findMany({
+      where,
+      include: { targetGroups: true },
+      skip,
+      take: parseInt(limit, 10),
+      orderBy: { name: 'asc' },
+    }),
+    prisma.competency.count({ where }),
   ]);
 
   res.status(200).json({
     status: 'success',
     data: {
-      competencies,
+      competencies: competencies.map(withTargetGroups),
       pagination: { total, page: parseInt(page, 10), limit: parseInt(limit, 10) },
     },
   });
@@ -39,12 +55,15 @@ export const getCompetencies = asyncHandler(async (req, res) => {
 
 // ─── GET ONE ─────────────────────────────────────────────────────────────────
 export const getCompetency = asyncHandler(async (req, res, next) => {
-  const competency = await Competency.findById(req.params.id).lean();
+  const competency = await prisma.competency.findUnique({
+    where: { id: req.params.id },
+    include: { targetGroups: true },
+  });
   if (!competency) return next(new AppError('Competency not found.', 404));
 
   res.status(200).json({
     status: 'success',
-    data: { competency },
+    data: { competency: withTargetGroups(competency) },
   });
 });
 
@@ -68,33 +87,61 @@ export const createCompetency = asyncHandler(async (req, res, next) => {
     uniqueTG.add(tg.targetGroup);
   }
 
-  let competency = await Competency.findOne({ name, category });
+  let competency = await prisma.competency.findUnique({
+    where: { name_category: { name, category } },
+    include: { targetGroups: true },
+  });
+
+  let created = false;
 
   if (competency) {
+    // merge target groups
     const existingMap = new Map(competency.targetGroups.map(t => [t.targetGroup, t.description]));
     targetGroups.forEach(tg => {
       existingMap.set(tg.targetGroup, tg.description || '');
     });
-    competency.targetGroups = Array.from(existingMap, ([targetGroup, description]) => ({
-      targetGroup,
-      description,
-    }));
-    await competency.save();
-  } else {
-    competency = await Competency.create({
-      name,
-      category,
-      targetGroups: targetGroups.map(tg => ({
-        targetGroup: tg.targetGroup,
-        description: tg.description || '',
-      })),
+    const merged = Array.from(existingMap, ([targetGroup, description]) => ({ targetGroup, description }));
+
+    const deleteMany = prisma.competencyTargetGroup.deleteMany({ where: { competencyId: competency.id } });
+    const createMany = prisma.competencyTargetGroup.createMany({
+      data: merged.map((tg) => ({ ...tg, competencyId: competency.id })),
     });
+    await prisma.$transaction([deleteMany, createMany]);
+
+    competency = await prisma.competency.findUnique({
+      where: { id: competency.id },
+      include: { targetGroups: true },
+    });
+  } else {
+    competency = await prisma.competency.create({
+      data: {
+        name,
+        category,
+        targetGroups: {
+          create: targetGroups.map(tg => ({
+            targetGroup: tg.targetGroup,
+            description: tg.description || '',
+          })),
+        },
+      },
+      include: { targetGroups: true },
+    });
+    created = true;
   }
 
-  res.status(competency ? 200 : 201).json({
+  await logActivity({
+    req,
+    action: created ? 'created' : 'updated',
+    entity: 'Competency',
+    entityId: competency.id,
+    description: `Competency "${competency.name}" ${created ? 'created' : 'updated'}`,
+    metadata: { category: competency.category, targetGroups: competency.targetGroups.map((t) => t.targetGroup) },
+  });
+
+  res.status(created ? 201 : 200).json({
     status: 'success',
-    message: competency ? 'Target groups merged/updated.' : 'Competency created.',
-    data: { competency: competency.toObject() },
+    message: created ? 'Competency created.' : 'Target groups merged/updated.',
+    data: { competency: withTargetGroups(competency) },
   });
 });
 
@@ -102,22 +149,26 @@ export const createCompetency = asyncHandler(async (req, res, next) => {
 export const updateCompetency = asyncHandler(async (req, res, next) => {
   const { name, category, targetGroups } = req.body;
 
-  let competency = await Competency.findById(req.params.id);
+  let competency = await prisma.competency.findUnique({
+    where: { id: req.params.id },
+    include: { targetGroups: true },
+  });
   if (!competency) return next(new AppError('Competency not found.', 404));
 
-  let updated = false;
+  const data = {};
 
   let newName = name !== undefined ? name : competency.name;
   let newCategory = category !== undefined ? category : competency.category;
 
   if (name !== undefined || category !== undefined) {
-    const existing = await Competency.findOne({ name: newName, category: newCategory });
-    if (existing && existing._id.toString() !== competency._id.toString()) {
+    const existing = await prisma.competency.findUnique({
+      where: { name_category: { name: newName, category: newCategory } },
+    });
+    if (existing && existing.id !== competency.id) {
       return next(new AppError('A competency with this name and category already exists.', 409));
     }
-    competency.name = newName;
-    competency.category = newCategory;
-    updated = true;
+    data.name = newName;
+    data.category = newCategory;
   }
 
   if (Array.isArray(targetGroups)) {
@@ -134,29 +185,63 @@ export const updateCompetency = asyncHandler(async (req, res, next) => {
       }
       uniqueTG.add(tg.targetGroup);
     }
-    competency.targetGroups = targetGroups.map(tg => ({
-      targetGroup: tg.targetGroup,
-      description: tg.description || '',
-    }));
-    updated = true;
   }
 
-  if (updated) await competency.save();
+  const tx = [];
+  if (Object.keys(data).length > 0) {
+    tx.push(prisma.competency.update({ where: { id: competency.id }, data }));
+  }
+  if (Array.isArray(targetGroups)) {
+    tx.push(prisma.competencyTargetGroup.deleteMany({ where: { competencyId: competency.id } }));
+    tx.push(prisma.competencyTargetGroup.createMany({
+      data: targetGroups.map(tg => ({
+        competencyId: competency.id,
+        targetGroup: tg.targetGroup,
+        description: tg.description || '',
+      })),
+    }));
+  }
+  if (tx.length > 0) {
+    await prisma.$transaction(tx);
+  }
+
+  competency = await prisma.competency.findUnique({
+    where: { id: competency.id },
+    include: { targetGroups: true },
+  });
+
+  await logActivity({
+    req,
+    action: 'updated',
+    entity: 'Competency',
+    entityId: competency.id,
+    description: `Competency "${competency.name}" updated`,
+  });
 
   res.status(200).json({
     status: 'success',
-    data: { competency: competency.toObject() },
+    data: { competency: withTargetGroups(competency) },
   });
 });
 
 // ─── DELETE ───────────────────────────────────────────────────────────────────
 export const deleteCompetency = asyncHandler(async (req, res, next) => {
-  const competency = await Competency.findById(req.params.id);
+  const competency = await prisma.competency.findUnique({ where: { id: req.params.id } });
   if (!competency) return next(new AppError('Competency not found.', 404));
 
-  await Question.deleteMany({ competencyId: competency._id });
-  await Recommendation.deleteMany({ competencyId: competency._id });
-  await competency.deleteOne();
+  // Questions & recommendations reference the competency — delete first (matches
+  // the original Mongo behavior) then Prisma cascades targetGroups.
+  await prisma.question.deleteMany({ where: { competencyId: competency.id } });
+  await prisma.recommendation.deleteMany({ where: { competencyId: competency.id } });
+  await prisma.competency.delete({ where: { id: competency.id } });
+
+  await logActivity({
+    req,
+    action: 'deleted',
+    entity: 'Competency',
+    entityId: competency.id,
+    description: `Competency "${competency.name}" deleted`,
+  });
 
   res.status(200).json({ status: 'success', message: 'Competency deleted.' });
 });

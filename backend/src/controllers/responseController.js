@@ -1,15 +1,17 @@
 import logger from '../utils/logger.js';
 /* controllers/responseController.js */
-import Assessment from '../models/Assessment.js';
-import Question from '../models/Question.js';
-import Response from '../models/Response.js';
-import SecurityViolation from '../models/SecurityViolation.js';
-import User from '../models/User.js';
+import prisma from '../config/prisma.js';
 import AppError from '../utils/AppError.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import { scoreIndividual } from '../services/scoringService.js';
 import { sendResultsEmail } from '../services/emailService.js';
 import { notifyResultReady } from '../services/notificationService.js';
+import { logActivity } from '../services/activityService.js';
+
+const withAssessmentQuestions = (assessment) => ({
+  ...assessment,
+  questionIds: (assessment.assessmentQuestions || []).map(aq => aq.questionId),
+});
 
 /* ═══════════════════════════════════════════════════════════════════════════
    HELPERS
@@ -19,17 +21,20 @@ import { notifyResultReady } from '../services/notificationService.js';
  * Validate access permissions for assessments
  */
 const validateAccess = async (assessmentId, userId, employeeId, respondentType) => {
-  const assessment = await Assessment.findById(assessmentId);
+  const assessment = await prisma.assessment.findUnique({
+    where: { id: assessmentId },
+    include: { assessmentQuestions: { select: { questionId: true } } },
+  });
   if (!assessment) throw new AppError('Assessment not found.', 404);
   if (assessment.status !== 'ACTIVE') throw new AppError('Assessment is not active.', 400);
 
-  if (respondentType === 'self' && userId.toString() !== employeeId.toString()) {
+  if (respondentType === 'self' && userId !== employeeId) {
     throw new AppError('You can only submit self-assessments for yourself.', 403);
   }
 
   if (respondentType === 'supervisor') {
-    const employee = await User.findById(employeeId);
-    if (!employee || employee.supervisorId?.toString() !== userId.toString()) {
+    const employee = await prisma.user.findUnique({ where: { id: employeeId } });
+    if (!employee || employee.supervisorId !== userId) {
       throw new AppError('You can only evaluate your direct reports.', 403);
     }
   }
@@ -44,22 +49,6 @@ const normalizeViolationType = (type) => {
   return type.toUpperCase().replace(/[-\s]/g, '_');
 };
 
-/**
- * Map violation types → summary counter field names
- */
-const VIOLATION_FIELD_MAP = {
-  TAB_SWITCH: 'tabSwitches',
-  COPY_ATTEMPT: 'copyAttempts',
-  RIGHT_CLICK: 'rightClickAttempts',
-  FULLSCREEN_EXIT: 'fullscreenExits',
-  DEVTOOLS: 'devToolsAttempts',
-  WINDOW_BLUR: 'windowBlurs',
-  PRINT_ATTEMPT: 'printAttempts',
-};
-
-/** Number of violations before a record is automatically flagged high-risk */
-const HIGH_RISK_THRESHOLD = 5;
-
 /* ═══════════════════════════════════════════════════════════════════════════
    EMPLOYEE ACTIONS
    ═══════════════════════════════════════════════════════════════════════════ */
@@ -71,17 +60,35 @@ export const saveAnswer = asyncHandler(async (req, res, next) => {
 
   const assessment = await validateAccess(assessmentId, req.user.id, empId, 'self');
 
-  if (!assessment.questionIds.some((q) => q.toString() === questionId)) {
+  const questionIds = (assessment.assessmentQuestions || []).map(aq => aq.questionId);
+  if (!questionIds.some((q) => q === questionId)) {
     return next(new AppError('Question does not belong to this assessment.', 400));
   }
 
-  const response = await Response.findOneAndUpdate(
-    { assessmentId, questionId, userId: req.user.id, employeeId: empId, respondentType: 'self' },
-    { selectedAnswer, respondentType: 'self' },
-    { new: true, upsert: true, runValidators: true }
-  );
+  const existing = await prisma.response.findFirst({
+    where: { assessmentId, questionId, userId: req.user.id, employeeId: empId, respondentType: 'self' },
+  });
 
-  res.status(200).json({ status: 'success', data: { response } });
+  let response;
+  if (existing) {
+    response = await prisma.response.update({
+      where: { id: existing.id },
+      data: { selectedAnswer },
+    });
+  } else {
+    response = await prisma.response.create({
+      data: {
+        assessmentId,
+        questionId,
+        userId: req.user.id,
+        employeeId: empId,
+        respondentType: 'self',
+        selectedAnswer,
+      },
+    });
+  }
+
+  res.status(200).json({ status: 'success', data: { response: { ...response, _id: response.id } } });
 });
 
 // ─── SUBMIT FULL ASSESSMENT (Employee Side) ──────────────────────────────────
@@ -91,74 +98,81 @@ export const submitAssessment = asyncHandler(async (req, res, next) => {
 
   const assessment = await validateAccess(assessmentId, req.user.id, employeeId, 'self');
 
-  // Check if all questions are answered
-  // const responseCount = await Response.countDocuments({
-  //   assessmentId,
-  //   employeeId,
-  //   respondentType: 'self',
-  // });
-  // if (responseCount < assessment.questionIds.length) {
-  //   return next(new AppError('Please answer all questions before submitting.', 400));
-  // }
-
   // Mark all responses as submitted
   const now = new Date();
-  await Response.updateMany(
-    { assessmentId, employeeId, respondentType: 'self' },
-    { $set: { submittedAt: now } }
-  );
+  await prisma.response.updateMany({
+    where: { assessmentId, employeeId, respondentType: 'self' },
+    data: { submittedAt: now },
+  });
 
   // ─── Persist final security data ────────────────────────────────────────
   const { securityLog, totalViolations } = req.body;
   try {
-    await SecurityViolation.findOneAndUpdate(
-      { assessmentId, userId: employeeId },
-      {
-        $set: {
-          securityLog: securityLog || null,
-          submittedAt: now,
-        },
-        ...(totalViolations != null && {
-          $max: { 'summary.totalViolations': totalViolations },
-        }),
-      },
-      { upsert: true }
-    );
+    const existingSec = await prisma.securityViolation.findUnique({
+      where: { assessmentId_userId: { assessmentId, userId: employeeId } },
+    });
+    const secData = {
+      securityLog: securityLog || null,
+      submittedAt: now,
+    };
+    if (totalViolations != null) {
+      secData.totalViolations = Math.max(existingSec?.totalViolations || 0, totalViolations);
+      secData.isHighRisk = existingSec?.isHighRisk || totalViolations >= 5 || false;
+    }
+    if (existingSec) {
+      await prisma.securityViolation.update({
+        where: { id: existingSec.id },
+        data: secData,
+      });
+    } else {
+      await prisma.securityViolation.create({
+        data: { assessmentId, userId: employeeId, ...secData },
+      });
+    }
   } catch (secErr) {
     logger.error({ event: 'security_log_fail', message: secErr.message });
   }
 
   // ─── TRIGGER AUTO-SCORING for SelfAssessment ───────────────────────────
+  await logActivity({
+    req,
+    action: 'submitted',
+    entity: 'Response',
+    entityId: employeeId,
+    description: `Assessment "${assessment.description || assessment.purpose}" submitted`,
+    metadata: { assessmentId, employeeId, type: assessment.type, self: true },
+  });
+
   if (assessment.type === 'SelfAssessment') {
     const result = await scoreIndividual(assessmentId, employeeId);
 
     // Notify Employee
-    const employee = await User.findById(employeeId).lean();
+    const employee = await prisma.user.findUnique({ where: { id: employeeId } });
     if (employee?.email) {
       sendResultsEmail(
         { name: employee.name, email: employee.email },
         [
           {
-            competencyName: assessment.competencyId?.name || 'Competency',
-            finalScore: result.finalScore,
-            level: result.level,
+            competencyName: 'Competency',
+            finalScore: result?.finalScore,
+            level: result?.level,
             assessmentType: assessment.type,
           },
         ]
       ).catch((e) => console.error('Email failed:', e.message));
       notifyResultReady(
         employeeId,
-        assessment.competencyId?.name || 'Competency',
-        result.finalScore,
-        result.level,
-        result._id
+        'Competency',
+        result?.finalScore,
+        result?.level,
+        result?.id
       );
     }
 
     return res.status(200).json({
       status: 'success',
       message: 'Assessment submitted and scored.',
-      data: { result },
+      data: { result: result && { ...result, _id: result.id } },
     });
   }
 
@@ -181,37 +195,76 @@ export const recordSecurityViolation = asyncHandler(async (req, res, next) => {
   const violationType = normalizeViolationType(violation?.type);
   const violationDetails = typeof violation?.details === 'string' ? violation.details : '';
 
-  const incFields = { 'summary.totalViolations': 1 };
-  const summaryField = VIOLATION_FIELD_MAP[violationType];
-  if (summaryField) {
-    incFields[`summary.${summaryField}`] = 1;
-  }
+  const FIELD_MAP = {
+    TAB_SWITCH: 'tabSwitches',
+    COPY_ATTEMPT: 'copyAttempts',
+    RIGHT_CLICK: 'rightClickAttempts',
+    FULLSCREEN_EXIT: 'fullscreenExits',
+    DEVTOOLS: 'devToolsAttempts',
+    WINDOW_BLUR: 'windowBlurs',
+    PRINT_ATTEMPT: 'printAttempts',
+  };
+  const summaryField = FIELD_MAP[violationType] || null;
 
-  const doc = await SecurityViolation.findOneAndUpdate(
-    { assessmentId, userId },
-    {
-      $push: {
-        violations: {
-          type: violationType,
-          timestamp: new Date(),
-          details: violationDetails,
-        },
-      },
-      $inc: incFields,
-    },
-    { upsert: true, new: true }
-  );
+  const existing = await prisma.securityViolation.findUnique({
+    where: { assessmentId_userId: { assessmentId, userId } },
+  });
 
-  if (!doc.summary.isHighRisk && doc.summary.totalViolations >= HIGH_RISK_THRESHOLD) {
-    doc.summary.isHighRisk = true;
-    await doc.save();
+  const newEntry = { type: violationType, timestamp: new Date(), details: violationDetails };
+  const totalViolations = (existing?.totalViolations || 0) + 1;
+  const isHighRisk = existing?.isHighRisk || totalViolations >= 5;
+
+  const data = {
+    totalViolations,
+    isHighRisk,
+  };
+  if (summaryField) data[summaryField] = (existing?.[summaryField] || 0) + 1;
+
+  let doc;
+  if (existing) {
+    const violations = Array.isArray(existing.violations) ? existing.violations : [];
+    doc = await prisma.securityViolation.update({
+      where: { id: existing.id },
+      data: { ...data, violations: [...violations, newEntry] },
+    });
+  } else {
+    try {
+      doc = await prisma.securityViolation.create({
+        data: { assessmentId, userId, ...data, violations: [newEntry] },
+      });
+    } catch (err) {
+      // Race: two violations recorded back-to-back before the first create
+      // committed (P2002 on @@unique([assessmentId, userId])). Retry as an
+      // update so the violation is never silently dropped.
+      if (err?.code === 'P2002') {
+        const raced = await prisma.securityViolation.findUnique({
+          where: { assessmentId_userId: { assessmentId, userId } },
+        });
+        if (raced) {
+          const violations = Array.isArray(raced.violations) ? raced.violations : [];
+          doc = await prisma.securityViolation.update({
+            where: { id: raced.id },
+            data: {
+              totalViolations: (raced.totalViolations || 0) + 1,
+              isHighRisk: raced.isHighRisk || (raced.totalViolations || 0) + 1 >= 5,
+              ...(summaryField ? { [summaryField]: (raced[summaryField] || 0) + 1 } : {}),
+              violations: [...violations, newEntry],
+            },
+          });
+        } else {
+          throw err;
+        }
+      } else {
+        throw err;
+      }
+    }
   }
 
   res.status(200).json({
     status: 'success',
     data: {
-      totalViolations: doc.summary.totalViolations,
-      isHighRisk: doc.summary.isHighRisk,
+      totalViolations: doc.totalViolations,
+      isHighRisk: doc.isHighRisk,
     },
   });
 });
@@ -224,8 +277,8 @@ export const getSecurityViolations = asyncHandler(async (req, res, next) => {
 
   if (requesterId !== userId && requesterRole !== 'HR_ADMIN') {
     if (requesterRole === 'SUPERVISOR') {
-      const employee = await User.findById(userId).lean();
-      if (!employee || employee.supervisorId?.toString() !== requesterId) {
+      const employee = await prisma.user.findUnique({ where: { id: userId } });
+      if (!employee || employee.supervisorId !== requesterId) {
         return next(new AppError('Not authorised to view these security records.', 403));
       }
     } else {
@@ -233,27 +286,45 @@ export const getSecurityViolations = asyncHandler(async (req, res, next) => {
     }
   }
 
-  const record = await SecurityViolation.findOne({ assessmentId, userId })
-    .populate('userId', 'name email')
-    .lean();
+  const record = await prisma.securityViolation.findUnique({
+    where: { assessmentId_userId: { assessmentId, userId } },
+    include: { user: { select: { id: true, name: true, email: true } } },
+  });
 
   res.status(200).json({
     status: 'success',
     data: {
-      securityRecord: record || {
-        summary: {
-          totalViolations: 0,
-          tabSwitches: 0,
-          copyAttempts: 0,
-          rightClickAttempts: 0,
-          fullscreenExits: 0,
-          devToolsAttempts: 0,
-          windowBlurs: 0,
-          printAttempts: 0,
-          isHighRisk: false,
-        },
-        violations: [],
-      },
+      securityRecord: record
+        ? {
+            ...record,
+            _id: record.id,
+            userId: record.user,
+            summary: {
+              totalViolations: record.totalViolations,
+              tabSwitches: record.tabSwitches,
+              copyAttempts: record.copyAttempts,
+              rightClickAttempts: record.rightClickAttempts,
+              fullscreenExits: record.fullscreenExits,
+              devToolsAttempts: record.devToolsAttempts,
+              windowBlurs: record.windowBlurs,
+              printAttempts: record.printAttempts,
+              isHighRisk: record.isHighRisk,
+            },
+          }
+        : {
+            summary: {
+              totalViolations: 0,
+              tabSwitches: 0,
+              copyAttempts: 0,
+              rightClickAttempts: 0,
+              fullscreenExits: 0,
+              devToolsAttempts: 0,
+              windowBlurs: 0,
+              printAttempts: 0,
+              isHighRisk: false,
+            },
+            violations: [],
+          },
     },
   });
 });
@@ -262,16 +333,34 @@ export const getSecurityViolations = asyncHandler(async (req, res, next) => {
 export const getAssessmentSecuritySummary = asyncHandler(async (req, res, next) => {
   const { assessmentId } = req.params;
 
-  const records = await SecurityViolation.find({ assessmentId })
-    .populate('userId', 'name email department')
-    .sort({ 'summary.totalViolations': -1 })
-    .lean();
+  const records = await prisma.securityViolation.findMany({
+    where: { assessmentId },
+    include: { user: { select: { id: true, name: true, email: true, department: true } } },
+    orderBy: { totalViolations: 'desc' },
+  });
+
+  const mapped = records.map((r) => ({
+    ...r,
+    _id: r.id,
+    userId: r.user,
+    summary: {
+      totalViolations: r.totalViolations,
+      tabSwitches: r.tabSwitches,
+      copyAttempts: r.copyAttempts,
+      rightClickAttempts: r.rightClickAttempts,
+      fullscreenExits: r.fullscreenExits,
+      devToolsAttempts: r.devToolsAttempts,
+      windowBlurs: r.windowBlurs,
+      printAttempts: r.printAttempts,
+      isHighRisk: r.isHighRisk,
+    },
+  }));
 
   const aggregated = {
-    totalRecords: records.length,
-    highRiskCount: records.filter((r) => r.summary.isHighRisk).length,
-    totalViolations: records.reduce((sum, r) => sum + (r.summary?.totalViolations || 0), 0),
-    records,
+    totalRecords: mapped.length,
+    highRiskCount: mapped.filter((r) => r.summary.isHighRisk).length,
+    totalViolations: mapped.reduce((sum, r) => sum + (r.summary?.totalViolations || 0), 0),
+    records: mapped,
   };
 
   res.status(200).json({ status: 'success', data: { summary: aggregated } });
@@ -286,19 +375,31 @@ export const submitSupervisorEvaluation = asyncHandler(async (req, res, next) =>
   const { assessmentId, employeeId, score, comments } = req.body;
   const supervisorId = req.user.id;
 
-  const assessment = await Assessment.findById(assessmentId);
+  const assessment = await prisma.assessment.findUnique({ where: { id: assessmentId } });
   if (!assessment) return next(new AppError('Assessment not found', 404));
 
-  const evaluation = await Response.findOneAndUpdate(
-    { assessmentId, employeeId, userId: supervisorId, respondentType: 'supervisor' },
-    {
-      score: Number(score),
-      comments: comments || '',
-      isSupervisorEvaluation: true,
-      submittedAt: new Date(),
-    },
-    { new: true, upsert: true }
-  );
+  const existing = await prisma.response.findFirst({
+    where: { assessmentId, employeeId, userId: supervisorId, respondentType: 'supervisor' },
+  });
+
+  const evalData = {
+    score: Number(score),
+    comments: comments || '',
+    isSupervisorEvaluation: true,
+    submittedAt: new Date(),
+  };
+
+  const evaluation = existing
+    ? await prisma.response.update({ where: { id: existing.id }, data: evalData })
+    : await prisma.response.create({
+        data: {
+          assessmentId,
+          employeeId,
+          userId: supervisorId,
+          respondentType: 'supervisor',
+          ...evalData,
+        },
+      });
 
   let result = null;
   if (assessment.type === 'SupervisorOnly') {
@@ -306,31 +407,51 @@ export const submitSupervisorEvaluation = asyncHandler(async (req, res, next) =>
     logger.info({ event: 'auto_score_supervisor_only', employeeId });
   }
 
+  await logActivity({
+    req,
+    action: 'evaluation_submitted',
+    entity: 'SupervisorEvaluation',
+    entityId: evaluation.id,
+    description: `Supervisor evaluation submitted for assessment "${assessment.description || assessment.purpose}"`,
+    metadata: { assessmentId, employeeId, score: Number(score) },
+  });
+
   res.status(200).json({
     status: 'success',
     message: 'Evaluation submitted successfully.',
-    data: { evaluation, result },
+    data: {
+      evaluation: { ...evaluation, _id: evaluation.id },
+      result: result && { ...result, _id: result.id },
+    },
   });
 });
 
 // ─── GET PROGRESS ────────────────────────────────────────────────────────────
 export const getProgress = asyncHandler(async (req, res, next) => {
   const { assessmentId } = req.params;
-  const assessment = await Assessment.findById(assessmentId).lean();
+  const assessment = await prisma.assessment.findUnique({
+    where: { id: assessmentId },
+    include: { assessmentQuestions: { select: { questionId: true } } },
+  });
   if (!assessment) return next(new AppError('Assessment not found.', 404));
 
-  const total = assessment.questionIds.length;
-  const answeredCount = await Response.countDocuments({
-    assessmentId,
-    userId: req.user.id,
-    respondentType: 'self',
+  const total = assessment.assessmentQuestions.length;
+  const answeredCount = await prisma.response.count({
+    where: {
+      assessmentId,
+      userId: req.user.id,
+      respondentType: 'self',
+    },
   });
-  const submitted = await Response.findOne({
-    assessmentId,
-    userId: req.user.id,
-    respondentType: 'self',
-    submittedAt: { $ne: null },
-  }).lean();
+  const submitted = await prisma.response.findFirst({
+    where: {
+      assessmentId,
+      userId: req.user.id,
+      respondentType: 'self',
+      submittedAt: { not: null },
+    },
+    select: { id: true },
+  });
 
   res.status(200).json({
     status: 'success',
@@ -346,13 +467,11 @@ export const getProgress = asyncHandler(async (req, res, next) => {
 // ─── GET SUPERVISOR EVALUATION (Draft or Submitted) ────────────────────────
 export const getSupervisorEvaluation = asyncHandler(async (req, res, next) => {
   const { assessmentId, employeeId } = req.params;
-  const evaluation = await Response.findOne({
-    assessmentId,
-    employeeId,
-    respondentType: 'supervisor',
-  }).lean();
+  const evaluation = await prisma.response.findFirst({
+    where: { assessmentId, employeeId, respondentType: 'supervisor' },
+  });
 
-  res.status(200).json({ status: 'success', data: { evaluation } });
+  res.status(200).json({ status: 'success', data: { evaluation: evaluation && { ...evaluation, _id: evaluation.id } } });
 });
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -361,12 +480,27 @@ export const getSupervisorEvaluation = asyncHandler(async (req, res, next) => {
 
 // ─── HR_ADMIN: GET ALL RESPONSES ─────────────────────────────────────────────
 export const getAllResponses = asyncHandler(async (req, res, next) => {
-  const responses = await Response.find({ assessmentId: req.params.assessmentId })
-    .populate('userId', 'name email')
-    .populate('employeeId', 'name email department')
-    .populate('questionId', 'text type')
-    .lean();
-  res.status(200).json({ status: 'success', data: { responses } });
+  const responses = await prisma.response.findMany({
+    where: { assessmentId: req.params.assessmentId },
+    include: {
+      user: { select: { id: true, name: true, email: true } },
+      employee: { select: { id: true, name: true, email: true, department: true } },
+      question: { select: { id: true, text: true, type: true } },
+    },
+  });
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      responses: responses.map((r) => ({
+        ...r,
+        _id: r.id,
+        userId: r.user,
+        employeeId: r.employee,
+        questionId: r.question,
+      })),
+    },
+  });
 });
 
 // ─── SAVE SUPERVISOR EVALUATION DRAFT ──────────────────────────────────────
@@ -374,37 +508,54 @@ export const saveSupervisorEvaluation = asyncHandler(async (req, res, next) => {
   const { assessmentId, employeeId, score, comments } = req.body;
   const supervisorId = req.user.id;
 
-  const evaluation = await Response.findOneAndUpdate(
-    { assessmentId, employeeId, userId: supervisorId, respondentType: 'supervisor' },
-    {
-      score: Number(score) || 0,
-      comments: comments || '',
-      isSupervisorEvaluation: true,
-      submittedAt: null,
-    },
-    { new: true, upsert: true, runValidators: true }
-  );
+  const existing = await prisma.response.findFirst({
+    where: { assessmentId, employeeId, userId: supervisorId, respondentType: 'supervisor' },
+  });
+
+  const evalData = {
+    score: Number(score) || 0,
+    comments: comments || '',
+    isSupervisorEvaluation: true,
+    submittedAt: null,
+  };
+
+  const evaluation = existing
+    ? await prisma.response.update({ where: { id: existing.id }, data: evalData })
+    : await prisma.response.create({
+        data: {
+          assessmentId,
+          employeeId,
+          userId: supervisorId,
+          respondentType: 'supervisor',
+          ...evalData,
+        },
+      });
 
   res.status(200).json({
     status: 'success',
     message: 'Evaluation draft saved.',
-    data: { evaluation },
+    data: { evaluation: { ...evaluation, _id: evaluation.id } },
   });
 });
 
 // ─── SET MANUAL SCORE (HR_ADMIN, ShortAnswer only) ───────────────────────────
 export const setManualScore = asyncHandler(async (req, res, next) => {
   const { manualScore } = req.body;
-  const response = await Response.findById(req.params.id).populate('questionId');
+  const response = await prisma.response.findUnique({
+    where: { id: req.params.id },
+    include: { question: true },
+  });
 
   if (!response) return next(new AppError('Response not found.', 404));
-  if (response.questionId.type !== 'ShortAnswer') {
+  if (response.question?.type !== 'ShortAnswer') {
     return next(new AppError('Manual scoring is only for ShortAnswer questions.', 400));
   }
 
-  response.manualScore = manualScore;
-  response.score = manualScore;
-  await response.save();
+  const updated = await prisma.response.update({
+    where: { id: response.id },
+    data: { manualScore, score: manualScore },
+    include: { question: true },
+  });
 
-  res.status(200).json({ status: 'success', data: { response } });
+  res.status(200).json({ status: 'success', data: { response: { ...updated, _id: updated.id } } });
 });

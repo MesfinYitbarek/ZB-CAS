@@ -88,8 +88,7 @@ export default function UserProfile() {
                 <ArrowLeft className="w-5 h-5 text-gray-600" />
               </button>
               <div>
-                <h1 className="text-lg font-bold text-brand-black">{user.name}</h1>
-                <p className="text-xm text-gray-500">{user.employeeId}</p>
+                <h1 className="text-lg  font-bold text-brand-black">{user.name}</h1>
               </div>
             </div>
             

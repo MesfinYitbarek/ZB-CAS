@@ -1259,21 +1259,20 @@ export default function Questions() {
   return (
     <div className="p-7  h-[calc(100vh-4rem)] flex flex-col">
       {/* Header */}
-      <div className="flex justify-between items-center mb-4 flex-shrink-0">
+      <div className="flex justify-between items-center mb-3 flex-shrink-0">
         <div>
-          <h1 className="text-2xl font-display font-bold text-brand-black">Question Bank</h1>
-          <p className="text-sm text-gray-600">Manage questions for competencies</p>
+          <h1 className="text-xl  font-bold text-brand-black">Question Bank</h1>
         </div>
         <div className="flex gap-2">
           <button
             onClick={openUpload}
-            className="flex items-center gap-2 px-5 py-2.5 bg-blue-950 text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-950 text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors"
           >
             <Upload className="w-3.5 h-3.5" /> Upload
           </button>
           <button
             onClick={openCreate}
-            className="flex items-center gap-2 px-5 py-2.5 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors"
           >
             <Plus className="w-3.5 h-3.5" /> Add Questions
           </button>
@@ -1391,7 +1390,7 @@ export default function Questions() {
                       <td className="p-2 text-sm capitalize">{q.targetGroup?.[0]?.toUpperCase() + q.targetGroup?.slice(1) || '—'}</td>
                       <td className="p-2 text-right text-sm font-medium">{q.score ?? 1}</td>
                       <td className="p-2">
-                        <div className="flex gap-2">
+        <div className="flex gap-1.5">
                           <button onClick={() => openView(q)} title="View Details">
                             <Eye size={16} className="text-gray-600 hover:text-blue-600" />
                           </button>

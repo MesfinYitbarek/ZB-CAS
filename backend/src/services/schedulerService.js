@@ -34,7 +34,7 @@
  */
 
 import cron from 'node-cron';
-import Assessment from '../models/Assessment.js';
+import prisma from '../config/prisma.js';
 import logger from '../utils/logger.js';
 import {
   autoActivateScheduledAssessments,
@@ -60,7 +60,7 @@ function safeTimeout(fn, delayMs) {
 
 // ─── Clear existing timers for an assessment ─────────────────────────────────
 export const clearAssessmentTimers = (assessmentId) => {
-  const id = assessmentId.toString();
+  const id = String(assessmentId);
   const entry = activeTimers.get(id);
   if (entry) {
     if (entry.start) clearTimeout(entry.start);
@@ -71,7 +71,7 @@ export const clearAssessmentTimers = (assessmentId) => {
 
 // ─── Arm timers for a single assessment object ───────────────────────────────
 export const scheduleAssessmentTimers = (assessment) => {
-  const id    = assessment._id.toString();
+  const id    = String(assessment.id);
   clearAssessmentTimers(id);
 
   const now     = Date.now();
@@ -83,10 +83,10 @@ export const scheduleAssessmentTimers = (assessment) => {
   if (assessment.status === 'SCHEDULED' && startMs > 0) {
     entry.start = safeTimeout(async () => {
       try {
-        await Assessment.findOneAndUpdate(
-          { _id: assessment._id, status: 'SCHEDULED' },
-          { $set: { status: 'ACTIVE' } }
-        );
+        await prisma.assessment.updateMany({
+          where: { id: assessment.id, status: 'SCHEDULED' },
+          data: { status: 'ACTIVE' },
+        });
         logger.info({ event: 'timer_activated', assessmentId: id });
       } catch (err) {
         logger.error({ event: 'timer_activate_error', assessmentId: id, err: err.message });
@@ -98,10 +98,10 @@ export const scheduleAssessmentTimers = (assessment) => {
         const endEntry = activeTimers.get(id) || {};
         endEntry.end = safeTimeout(async () => {
           try {
-            await Assessment.findOneAndUpdate(
-              { _id: assessment._id, status: 'ACTIVE' },
-              { $set: { status: 'COMPLETED' } }
-            );
+            await prisma.assessment.updateMany({
+              where: { id: assessment.id, status: 'ACTIVE' },
+              data: { status: 'COMPLETED' },
+            });
             logger.info({ event: 'timer_completed', assessmentId: id });
           } catch (err) {
             logger.error({ event: 'timer_complete_error', assessmentId: id, err: err.message });
@@ -117,10 +117,10 @@ export const scheduleAssessmentTimers = (assessment) => {
   if (assessment.status === 'ACTIVE' && endMs > 0) {
     entry.end = safeTimeout(async () => {
       try {
-        await Assessment.findOneAndUpdate(
-          { _id: assessment._id, status: 'ACTIVE' },
-          { $set: { status: 'COMPLETED' } }
-        );
+        await prisma.assessment.updateMany({
+          where: { id: assessment.id, status: 'ACTIVE' },
+          data: { status: 'COMPLETED' },
+        });
         logger.info({ event: 'timer_completed', assessmentId: id });
       } catch (err) {
         logger.error({ event: 'timer_complete_error', assessmentId: id, err: err.message });
@@ -143,7 +143,9 @@ export const scheduleAssessmentTimers = (assessment) => {
 
 // ─── On startup: arm timers for all pending assessments in the DB ─────────────
 const scheduleAllPendingAssessments = async () => {
-  const pending = await Assessment.find({ status: { $in: ['SCHEDULED', 'ACTIVE'] } }).lean();
+  const pending = await prisma.assessment.findMany({
+    where: { status: { in: ['SCHEDULED', 'ACTIVE'] } },
+  });
   for (const a of pending) scheduleAssessmentTimers(a);
   if (pending.length > 0) {
     logger.info({ event: 'timers_armed_on_startup', count: pending.length });
@@ -161,9 +163,9 @@ const startSafetyNetCron = () => {
 
       // Re-arm end timers for anything just activated by the safety net
       if (activated > 0) {
-        const nowActive = await Assessment.find({ status: 'ACTIVE' }).lean();
+        const nowActive = await prisma.assessment.findMany({ where: { status: 'ACTIVE' } });
         for (const a of nowActive) {
-          if (!activeTimers.has(a._id.toString())) {
+          if (!activeTimers.has(String(a.id))) {
             scheduleAssessmentTimers(a);
           }
         }

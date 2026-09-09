@@ -1,16 +1,18 @@
 /* controllers/authController.js */
 import crypto from 'crypto';
-import User from '../models/User.js';
+import prisma from '../config/prisma.js';
 import AppError from '../utils/AppError.js';
 import asyncHandler from '../utils/asyncHandler.js';
+import { hashPassword, comparePassword } from '../utils/password.js';
+import { defaultRole, toPublic } from '../utils/userHelpers.js';
 import {
   buildTokenPair,
-  signAccessToken,
   verifyRefreshToken,
   refreshCookieOptions,
 } from '../utils/jwt.js';
 import { sendWelcomeEmail, sendPasswordResetEmail } from '../services/emailService.js';
 import { notifyAccountCreated } from '../services/notificationService.js';
+import { logActivity } from '../services/activityService.js';
 import logger from '../utils/logger.js';
 
 /* ─── Password complexity ─────────────────────────────────────────────────── */
@@ -34,32 +36,44 @@ export const register = asyncHandler(async (req, res, next) => {
   if (!username) return next(new AppError('Username is required.', 400));
 
   const tempPassword = crypto.randomBytes(10).toString('hex');
+  const passwordHash = await hashPassword(tempPassword);
 
   const resolvedRoles = roles
     ? (Array.isArray(roles) ? roles : [roles])
     : (req.body.role ? [req.body.role] : ['EMPLOYEE']);
 
-  const user = await User.create({
-    employeeId,
-    name,
-    username,
-    email,
-    passwordHash: tempPassword,
-    roles: resolvedRoles,
-    gender: gender || null,
-    position,
-    department,
-    supervisorId: supervisorId || null,
+  const user = await prisma.user.create({
+    data: {
+      employeeId,
+      name,
+      username,
+      email,
+      passwordHash,
+      roles: resolvedRoles,
+      gender: gender || null,
+      position,
+      department,
+      supervisorId: supervisorId || null,
+    },
   });
 
   sendWelcomeEmail(user, tempPassword);
-  notifyAccountCreated(user._id);
-  logger.info({ event: 'user_registered', createdBy: req.user.id, newUserId: user._id });
+  notifyAccountCreated(user.id);
+  logger.info({ event: 'user_registered', createdBy: req.user.id, newUserId: user.id });
+
+  await logActivity({
+    req,
+    action: 'created',
+    entity: 'User',
+    entityId: user.id,
+    description: `User "${user.name}" created`,
+    metadata: { name: user.name, email: user.email, roles: resolvedRoles },
+  });
 
   res.status(201).json({
     status:  'success',
     message: 'User created successfully. A welcome email has been sent.',
-    data:    { user: user.toPublic() },
+    data:    { user: toPublic(user) },
   });
 });
 
@@ -71,8 +85,9 @@ export const login = asyncHandler(async (req, res, next) => {
     return next(new AppError('Username and password are required.', 400));
   }
 
-  const user = await User.findOne({ username: username.toLowerCase().trim() })
-    .select('+passwordHash +failedLoginAttempts +lockUntil');
+  const user = await prisma.user.findUnique({
+    where: { username: username.toLowerCase().trim() },
+  });
 
   // Account lockout check
   if (user && user.lockUntil && user.lockUntil > Date.now()) {
@@ -80,16 +95,19 @@ export const login = asyncHandler(async (req, res, next) => {
     return next(new AppError(`Account locked due to too many failed attempts. Try again in ${waitMinutes} minute(s).`, 423));
   }
 
-  const passwordMatch = user && await user.comparePassword(password);
+  const passwordMatch = user && await comparePassword(password, user.passwordHash);
 
   if (!user || !passwordMatch) {
     if (user) {
-      user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
-      if (user.failedLoginAttempts >= 5) {
-        user.lockUntil = new Date(Date.now() + 15 * 60 * 1000);
-        logger.warn({ event: 'account_locked', userId: user._id });
+      const failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
+      const lockUntil = failedLoginAttempts >= 5 ? new Date(Date.now() + 15 * 60 * 1000) : user.lockUntil;
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { failedLoginAttempts, lockUntil },
+      });
+      if (failedLoginAttempts >= 5) {
+        logger.warn({ event: 'account_locked', userId: user.id });
       }
-      await user.save({ validateBeforeSave: false });
     }
     return next(new AppError('Invalid username or password.', 401));
   }
@@ -100,24 +118,36 @@ export const login = asyncHandler(async (req, res, next) => {
 
   // Reset lockout on success
   if (user.failedLoginAttempts > 0) {
-    user.failedLoginAttempts = 0;
-    user.lockUntil = null;
-    await user.save({ validateBeforeSave: false });
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { failedLoginAttempts: 0, lockUntil: null },
+    });
   }
 
-  const activeRole = user.defaultRole;
-  const { accessToken, refreshToken } = buildTokenPair(user._id, activeRole);
+  const activeRole = defaultRole(user.roles);
+  const { accessToken, refreshToken } = buildTokenPair(user.id, activeRole);
 
-  user.refreshToken = refreshToken;
-  await user.save({ validateBeforeSave: false });
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { refreshToken },
+  });
 
   res.cookie('refreshToken', refreshToken, refreshCookieOptions());
-  logger.info({ event: 'user_login', userId: user._id, role: activeRole });
+  logger.info({ event: 'user_login', userId: user.id, role: activeRole });
+
+  await logActivity({
+    req,
+    actor: user.id,
+    action: 'login',
+    entity: 'User',
+    entityId: user.id,
+    description: `User "${user.name}" logged in`,
+  });
 
   res.status(200).json({
     status: 'success',
     data: {
-      user:        user.toPublic(),
+      user:        toPublic(user),
       activeRole,
       accessToken,
     },
@@ -129,19 +159,30 @@ export const switchRole = asyncHandler(async (req, res, next) => {
   const { role } = req.body;
   if (!role) return next(new AppError('Target role is required.', 400));
 
-  const user = await User.findById(req.user.id).select('+refreshToken');
+  const user = await prisma.user.findUnique({ where: { id: req.user.id } });
   if (!user) return next(new AppError('User not found.', 404));
 
   if (!user.roles.includes(role)) {
     return next(new AppError(`You do not have the '${role}' role.`, 403));
   }
 
-  const { accessToken, refreshToken } = buildTokenPair(user._id, role);
-  user.refreshToken = refreshToken;
-  await user.save({ validateBeforeSave: false });
+  const { accessToken, refreshToken } = buildTokenPair(user.id, role);
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { refreshToken },
+  });
 
   res.cookie('refreshToken', refreshToken, refreshCookieOptions());
-  logger.info({ event: 'role_switch', userId: user._id, newRole: role });
+  logger.info({ event: 'role_switch', userId: user.id, newRole: role });
+
+  await logActivity({
+    req,
+    action: 'role_switch',
+    entity: 'User',
+    entityId: user.id,
+    description: `Switched role to ${role}`,
+    metadata: { from: req.user.role, to: role },
+  });
 
   res.status(200).json({
     status: 'success',
@@ -165,8 +206,8 @@ export const refresh = asyncHandler(async (req, res, next) => {
     return next(new AppError('Invalid or expired refresh token.', 401));
   }
 
-  // 2. Load the user — explicitly include the refreshToken field (select:false)
-  const user = await User.findById(decoded.id).select('+refreshToken +roles');
+  // 2. Load the user
+  const user = await prisma.user.findUnique({ where: { id: decoded.id } });
   if (!user) {
     return next(new AppError('User not found.', 401));
   }
@@ -177,18 +218,14 @@ export const refresh = asyncHandler(async (req, res, next) => {
   }
 
   // 4. Determine the active role to encode in the new access token.
-  //    user.defaultRole is a Mongoose virtual — fall back explicitly in case
-  //    the virtual is not available (e.g. lean queries or serialisation edge cases).
-  const roles = user.roles || [];
-  const roleOrder = { HR_ADMIN: 0, SUPERVISOR: 1, EMPLOYEE: 2 };
-  const activeRole = roles.length > 0
-    ? [...roles].sort((a, b) => (roleOrder[a] ?? 99) - (roleOrder[b] ?? 99))[0]
-    : 'EMPLOYEE';
+  const activeRole = defaultRole(user.roles);
 
   // 5. Issue a new token pair and rotate the stored refresh token
-  const newPair = buildTokenPair(user._id, activeRole);
-  user.refreshToken = newPair.refreshToken;
-  await user.save({ validateBeforeSave: false });
+  const newPair = buildTokenPair(user.id, activeRole);
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { refreshToken: newPair.refreshToken },
+  });
 
   res.cookie('refreshToken', newPair.refreshToken, refreshCookieOptions());
 
@@ -200,13 +237,21 @@ export const refresh = asyncHandler(async (req, res, next) => {
 
 // ─── LOGOUT ───────────────────────────────────────────────────────────────────
 export const logout = asyncHandler(async (req, res) => {
-  const user = await User.findById(req.user.id).select('+refreshToken');
-  if (user) {
-    user.refreshToken = null;
-    await user.save({ validateBeforeSave: false });
-  }
+  await prisma.user.update({
+    where: { id: req.user.id },
+    data: { refreshToken: null },
+  });
   res.clearCookie('refreshToken', { path: '/' });  // path must match refreshCookieOptions
   logger.info({ event: 'user_logout', userId: req.user.id });
+
+  await logActivity({
+    req,
+    action: 'logout',
+    entity: 'User',
+    entityId: req.user.id,
+    description: 'User logged out',
+  });
+
   res.status(200).json({ status: 'success', message: 'Logged out.' });
 });
 
@@ -214,8 +259,8 @@ export const logout = asyncHandler(async (req, res) => {
 export const forgotPassword = asyncHandler(async (req, res, next) => {
   // Accept either email or username for forgot-password flow
   const identifier = req.body.email?.toLowerCase() || req.body.username?.toLowerCase();
-  const user = await User.findOne({
-    $or: [{ email: identifier }, { username: identifier }]
+  const user = await prisma.user.findFirst({
+    where: { OR: [{ email: identifier }, { username: identifier }] },
   });
 
   if (!user) {
@@ -226,9 +271,13 @@ export const forgotPassword = asyncHandler(async (req, res, next) => {
   }
 
   const resetToken = crypto.randomBytes(32).toString('hex');
-  user.passwordResetToken   = crypto.createHash('sha256').update(resetToken).digest('hex');
-  user.passwordResetExpires = Date.now() + 60 * 60 * 1000;
-  await user.save({ validateBeforeSave: false });
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      passwordResetToken:   crypto.createHash('sha256').update(resetToken).digest('hex'),
+      passwordResetExpires: new Date(Date.now() + 60 * 60 * 1000),
+    },
+  });
 
   sendPasswordResetEmail(user, resetToken);
 
@@ -244,19 +293,35 @@ export const resetPassword = asyncHandler(async (req, res, next) => {
 
   const hashedToken = crypto.createHash('sha256').update(req.params.token).digest('hex');
 
-  const user = await User.findOne({
-    passwordResetToken:   hashedToken,
-    passwordResetExpires: { $gt: Date.now() },
-  }).select('+passwordHash');
+  const user = await prisma.user.findFirst({
+    where: {
+      passwordResetToken:   hashedToken,
+      passwordResetExpires: { gt: new Date() },
+    },
+  });
 
   if (!user) return next(new AppError('Token is invalid or has expired.', 400));
 
-  user.passwordHash         = req.body.password;
-  user.passwordResetToken   = null;
-  user.passwordResetExpires = null;
-  user.failedLoginAttempts  = 0;
-  user.lockUntil            = null;
-  await user.save();
+  const passwordHash = await hashPassword(req.body.password);
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      passwordHash,
+      passwordResetToken:   null,
+      passwordResetExpires: null,
+      failedLoginAttempts:  0,
+      lockUntil:            null,
+    },
+  });
+
+  await logActivity({
+    req,
+    actor: user.id,
+    action: 'password_reset',
+    entity: 'User',
+    entityId: user.id,
+    description: `Password reset for "${user.name}" via reset token`,
+  });
 
   res.status(200).json({ status: 'success', message: 'Password reset successful.' });
 });
@@ -267,10 +332,10 @@ export const changePassword = asyncHandler(async (req, res, next) => {
 
   if (!validatePasswordStrength(newPassword, next)) return;
 
-  const user = await User.findById(req.user.id).select('+passwordHash');
+  const user = await prisma.user.findUnique({ where: { id: req.user.id } });
   if (!user) return next(new AppError('User not found.', 404));
 
-  if (!(await user.comparePassword(currentPassword))) {
+  if (!(await comparePassword(currentPassword, user.passwordHash))) {
     return next(new AppError('Current password is incorrect.', 401));
   }
 
@@ -278,9 +343,21 @@ export const changePassword = asyncHandler(async (req, res, next) => {
     return next(new AppError('New password must differ from current password.', 400));
   }
 
-  user.passwordHash = newPassword;
-  await user.save();
+  const passwordHash = await hashPassword(newPassword);
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { passwordHash },
+  });
 
-  logger.info({ event: 'password_changed', userId: user._id });
+  logger.info({ event: 'password_changed', userId: user.id });
+
+  await logActivity({
+    req,
+    action: 'password_changed',
+    entity: 'User',
+    entityId: user.id,
+    description: 'Password changed',
+  });
+
   res.status(200).json({ status: 'success', message: 'Password changed successfully.' });
 });

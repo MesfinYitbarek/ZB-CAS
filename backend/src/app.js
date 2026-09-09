@@ -22,7 +22,6 @@ import {
   helmet,
   cors,
   generalLimiter,
-  mongoSanitize,
   hpp,
   compression as compressMiddleware,
   cookieParser,
@@ -44,6 +43,7 @@ import chatRoutes           from './routes/chatRoutes.js';
 import faqRoutes            from './routes/faqRoutes.js';
 import externalRoutes       from './routes/externalRoutes.js';
 import notificationRoutes   from './routes/notificationRoutes.js';
+import activityRoutes       from './routes/activityRoutes.js';
 
 const app = express();
 
@@ -74,10 +74,7 @@ app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 // 6. FIX A02: Cookie parser — required for httpOnly refresh token cookies
 app.use(cookieParser);
 
-// 7. NoSQL injection protection (now also sanitizes req.query — FIX A03)
-app.use(mongoSanitize);
-
-// 8. HTTP parameter pollution
+// 7. HTTP parameter pollution
 app.use(hpp);
 
 // ── Health check ──────────────────────────────────────────────────────────────
@@ -102,6 +99,7 @@ app.use('/api/chat',            chatRoutes);
 app.use('/api/faq',             faqRoutes);
 app.use('/api/external',        externalRoutes);
 app.use('/api/notifications',   notificationRoutes);
+app.use('/api/activities',      activityRoutes);
 
 // ── 404 catcher ───────────────────────────────────────────────────────────────
 app.use((req, res, next) => {

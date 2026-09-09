@@ -2,19 +2,19 @@
  * ZB-CAS Backend — Comprehensive Test Suite
  *
  * Coverage areas:
- *  1. Auth middleware (protect, authorize)
- *  2. JWT utilities (sign, verify, rotation)
- *  3. Security middleware (mongoSanitize, escapeRegex, rate limiters)
- *  4. Auth controller flows (login, register, refresh, logout, forgot/reset password)
- *  5. User controller (CRUD, role-scoped queries)
- *  6. Assessment controller (create, validate, auto-activate)
- *  7. Error handler (status codes, stack trace suppression)
- *  8. Password utilities (hashing, comparison, complexity)
- *  9. Penetration test scenarios (injection, brute force, privilege escalation)
- * 10. Performance helpers (pagination, lean queries)
+ *  1. JWT utilities (sign, verify, rotation)
+ *  2. Security middleware (escapeRegex, rate limiters)
+ *  3. Auth controller flows (login, register, refresh, logout, forgot/reset password)
+ *  4. User controller (CRUD, role-scoped queries)
+ *  5. Assessment controller (create, validate, auto-activate)
+ *  6. Error handler (status codes, stack trace suppression)
+ *  7. Password utilities (hashing, comparison, complexity)
+ *  8. Penetration test scenarios (injection, brute force, privilege escalation)
+ *  9. Performance helpers (pagination, lean queries)
  *
  * Prerequisites:
- *   npm install --save-dev jest @jest/globals supertest mongodb-memory-server
+ *   npm install --save-dev jest @jest/globals
+ *   PostgreSQL running locally with DATABASE_URL configured
  *
  * Run:
  *   npm test
@@ -22,6 +22,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, jest } from '@jest/globals';
+import { Prisma } from '@prisma/client';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. JWT UTILITIES
@@ -32,6 +33,7 @@ process.env.JWT_SECRET         = 'test-access-secret-super-long-value';
 process.env.JWT_REFRESH_SECRET = 'test-refresh-secret-super-long-value';
 process.env.JWT_EXPIRES_IN     = '15m';
 process.env.JWT_REFRESH_EXPIRES_IN = '30d';
+process.env.DATABASE_URL       = 'postgresql://zbcas:zbcas123@localhost:5432/zbcas';
 
 describe('JWT Utilities', () => {
   let signAccessToken, signRefreshToken, verifyAccessToken, verifyRefreshToken, buildTokenPair, refreshCookieOptions;
@@ -52,7 +54,7 @@ describe('JWT Utilities', () => {
     const token = signRefreshToken('user456');
     const decoded = verifyRefreshToken(token);
     expect(decoded.id).toBe('user456');
-    expect(decoded).not.toHaveProperty('role'); // refresh token has no role
+    expect(decoded).not.toHaveProperty('role');
   });
 
   it('throws on invalid access token', () => {
@@ -86,8 +88,8 @@ describe('JWT Utilities', () => {
   it('refreshCookieOptions returns correct flags', () => {
     const opts = refreshCookieOptions();
     expect(opts.httpOnly).toBe(true);
-    expect(opts.sameSite).toBe('strict');
-    expect(opts.path).toBe('/api/auth');
+    expect(opts.sameSite).toBe('lax');
+    expect(opts.path).toBe('/');
     expect(typeof opts.maxAge).toBe('number');
   });
 
@@ -106,7 +108,7 @@ describe('JWT Utilities', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 2. SECURITY MIDDLEWARE — escapeRegex & mongoSanitize
+// 2. SECURITY MIDDLEWARE — escapeRegex
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('Security Middleware — escapeRegex', () => {
@@ -145,60 +147,7 @@ describe('Security Middleware — escapeRegex', () => {
     const escaped = escapeRegex(malicious);
     const re = new RegExp(escaped);
     expect(re.test('(a+)+')).toBe(true);
-    expect(re.test('aaaa')).toBe(false); // plain pattern no longer matches
-  });
-});
-
-describe('Security Middleware — mongoSanitize', () => {
-  let mongoSanitize;
-
-  beforeAll(async () => {
-    const mod = await import('../src/middleware/security.js');
-    mongoSanitize = mod.mongoSanitize;
-  });
-
-  const makeReq = (overrides = {}) => ({
-    body:   overrides.body   ?? {},
-    params: overrides.params ?? {},
-    query:  overrides.query  ?? {},
-  });
-
-  it('removes $ operators from req.body', (done) => {
-    const req = makeReq({ body: { username: { $gt: '' } } });
-    mongoSanitize(req, {}, () => {
-      expect(req.body.username).not.toHaveProperty('$gt');
-      done();
-    });
-  });
-
-  it('removes $ operators from req.query', (done) => {
-    const req = makeReq({ query: { search: { $where: 'malicious()' } } });
-    mongoSanitize(req, {}, () => {
-      expect(req.query.search).not.toHaveProperty('$where');
-      done();
-    });
-  });
-
-  it('removes $ operators from req.params', (done) => {
-    const req = makeReq({ params: { id: { $ne: null } } });
-    mongoSanitize(req, {}, () => {
-      expect(req.params.id).not.toHaveProperty('$ne');
-      done();
-    });
-  });
-
-  it('leaves clean input untouched', (done) => {
-    const req = makeReq({ body: { username: 'alice', password: 'Secret@1' } });
-    mongoSanitize(req, {}, () => {
-      expect(req.body.username).toBe('alice');
-      expect(req.body.password).toBe('Secret@1');
-      done();
-    });
-  });
-
-  it('calls next()', (done) => {
-    const req = makeReq();
-    mongoSanitize(req, {}, done);
+    expect(re.test('aaaa')).toBe(false);
   });
 });
 
@@ -242,7 +191,7 @@ describe('Auth Middleware — protect', () => {
     const req = makeReq(token);
     await protect(req, {}, mockNext);
     expect(req.user).toMatchObject({ id: 'abc123', role: 'EMPLOYEE' });
-    expect(mockNext).toHaveBeenCalledWith(); // no error
+    expect(mockNext).toHaveBeenCalledWith();
   });
 });
 
@@ -281,7 +230,6 @@ describe('Auth Middleware — authorize', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('Password Complexity Validation', () => {
-  // Regex mirrors the one in authController.js
   const PASS_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]).{8,}$/;
 
   const valid = (pw) => PASS_REGEX.test(pw);
@@ -396,20 +344,36 @@ describe('Error Handler Middleware', () => {
     process.env.NODE_ENV = 'test';
   });
 
-  it('maps ValidationError to 400', () => {
-    const err = { name: 'ValidationError', errors: { email: { message: 'Invalid email' } } };
-    const res = makeRes();
-    errorHandler(err, { path: '/test', method: 'POST' }, res, () => {});
-    expect(res._status).toBe(400);
-    expect(res._body.message).toContain('Validation failed');
-  });
-
-  it('maps duplicate key error (code 11000) to 400', () => {
-    const err = { code: 11000, keyValue: { email: 'test@test.com' } };
+  it('maps Prisma unique constraint error (P2002) to 400', () => {
+    const err = new Prisma.PrismaClientKnownRequestError(
+      'Unique constraint failed on the fields: (`email`)',
+      { code: 'P2002', clientVersion: '6.0.0', meta: { target: ['email'] } },
+    );
     const res = makeRes();
     errorHandler(err, { path: '/test', method: 'POST' }, res, () => {});
     expect(res._status).toBe(400);
     expect(res._body.message).toContain('Duplicate value');
+  });
+
+  it('maps Prisma null constraint error (P2011) to 400', () => {
+    const err = new Prisma.PrismaClientKnownRequestError(
+      'null constraint violation on the constraint: `users_email_key`',
+      { code: 'P2011', clientVersion: '6.0.0', meta: { constraint: 'users_email_key' } },
+    );
+    const res = makeRes();
+    errorHandler(err, { path: '/test', method: 'POST' }, res, () => {});
+    expect(res._status).toBe(400);
+    expect(res._body.message).toContain('required field');
+  });
+
+  it('maps Prisma record-not-found (P2025) to 404', () => {
+    const err = new Prisma.PrismaClientKnownRequestError(
+      'Record to delete does not exist.',
+      { code: 'P2025', clientVersion: '6.0.0', meta: { cause: 'Record not found' } },
+    );
+    const res = makeRes();
+    errorHandler(err, { path: '/test', method: 'DELETE' }, res, () => {});
+    expect(res._status).toBe(404);
   });
 
   it('maps JsonWebTokenError to 401', () => {
@@ -428,13 +392,12 @@ describe('Error Handler Middleware', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 7. USER MODEL — UNIT TESTS (mocked mongoose)
+// 7. USER MODEL — UNIT TESTS
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('User Model — toPublic()', () => {
-  // Test the toPublic helper logic without hitting the DB
   const mockUser = {
-    _id: 'abc',
+    id: 'abc',
     employeeId: 'EMP001',
     name: 'Alice Smith',
     username: 'alice',
@@ -447,7 +410,6 @@ describe('User Model — toPublic()', () => {
     status: 'ACTIVE',
     createdAt: new Date('2024-01-01'),
     updatedAt: new Date('2024-06-01'),
-    // Sensitive fields that must NOT appear in toPublic()
     passwordHash: '$2b$12$hashedvalue',
     refreshToken: 'some-refresh-token',
     passwordResetToken: 'reset-token',
@@ -455,22 +417,21 @@ describe('User Model — toPublic()', () => {
     lockUntil: null,
   };
 
-  // Replicate the toPublic() logic from User.js
   function toPublic(user) {
     return {
-      _id:          user._id,
-      employeeId:   user.employeeId,
-      name:         user.name,
-      username:     user.username,
-      email:        user.email,
-      roles:        user.roles,
-      gender:       user.gender,
-      position:     user.position,
-      department:   user.department,
-      supervisorId: user.supervisorId,
-      status:       user.status,
-      createdAt:    user.createdAt,
-      updatedAt:    user.updatedAt,
+      id:            user.id,
+      employeeId:    user.employeeId,
+      name:          user.name,
+      username:      user.username,
+      email:         user.email,
+      roles:         user.roles,
+      gender:        user.gender,
+      position:      user.position,
+      department:    user.department,
+      supervisorId:  user.supervisorId,
+      status:        user.status,
+      createdAt:     user.createdAt,
+      updatedAt:     user.updatedAt,
     };
   }
 
@@ -534,7 +495,6 @@ describe('User Model — defaultRole virtual', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('Assessment — date and weight validation', () => {
-  // Replicate pre-save validation logic from Assessment.js
   function validateAssessment({ startDate, endDate, type, weight }) {
     if (endDate <= startDate) return 'End date must be after start date.';
     if (type === 'Combined') {
@@ -597,7 +557,7 @@ describe('Assessment — date and weight validation', () => {
       type:      'SelfAssessment',
       weight:    { selfAssessment: 30, supervisor: 30 },
     });
-    expect(err).toBeNull(); // no weight check for SelfAssessment
+    expect(err).toBeNull();
   });
 });
 
@@ -650,8 +610,6 @@ describe('Penetration Tests — Refresh Token Rotation', () => {
   it('rejects a replayed (old) refresh token', () => {
     const storedRefreshToken = 'current-db-token';
     const submittedToken      = 'old-rotated-token';
-
-    // Simulate the check in authController.refresh
     const isValid = storedRefreshToken === submittedToken;
     expect(isValid).toBe(false);
   });
@@ -681,7 +639,6 @@ describe('Penetration Tests — Role Privilege Escalation', () => {
 });
 
 describe('Penetration Tests — User Enumeration Prevention', () => {
-  // forgotPassword returns the same message regardless of whether the user exists
   function forgotPasswordResponse(userFound) {
     return {
       status:  'success',
@@ -696,8 +653,7 @@ describe('Penetration Tests — User Enumeration Prevention', () => {
   });
 });
 
-describe('Penetration Tests — NoSQL Injection', () => {
-  // Simulate what the sanitizer does to a NoSQL injection payload
+describe('Penetration Tests — SQL Injection', () => {
   function sanitize(value) {
     if (typeof value !== 'object' || value === null) return value;
     const cleaned = {};

@@ -3,8 +3,9 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import {
-  ArrowLeft, Edit2, Trash2, Calendar, Clock, Users, FileText,
-  Target, Bell, Briefcase, AlertCircle, Check, Search, Tag, BookOpen
+  ArrowLeft, Edit2, Trash2, Users, FileText,
+  Target, Bell, Check, Search, Tag,
+  CalendarDays, Timer, ChevronDown, Building2, Award, CircleDot
 } from 'lucide-react';
 import Modal from '../components/Modal';
 import api from '../utils/api';
@@ -37,20 +38,6 @@ const PURPOSE_COLORS = {
   'Other': 'bg-gray-50 text-gray-600',
 };
 
-function InfoRow({ icon: Icon, label, children }) {
-  return (
-    <div className="flex items-start gap-3">
-      <div className="w-7 h-7 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0 mt-0.5">
-        <Icon className="w-3.5 h-3.5 text-gray-500" />
-      </div>
-      <div className="min-w-0">
-        <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-0.5">{label}</div>
-        <div className="text-sm text-gray-800">{children}</div>
-      </div>
-    </div>
-  );
-}
-
 function TargetAudienceDisplay({ assessment }) {
   const ta = assessment.targetAudience;
   if (!ta) {
@@ -76,6 +63,53 @@ function TargetAudienceDisplay({ assessment }) {
   return <span>—</span>;
 }
 
+function StatCard({ icon: Icon, label, value, accent }) {
+  return (
+    <div className="flex items-start gap-2.5">
+      <span className={`p-2 rounded-lg ${accent}`}><Icon className="w-4 h-4" /></span>
+      <div className="min-w-0">
+        <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">{label}</div>
+        <div className="text-sm font-bold text-gray-900">{value}</div>
+      </div>
+    </div>
+  );
+}
+
+function SectionTitle({ icon: Icon, title, accent }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className={`p-1.5 rounded-lg ${accent}`}><Icon className="w-4 h-4" /></span>
+      <h2 className="text-sm font-bold text-gray-800">{title}</h2>
+    </div>
+  );
+}
+
+function SummaryRow({ icon: Icon, label, value }) {
+  return (
+    <div className="flex items-center gap-2.5 text-sm">
+      <Icon className="w-4 h-4 text-gray-400 flex-shrink-0" />
+      <span className="text-gray-500 w-24 flex-shrink-0">{label}</span>
+      <span className="font-medium text-gray-800 capitalize">{value}</span>
+    </div>
+  );
+}
+
+function fmtDate(d) {
+  if (!d) return '—';
+  return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function statusNote(status) {
+  switch (status) {
+    case 'DRAFT': return 'Assessment is being set up and not yet scheduled.';
+    case 'SCHEDULED': return 'Scheduled and waiting to go live on the start date.';
+    case 'ACTIVE': return 'Currently live — employees can take the assessment.';
+    case 'COMPLETED': return 'Assessment period has ended.';
+    case 'ARCHIVED': return 'Archived and no longer in use.';
+    default: return '';
+  }
+}
+
 export default function AssessmentDetail() {
   const { id } = useParams();
   const nav = useNavigate();
@@ -90,9 +124,9 @@ export default function AssessmentDetail() {
   const [targetGroups, setTargetGroups] = useState([]);
   const [searchResults, setSearchResults] = useState([]);
   const [employeeSearch, setEmployeeSearch] = useState({ name: '', department: '', position: '' });
+  const [expandedIdx, setExpandedIdx] = useState(null);
 
-  const [form, setForm] = useState({
-    competencyId: '',
+  const [form, setForm] = useState({    competencyId: '',
     targetGroup: '',
     purpose: '',
     reminderDaysBefore: '',
@@ -212,196 +246,245 @@ export default function AssessmentDetail() {
 
   const questionCount = assessment.questionIds?.length || 0;
 
+  const STATUS_FLOW = ['DRAFT', 'SCHEDULED', 'ACTIVE', 'COMPLETED'];
+  const flowIdx = STATUS_FLOW.indexOf(assessment.status);
+  const workflowSteps = [
+    { key: 'DRAFT',     label: 'Draft',     sub: 'Setup' },
+    { key: 'SCHEDULED', label: 'Scheduled', sub: 'Waiting' },
+    { key: 'ACTIVE',    label: 'Active',    sub: 'In progress' },
+    { key: 'COMPLETED', label: 'Completed', sub: 'Done' },
+  ];
+
+  const statusBar = {
+    DRAFT:     'from-gray-400 to-gray-500',
+    SCHEDULED: 'from-blue-500 to-blue-600',
+    ACTIVE:    'from-green-500 to-green-600',
+    COMPLETED: 'from-red-500 to-red-600',
+    ARCHIVED:  'from-gray-500 to-gray-600',
+  }[assessment.status] || 'from-gray-400 to-gray-500';
+
+  const TYPE_ICON = {
+    SelfAssessment: 'Self',
+    SupervisorOnly: 'Sup.',
+    Combined: 'Both',
+  }[assessment.type];
+
   return (
-    /* Full-viewport fixed layout — only questions pane scrolls */
-    <div className="flex flex-col h-screen bg-gray-50 overflow-hidden">
-
-      {/* ── Fixed Header ── */}
-      <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between flex-shrink-0 shadow-sm z-10">
-        <div className="flex items-center gap-4 min-w-0">
-          <button
-            onClick={() => nav('/assessments')}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
-          >
-            <ArrowLeft className="w-5 h-5 text-gray-600" />
-          </button>
-        </div>
-
-        <div className="flex items-center gap-3 flex-shrink-0 ml-4">
-          <span className={`px-3 py-1 rounded-full text-xs font-bold border ${STATUS_COLORS[assessment.status] || STATUS_COLORS.DRAFT}`}>
-            {assessment.status}
-          </span>
-          {isAdmin && assessment.status === 'DRAFT' && (
-            <>
-              <button
-                onClick={() => { setSearchResults([]); setEditModal(true); }}
-                className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-300 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
-              >
-                <Edit2 className="w-3.5 h-3.5" /> Edit
-              </button>
-              <button
-                onClick={handleDelete}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 transition-colors"
-              >
-                <Trash2 className="w-3.5 h-3.5" /> Delete
-              </button>
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* ── Two-pane body ── */}
-      <div className="flex flex-1 overflow-hidden">
-
-        {/* ── Left: Fixed details panel (scrollable within itself) ── */}
-        <div className="w-80 flex-shrink-0 bg-white border-r border-gray-200 overflow-y-auto">
-          <div className="p-5 space-y-5">
-
-            {/* Competency block */}
-            <div className="bg-brand-red/5 rounded-xl p-4 border border-brand-red/10">
-              <div className="text-[10px] font-bold text-brand-red uppercase tracking-wide mb-2">Competency</div>
-              <div className="font-bold text-gray-900 text-sm">{assessment.competencyId?.name || '—'}</div>
-              <div className="text-xs text-gray-500 mt-0.5">{assessment.competencyId?.category}</div>
-            </div>
-
-            {/* Key badges */}
-            <div className="space-y-2">
-              {assessment.targetGroup && (
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-500 w-24 flex-shrink-0">Target Group</span>
-                  <span className="text-xs bg-gray-100 text-gray-700 px-2.5 py-1 rounded-full font-medium capitalize">
-                    {assessment.targetGroup.replace('-', ' ')}
-                  </span>
-                </div>
-              )}
-              {assessment.purpose && (
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-500 w-24 flex-shrink-0">Purpose</span>
-                  <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${PURPOSE_COLORS[assessment.purpose] || 'bg-gray-50 text-gray-600'}`}>
-                    {assessment.purpose}
-                  </span>
-                </div>
-              )}
+    <div className="min-h-screen bg-gray-50">
+      {/* ── Sticky Header ── */}
+      <div className="sticky top-0 z-30 bg-white/90 backdrop-blur border-b border-gray-200">
+        <div className="max-w-6xl mx-auto px-6 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3 min-w-0">
+            <button
+              onClick={() => nav('/assessments')}
+              className="p-2 -ml-2 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
+              title="Back to assessments"
+            >
+              <ArrowLeft className="w-5 h-5 text-gray-600" />
+            </button>
+            <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-500 w-24 flex-shrink-0">Type</span>
-                <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${TYPE_COLORS[assessment.type] || 'bg-gray-50 text-gray-600'}`}>
-                  {assessment.type}
+                <h1 className="text-lg  font-bold text-brand-black truncate">
+                  {assessment.competencyId?.name || 'Assessment'}
+                </h1>
+                <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border shrink-0 ${STATUS_COLORS[assessment.status] || STATUS_COLORS.DRAFT}`}>
+                  {assessment.status}
                 </span>
               </div>
             </div>
+          </div>
 
-            <hr className="border-gray-100" />
-
-            {/* Info rows */}
-            <div className="space-y-4">
-              <InfoRow icon={Calendar} label="Start Date">
-                {new Date(assessment.startDate).toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}
-              </InfoRow>
-              <InfoRow icon={Calendar} label="End Date">
-                {new Date(assessment.endDate).toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}
-              </InfoRow>
-              <InfoRow icon={Clock} label="Time Limit">
-                {assessment.timeLimit ? `${assessment.timeLimit} minutes` : 'No limit'}
-              </InfoRow>
-              {assessment.reminderDaysBefore && (
-                <InfoRow icon={Bell} label="Reminder">
-                  {assessment.reminderDaysBefore} day(s) before deadline
-                  {assessment.reminderSent && (
-                    <span className="ml-2 text-xs bg-green-50 text-green-700 px-1.5 py-0.5 rounded-full">Sent</span>
-                  )}
-                </InfoRow>
-              )}
-              <InfoRow icon={FileText} label="Questions">
-                <span className="font-bold text-brand-black">{questionCount}</span> question{questionCount !== 1 ? 's' : ''}
-              </InfoRow>
-            </div>
-
-            <hr className="border-gray-100" />
-
-            {/* Target Audience */}
-            <div>
-              <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-1.5">
-                <Users className="w-3 h-3" /> Target Audience
-              </div>
-              <TargetAudienceDisplay assessment={assessment} />
-            </div>
-
-            {/* Combined weights */}
-            {assessment.type === 'Combined' && (
+          <div className="flex items-center gap-2 flex-shrink-0 ml-4">
+            {isAdmin && assessment.status === 'DRAFT' && (
               <>
-                <hr className="border-gray-100" />
-                <div>
-                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">Scoring Weights</div>
-                  <div className="space-y-1.5">
-                    <div className="flex justify-between text-xs">
-                      <span className="text-gray-600">Self-Assessment</span>
-                      <span className="font-bold text-brand-black">{assessment.weight?.selfAssessment || 0}%</span>
-                    </div>
-                    <div className="w-full bg-gray-100 rounded-full h-1.5">
-                      <div className="bg-brand-red h-1.5 rounded-full" style={{ width: `${assessment.weight?.selfAssessment || 0}%` }} />
-                    </div>
-                    <div className="flex justify-between text-xs">
-                      <span className="text-gray-600">Supervisor</span>
-                      <span className="font-bold text-brand-black">{assessment.weight?.supervisor || 0}%</span>
-                    </div>
-                    <div className="w-full bg-gray-100 rounded-full h-1.5">
-                      <div className="bg-blue-500 h-1.5 rounded-full" style={{ width: `${assessment.weight?.supervisor || 0}%` }} />
-                    </div>
-                  </div>
-                </div>
+                <button
+                  onClick={() => { setSearchResults([]); setEditModal(true); }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-300 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  <Edit2 className="w-3.5 h-3.5" /> Edit
+                </button>
+                <button
+                  onClick={handleDelete}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 transition-colors"
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> Delete
+                </button>
               </>
             )}
+          </div>
+        </div>
+      </div>
 
-            <hr className="border-gray-100" />
+      <div className="max-w-6xl mx-auto px-6 py-6 space-y-6">
+        {/* ── Hero / Overview card ── */}
+        <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+          <div className={`h-1.5 bg-gradient-to-r ${statusBar}`} />
+          <div className="p-6 grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-6">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className={`px-2.5 py-0.5 rounded-lg text-xs font-bold ${TYPE_COLORS[assessment.type] || 'bg-gray-50 text-gray-600'}`}>
+                  {assessment.type}
+                </span>
+                {assessment.purpose && (
+                  <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${PURPOSE_COLORS[assessment.purpose] || 'bg-gray-50 text-gray-600'}`}>
+                    {assessment.purpose}
+                  </span>
+                )}
+                {assessment.targetGroup && (
+                  <span className="text-xs bg-gray-100 text-gray-700 px-2.5 py-0.5 rounded-full font-medium capitalize">
+                    {assessment.targetGroup.replace('-', ' ')}
+                  </span>
+                )}
+              </div>
 
-            {/* Meta */}
-            <div className="space-y-3">
-              <InfoRow icon={Users} label="Created By">
-                {assessment.createdBy?.name || '—'}
-              </InfoRow>
-              <InfoRow icon={Calendar} label="Created At">
-                {new Date(assessment.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
-              </InfoRow>
+              {assessment.description && (
+                <p className="mt-4 text-sm text-gray-600 leading-relaxed max-w-3xl">{assessment.description}</p>
+              )}
+
+              <div className="mt-5 grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <StatCard icon={CalendarDays} label="Starts" value={fmtDate(assessment.startDate)} accent="text-blue-600 bg-blue-50" />
+                <StatCard icon={CalendarDays} label="Ends" value={fmtDate(assessment.endDate)} accent="text-red-500 bg-red-50" />
+                <StatCard icon={Timer} label="Time Limit" value={assessment.timeLimit ? `${assessment.timeLimit} min` : 'No limit'} accent="text-amber-600 bg-amber-50" />
+                <StatCard icon={FileText} label="Questions" value={`${questionCount}`} accent="text-brand-red bg-brand-red/10" />
+              </div>
+            </div>
+
+            {/* Lifecycle stepper */}
+            <div className="lg:w-80 flex-shrink-0">
+              <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-3">Lifecycle</div>
+              <div className="flex items-center">
+                {workflowSteps.map((s, i) => {
+                  const done = i < flowIdx;
+                  const current = i === flowIdx;
+                  const activeColor = s.key === 'ACTIVE' ? 'bg-green-500' : 'bg-brand-red';
+                  return (
+                    <div key={s.key} className="flex items-center flex-1 last:flex-none">
+                      <div className="flex flex-col items-center">
+                        <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold transition-all ${
+                          done ? `${activeColor} text-white`
+                          : current ? `${activeColor} text-white ring-4 ring-red-100`
+                          : 'bg-gray-100 text-gray-400'
+                        }`}>
+                          {done ? <Check className="w-3.5 h-3.5" /> : i + 1}
+                        </div>
+                        <div className={`text-[10px] font-semibold mt-1 ${current ? 'text-gray-900' : done ? 'text-gray-600' : 'text-gray-300'}`}>
+                          {s.label}
+                        </div>
+                      </div>
+                      {i < workflowSteps.length - 1 && (
+                        <div className={`h-0.5 flex-1 mx-1.5 -mt-3 ${i < flowIdx ? (workflowSteps[i].key === 'ACTIVE' ? 'bg-green-400' : 'bg-brand-red') : 'bg-gray-200'}`} />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="mt-3 text-xs text-gray-400 text-center">{statusNote(assessment.status)}</div>
             </div>
           </div>
         </div>
 
-        {/* ── Right: Scrollable questions pane ── */}
-        <div className="flex-1 overflow-y-auto p-6">
-          <div className="max-w-3xl mx-auto">
-
-            <div className="flex items-center justify-between mb-5">
-              <h2 className="text-base font-bold text-gray-800 flex items-center gap-2">
-                <FileText className="w-5 h-5 text-brand-red" />
-                Questions
-                <span className="ml-1 bg-gray-100 text-gray-600 text-xs font-bold px-2 py-0.5 rounded-full">{questionCount}</span>
-              </h2>
+        {/* ── Detail cards ── */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {/* Target Audience */}
+          <div className="bg-white rounded-2xl border border-gray-200 p-5">
+            <SectionTitle icon={Users} title="Target Audience" accent="text-blue-600 bg-blue-50" />
+            <div className="mt-3">
+              <TargetAudienceDisplay assessment={assessment} />
             </div>
-
-            {questionCount === 0 ? (
-              <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-                <FileText className="w-12 h-12 mb-3 opacity-30" />
-                <p className="text-sm">No questions added to this assessment.</p>
+            {assessment.createdBy?.name && (
+              <div className="mt-4 pt-4 border-t border-gray-100 flex items-center gap-2 text-xs text-gray-500">
+                <CircleDot className="w-3.5 h-3.5 text-gray-400" />
+                Created by <span className="font-semibold text-gray-700">{assessment.createdBy.name}</span>
+                <span className="text-gray-300">·</span>
+                {new Date(assessment.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
               </div>
-            ) : (
-              <div className="space-y-3">
-                {assessment.questionIds?.map((q, idx) => (
-                  <div
-                    key={q._id}
-                    className="bg-white border border-gray-200 rounded-xl p-4 hover:shadow-sm hover:border-gray-300 transition-all"
-                  >
-                    <div className="flex items-start gap-3">
-                      <span className="flex-shrink-0 w-7 h-7 bg-brand-red/10 text-brand-red text-xs font-bold rounded-full flex items-center justify-center mt-0.5">
+            )}
+          </div>
+
+          {/* Reminder & Scoring */}
+          <div className="bg-white rounded-2xl border border-gray-200 p-5">
+            <SectionTitle icon={Bell} title="Reminders & Scoring" accent="text-amber-600 bg-amber-50" />
+            <div className="mt-3 space-y-3 text-sm text-gray-700">
+              <div className="flex items-center justify-between">
+                <span className="text-gray-500">Reminder</span>
+                <span className="font-medium">
+                  {assessment.reminderDaysBefore ? `${assessment.reminderDaysBefore} day${assessment.reminderDaysBefore !== 1 ? 's' : ''} before` : '—'}
+                </span>
+              </div>
+              {assessment.reminderSent && (
+                <div className="flex items-center gap-1.5 text-xs bg-green-50 text-green-700 px-2.5 py-1 rounded-lg w-fit">
+                  <Check className="w-3.5 h-3.5" /> Reminder sent
+                </div>
+              )}
+              {assessment.type === 'Combined' && (
+                <div className="pt-3 border-t border-gray-100">
+                  <div className="flex justify-between text-xs mb-2">
+                    <span className="text-gray-500">Self-assessment</span>
+                    <span className="font-bold text-gray-900">{assessment.weight?.selfAssessment || 0}%</span>
+                  </div>
+                  <div className="w-full bg-gray-100 rounded-full h-1.5">
+                    <div className="bg-brand-red h-1.5 rounded-full transition-all" style={{ width: `${assessment.weight?.selfAssessment || 0}%` }} />
+                  </div>
+                  <div className="flex justify-between text-xs mb-2 mt-3">
+                    <span className="text-gray-500">Supervisor</span>
+                    <span className="font-bold text-gray-900">{assessment.weight?.supervisor || 0}%</span>
+                  </div>
+                  <div className="w-full bg-gray-100 rounded-full h-1.5">
+                    <div className="bg-blue-500 h-1.5 rounded-full transition-all" style={{ width: `${assessment.weight?.supervisor || 0}%` }} />
+                  </div>
+                </div>
+              )}
+              {assessment.type !== 'Combined' && (
+                <p className="text-xs text-gray-400">
+                  {assessment.type === 'SelfAssessment' ? 'Scored from the employee\'s own self-assessment responses.' : 'Scored from supervisor evaluations of team members.'}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Summary */}
+          <div className="bg-white rounded-2xl border border-gray-200 p-5">
+            <SectionTitle icon={Award} title="Assessment Summary" accent="text-brand-red bg-brand-red/10" />
+            <div className="mt-3 space-y-3">
+              <SummaryRow icon={Building2} label="Type" value={assessment.type} />
+              <SummaryRow icon={Target} label="Purpose" value={assessment.purpose || '—'} />
+              <SummaryRow icon={Tag} label="Target Group" value={assessment.targetGroup ? assessment.targetGroup.replace('-', ' ') : '—'} />
+              <SummaryRow icon={FileText} label="Questions" value={`${questionCount} question${questionCount !== 1 ? 's' : ''}`} />
+            </div>
+          </div>
+        </div>
+
+        {/* ── Questions ── */}
+        <div className="bg-white rounded-2xl border border-gray-200">
+          <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="p-1.5 rounded-lg bg-brand-red/10"><FileText className="w-4 h-4 text-brand-red" /></span>
+              <h2 className="text-sm font-bold text-gray-800">Questions</h2>
+              <span className="bg-gray-100 text-gray-600 text-xs font-bold px-2 py-0.5 rounded-full">{questionCount}</span>
+            </div>
+          </div>
+
+          {questionCount === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-gray-400">
+              <FileText className="w-12 h-12 mb-3 opacity-30" />
+              <p className="text-sm">No questions added to this assessment.</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-100">
+              {assessment.questionIds?.map((q, idx) => {
+                const open = expandedIdx === idx;
+                return (
+                  <div key={q._id} className="hover:bg-gray-50/50 transition-colors">
+                    <button
+                      onClick={() => setExpandedIdx(open ? null : idx)}
+                      className="w-full flex items-start gap-3 text-left px-6 py-4"
+                    >
+                      <span className="flex-shrink-0 mt-0.5 w-7 h-7 bg-brand-red/10 text-brand-red text-xs font-bold rounded-full flex items-center justify-center">
                         {idx + 1}
                       </span>
                       <div className="flex-1 min-w-0">
-                        {q.scenario && (
-                          <p className="text-xs text-gray-500 italic bg-gray-50 rounded-lg px-3 py-2 mb-2 border border-gray-100 line-clamp-2">
-                            Scenario: {q.scenario}
-                          </p>
-                        )}
-                        <p className="text-sm text-gray-800 leading-relaxed">{q.text}</p>
-                        <div className="flex items-center gap-2 mt-2 flex-wrap">
+                        <p className="text-sm text-gray-800 leading-relaxed line-clamp-2">{q.text}</p>
+                        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                           <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">{q.type}</span>
                           <span className="text-xs text-gray-400">{q.score} pt{q.score !== 1 ? 's' : ''}</span>
                           {q.targetGroup && (
@@ -412,12 +495,40 @@ export default function AssessmentDetail() {
                           )}
                         </div>
                       </div>
-                    </div>
+                      <ChevronDown className={`w-4 h-4 text-gray-400 flex-shrink-0 mt-1 transition-transform ${open ? 'rotate-180' : ''}`} />
+                    </button>
+                    {open && (
+                      <div className="px-6 pb-4 pl-10">
+                        <div className="bg-gray-50 border border-gray-100 rounded-xl p-4 space-y-3">
+                          {q.scenario && (
+                            <div>
+                              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Scenario</p>
+                              <p className="text-sm text-gray-700 leading-relaxed">{q.scenario}</p>
+                            </div>
+                          )}
+                          {q.type === 'multiple_choice' || q.type === 'single_choice' ? (
+                            <div>
+                              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Options</p>
+                              <ul className="space-y-1.5">
+                                {q.options?.map((opt, oi) => (
+                                  <li key={oi} className="text-sm text-gray-700 flex items-start gap-2">
+                                    <span className="w-4 h-4 rounded-full border border-gray-300 flex-shrink-0 mt-0.5" />
+                                    <span>{typeof opt === 'string' ? opt : opt.text}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          ) : (
+                            <p className="text-sm text-gray-400">Open-ended / essay-style question.</p>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
 

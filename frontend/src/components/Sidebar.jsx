@@ -7,6 +7,7 @@ import {
   BarChart3, MessageSquare, ChevronLeft, LogOut, Target,
   Lightbulb, Activity, UserCheck, ClipboardCheck, X,
   RefreshCw, ChevronDown, HelpCircle, Inbox, BookMarked,
+  Building2, Layers, FileSpreadsheet,
 } from 'lucide-react';
 import logo from '../image/z.jpg';
 
@@ -34,7 +35,14 @@ const NAV_ITEMS = [
 
   // ── Shared ───────────────────────────────────────────
   { icon: FileText, label: 'Competency Results', path: '/results', roles: ['HR_ADMIN'] },
-  { icon: BarChart3, label: 'Reports', path: '/reports', roles: ['HR_ADMIN'] },
+  { icon: BarChart3, label: 'Reports', roles: ['HR_ADMIN'], children: [
+    { icon: BarChart3,      label: 'Overview',       path: '/reports/overview' },
+    { icon: Building2,      label: 'By Department',  path: '/reports/department' },
+    { icon: Layers,         label: 'By Competency',  path: '/reports/competency' },
+    { icon: UserCheck,      label: 'Individual',     path: '/reports/individual' },
+    { icon: FileText,       label: 'All Reports',    path: '/reports/all' },
+    { icon: FileSpreadsheet,label: 'Custom Builder', path: '/reports/builder' },
+  ]},
   { icon: MessageSquare, label: 'Feedback', path: '/feedback', roles: ['EMPLOYEE', 'HR_ADMIN'] },
   
   
@@ -75,6 +83,18 @@ export default function Sidebar({
   const [isMobile, setIsMobile] = useState(false);
   const [switchingRole, setSwitchingRole] = useState(false);
   const [roleMenuOpen, setRoleMenuOpen] = useState(false);
+  const [openMenus, setOpenMenus] = useState({});
+
+  // Auto-expand a parent menu when a child route is active
+  useEffect(() => {
+    setOpenMenus((prev) => {
+      const next = { ...prev };
+      NAV_ITEMS.forEach((item) => {
+        if (item.children?.some((c) => isActive(c.path))) next[item.label] = true;
+      });
+      return next;
+    });
+  }, [loc.pathname]);
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 1024);
@@ -130,7 +150,7 @@ export default function Sidebar({
     }
   };
 
-  const sidebarWidth = isMobile ? 'w-64' : (collapsed ? 'w-20' : 'w-64');
+  const sidebarWidth = isMobile ? 'w-[210px]' : (collapsed ? 'w-[76px]' : 'w-[220px]');
   const sidebarPosition = isMobile
     ? (mobileOpen ? 'translate-x-0' : '-translate-x-full')
     : 'translate-x-0';
@@ -152,16 +172,15 @@ export default function Sidebar({
       >
         {/* ── Logo ── */}
         <div
-          className={`border-b border-white/10 min-h-[70px] sm:min-h-[80px] flex items-center ${collapsed && !isMobile ? 'justify-center p-4' : 'px-5 p-6'
+          className={`border-b border-white/10 min-h-[64px] sm:min-h-[70px] flex items-center ${collapsed && !isMobile ? 'flex-col justify-center gap-1 p-2' : 'px-4 py-4'
             }`}
         >
-          <img src={logo} alt="Zemen Bank Logo" className="h-14 w-auto object-contain" />
+          <img src={logo} alt="Zemen Bank Logo" className="h-10 w-auto object-contain" />
 
           {(!collapsed || isMobile) && (
             <div className="ml-4 flex-1 flex items-center justify-between">
               <div>
-                <div className="font-display text-lg font-bold tracking-tight">Zemen Bank</div>
-                <div className="text-xs text-white/50 uppercase tracking-widest mt-0.5">CAS Platform</div>
+                <div className="font-display text-lg font-bold tracking-tight">ZB-CAS</div>                
               </div>
 
               {isMobile && (
@@ -175,20 +194,103 @@ export default function Sidebar({
               )}
             </div>
           )}
+
+          {/* ── Desktop collapse toggle (top, near logo) ─────────────────── */}
+          {!isMobile && (
+            <button
+              onClick={onToggle}
+              className={`flex items-center justify-center text-white/40 hover:text-white/80 transition-base group ${collapsed ? '' : 'ml-auto'
+                }`}
+              aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            >
+              <ChevronLeft
+                className={`w-4 h-4 transition-base group-hover:scale-110 ${collapsed ? 'rotate-180' : ''}`}
+              />
+            </button>
+          )}
         </div>
 
         {/* ── Nav Items ── */}
-        <nav className="flex-1 py-4 overflow-y-auto custom-scrollbar">
+        <nav className="flex-1 py-2 overflow-y-auto custom-scrollbar">
           {visible.map((item) => {
-            const active = isActive(item.path);
             const Icon = item.icon;
+
+            // ── Parent item with child submenu ──────────────────────────
+            if (item.children) {
+              const isOpen = !!openMenus[item.label];
+              const childActive = item.children.some((c) => isActive(c.path));
+              return (
+                <div key={item.label}>
+                  <button
+                    onClick={() => {
+                      if (collapsed && !isMobile) {
+                        handleNavClick(item.children[0].path);
+                      } else {
+                        setOpenMenus((p) => ({ ...p, [item.label]: !isOpen }));
+                      }
+                    }}
+                    onMouseEnter={() => setHovering(item.label)}
+                    onMouseLeave={() => setHovering(null)}
+                    className={`w-full flex items-center gap-3 py-2.5 px-5 border-l-3 transition-base relative group ${childActive
+                        ? 'bg-brand-red/20 border-brand-red text-white font-semibold'
+                        : 'border-transparent text-white/70 hover:bg-white/10 hover:text-white font-medium'
+                      } ${collapsed && !isMobile ? 'justify-center' : ''}`}
+                  >
+                    <Icon className="w-5 h-5" strokeWidth={childActive ? 2.5 : 2} />
+                    {(!collapsed || isMobile) && (
+                      <>
+                        <span className="text-sm font-medium flex-1">{item.label}</span>
+                        <ChevronDown className={`w-4 h-4 text-white/40 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                      </>
+                    )}
+
+                    {collapsed && !isMobile && hovering === item.label && (
+                      <div className="absolute left-full top-1/2 -translate-y-1/2 ml-3 bg-gray-800 text-white px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap shadow-2xl z-50 pointer-events-none">
+                        {item.label}
+                        <div className="absolute -left-1 top-1/2 -translate-y-1/2 w-2 h-2 bg-gray-800 rotate-45" />
+                      </div>
+                    )}
+
+                    {collapsed && !isMobile && childActive && (
+                      <div className="absolute right-2 top-1/2 -translate-y-1/2 w-2 h-2 bg-brand-red rounded-full" />
+                    )}
+                  </button>
+
+                  {/* Submenu */}
+                  {!collapsed && isOpen && (
+                    <div className="pb-1">
+                      {item.children.map((child) => {
+                        const cActive = isActive(child.path);
+                        const CIcon = child.icon;
+                        return (
+                          <button
+                            key={child.label}
+                            onClick={() => handleNavClick(child.path)}
+                            className={`w-full flex items-center gap-3 py-2 pl-12 pr-5 border-l-3 transition-base relative group ${cActive
+                                ? 'text-white bg-white/10 border-brand-red font-semibold'
+                                : 'border-transparent text-white/60 hover:bg-white/10 hover:text-white font-medium'
+                              }`}
+                          >
+                            <CIcon className="w-4 h-4" strokeWidth={cActive ? 2.5 : 2} />
+                            <span className="text-[13px]">{child.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
+            // ── Regular item ────────────────────────────────────────────
+            const active = isActive(item.path);
             return (
               <button
                 key={item.label}
                 onClick={() => handleNavClick(item.path)}
                 onMouseEnter={() => setHovering(item.label)}
                 onMouseLeave={() => setHovering(null)}
-                className={`w-full flex items-center gap-3 py-3.5 px-5 border-l-3 transition-base relative group ${active
+                className={`w-full flex items-center gap-3 py-2.5 px-5 border-l-3 transition-base relative group ${active
                     ? 'bg-brand-red/20 border-brand-red text-white font-semibold'
                     : 'border-transparent text-white/70 hover:bg-white/10 hover:text-white font-medium'
                   } ${collapsed && !isMobile ? 'justify-center' : ''}`}
@@ -199,7 +301,6 @@ export default function Sidebar({
                   <span className="text-sm font-medium">{item.label}</span>
                 )}
 
-                {/* Tooltip when collapsed (desktop) */}
                 {collapsed && !isMobile && hovering === item.label && (
                   <div className="absolute left-full top-1/2 -translate-y-1/2 ml-3 bg-gray-800 text-white px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap shadow-2xl z-50 pointer-events-none">
                     {item.label}
@@ -216,7 +317,7 @@ export default function Sidebar({
         </nav>
 
         {/* ── Bottom Section ── */}
-        <div className="mt-auto border-t border-white/10 pt-2 pb-4">
+        <div className="mt-auto border-t border-white/10 pt-1 pb-3">
 
           {/* ── Switch Role (only for multi-role users) ─────────────────── */}
           {isMultiRole && (
@@ -340,19 +441,6 @@ export default function Sidebar({
             <LogOut className="w-5 h-5 group-hover:rotate-12 transition-base" />
             {(!collapsed || isMobile) && <span className="text-sm font-medium">Log Out</span>}
           </button>
-
-          {/* ── Desktop collapse toggle ────────────────────────────────────── */}
-          {!isMobile && (
-            <button
-              onClick={onToggle}
-              className="w-full flex items-center justify-center py-3 text-white/40 hover:text-white/80 transition-base group"
-              aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            >
-              <ChevronLeft
-                className={`w-5 h-5 transition-base group-hover:scale-110 ${collapsed ? 'rotate-180' : ''}`}
-              />
-            </button>
-          )}
         </div>
       </aside>
     </>

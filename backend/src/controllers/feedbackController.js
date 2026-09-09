@@ -1,14 +1,20 @@
-import mongoose from 'mongoose';
-import Feedback from '../models/Feedback.js';
-import Result from '../models/Result.js';
-import Assessment from '../models/Assessment.js';
+import prisma from '../config/prisma.js';
 import AppError from '../utils/AppError.js';
 import asyncHandler from '../utils/asyncHandler.js';
+import { logActivity } from '../services/activityService.js';
 
+const feedbackInclude = {
+  user: { select: { id: true, name: true, email: true, department: true, position: true, employeeId: true } },
+  assessment: {
+    select: {
+      id: true, description: true, targetGroup: true, purpose: true, competencyId: true,
+      competency: { select: { id: true, name: true, category: true } },
+    },
+  },
+};
 
 // ───────────────────────────────────────────────────────────────
 // SUBMIT FEEDBACK
-// Employees can only submit feedback for assessments they joined
 // ───────────────────────────────────────────────────────────────
 export const createFeedback = asyncHandler(async (req, res, next) => {
   const { assessmentId, content, rating } = req.body;
@@ -18,48 +24,46 @@ export const createFeedback = asyncHandler(async (req, res, next) => {
   }
 
   if (req.user.role === 'EMPLOYEE') {
-    const result = await Result.findOne({
-      userId: req.user.id,
-      assessmentId,
-    }).lean();
+    const result = await prisma.result.findFirst({
+      where: { userId: req.user.id, assessmentId },
+      select: { id: true },
+    });
 
     if (!result) {
-      return next(
-        new AppError(
-          'You can only submit feedback for assessments you have participated in.',
-          403
-        )
-      );
+      return next(new AppError('You can only submit feedback for assessments you have participated in.', 403));
     }
 
-    const existing = await Feedback.findOne({
-      userId: req.user.id,
-      assessmentId,
-    }).lean();
+    const existing = await prisma.feedback.findFirst({
+      where: { userId: req.user.id, assessmentId },
+      select: { id: true },
+    });
 
     if (existing) {
-      return next(
-        new AppError(
-          'You have already submitted feedback for this assessment.',
-          400
-        )
-      );
+      return next(new AppError('You have already submitted feedback for this assessment.', 400));
     }
   }
 
-  const feedback = await Feedback.create({
-    userId:     req.user.id,
-    assessmentId,
-    content,
-    rating:     rating || null,
+  const feedback = await prisma.feedback.create({
+    data: {
+      userId: req.user.id,
+      assessmentId,
+      content,
+      rating: rating || null,
+    },
+    include: feedbackInclude,
   });
 
-  res.status(201).json({
-    status: 'success',
-    data: { feedback },
+  await logActivity({
+    req,
+    action: 'submitted',
+    entity: 'Feedback',
+    entityId: feedback.id,
+    description: 'Feedback submitted for an assessment',
+    metadata: { assessmentId, rating: rating || null },
   });
+
+  res.status(201).json({ status: 'success', data: { feedback: { ...feedback, _id: feedback.id } } });
 });
-
 
 // ───────────────────────────────────────────────────────────────
 // LIST FEEDBACKS (Employee + Admin)
@@ -67,11 +71,11 @@ export const createFeedback = asyncHandler(async (req, res, next) => {
 export const getFeedbacks = asyncHandler(async (req, res) => {
   const { assessmentId, page = 1, limit = 20 } = req.query;
 
-  const filter = {};
-  if (assessmentId) filter.assessmentId = assessmentId;
+  const where = {};
+  if (assessmentId) where.assessmentId = assessmentId;
 
   if (req.user.role === 'EMPLOYEE') {
-    filter.userId = req.user.id;
+    where.userId = req.user.id;
   }
 
   const pageNum = parseInt(page, 10);
@@ -79,249 +83,172 @@ export const getFeedbacks = asyncHandler(async (req, res) => {
   const skip = (pageNum - 1) * limitNum;
 
   const [feedbacks, total] = await Promise.all([
-    Feedback.find(filter)
-      .populate('userId', 'name email department position employeeId')
-      .populate({
-        path: 'assessmentId',
-        select: 'description targetGroup purpose competencyId',
-        populate: {
-          path: 'competencyId',
-          select: 'name'
-        }
-      })
-      .skip(skip)
-      .limit(limitNum)
-      .sort({ createdAt: -1 })
-      .lean(),
-    Feedback.countDocuments(filter),
+    prisma.feedback.findMany({
+      where,
+      include: feedbackInclude,
+      skip,
+      take: limitNum,
+      orderBy: { createdAt: 'desc' },
+    }),
+    prisma.feedback.count({ where }),
   ]);
 
   res.status(200).json({
     status: 'success',
     data: {
-      feedbacks,
-      pagination: {
-        total,
-        page: pageNum,
-        limit: limitNum,
-      },
+      feedbacks: feedbacks.map(f => ({ ...f, _id: f.id })),
+      pagination: { total, page: pageNum, limit: limitNum },
     },
   });
 });
 
-
 // ───────────────────────────────────────────────────────────────
 // ADMIN SUMMARY BY ASSESSMENT
 // ───────────────────────────────────────────────────────────────
-export const getFeedbackSummaryByAssessment = asyncHandler(
-  async (req, res) => {
-    const { competencyId, dateFrom, dateTo } = req.query;
+export const getFeedbackSummaryByAssessment = asyncHandler(async (req, res) => {
+  const { competencyId, dateFrom, dateTo } = req.query;
 
-    const matchStage = {};
-
-    if (dateFrom || dateTo) {
-      matchStage.createdAt = {};
-      if (dateFrom) matchStage.createdAt.$gte = new Date(dateFrom);
-      if (dateTo) {
-        const end = new Date(dateTo);
-        end.setHours(23, 59, 59, 999);
-        matchStage.createdAt.$lte = end;
-      }
+  const where = {};
+  if (dateFrom || dateTo) {
+    where.createdAt = {};
+    if (dateFrom) where.createdAt.gte = new Date(dateFrom);
+    if (dateTo) {
+      const end = new Date(dateTo);
+      end.setHours(23, 59, 59, 999);
+      where.createdAt.lte = end;
     }
-
-    const pipeline = [
-      ...(Object.keys(matchStage).length ? [{ $match: matchStage }] : []),
-
-      {
-        $group: {
-          _id:           '$assessmentId',
-          avgRating:     { $avg: '$rating' },
-          totalFeedbacks:{ $sum: 1 },
-          ratedCount: {
-            $sum: { $cond: [{ $ne: ['$rating', null] }, 1, 0] },
-          },
-          ratings: { $push: '$rating' },
-        },
-      },
-
-      {
-        $lookup: {
-          from:         'assessments',
-          localField:   '_id',
-          foreignField: '_id',
-          as:           'assessment',
-        },
-      },
-      {
-        $unwind: {
-          path: '$assessment',
-          preserveNullAndEmptyArrays: true,
-        },
-      },
-
-      {
-        $lookup: {
-          from:         'competencies',
-          localField:   'assessment.competencyId',
-          foreignField: '_id',
-          as:           'competency',
-        },
-      },
-      {
-        $unwind: {
-          path: '$competency',
-          preserveNullAndEmptyArrays: true,
-        },
-      },
-
-      ...(competencyId
-        ? [
-            {
-              $match: {
-                'assessment.competencyId':
-                  new mongoose.Types.ObjectId(competencyId),
-              },
-            },
-          ]
-        : []),
-
-      {
-        $project: {
-          assessmentId:          '$_id',
-          assessmentDescription: '$assessment.description',
-          competencyName:        '$competency.name',
-          competencyCategory:    '$competency.category',
-          targetGroup:           '$assessment.targetGroup',
-          purpose:               '$assessment.purpose',
-
-          avgRating:     { $round: ['$avgRating', 2] },
-          totalFeedbacks: 1,
-          ratedCount:    1,
-
-          rating5: {
-            $size: {
-              $filter: { input: '$ratings', as: 'r', cond: { $eq: ['$$r', 5] } },
-            },
-          },
-          rating4: {
-            $size: {
-              $filter: { input: '$ratings', as: 'r', cond: { $eq: ['$$r', 4] } },
-            },
-          },
-          rating3: {
-            $size: {
-              $filter: { input: '$ratings', as: 'r', cond: { $eq: ['$$r', 3] } },
-            },
-          },
-          rating2: {
-            $size: {
-              $filter: { input: '$ratings', as: 'r', cond: { $eq: ['$$r', 2] } },
-            },
-          },
-          rating1: {
-            $size: {
-              $filter: { input: '$ratings', as: 'r', cond: { $eq: ['$$r', 1] } },
-            },
-          },
-        },
-      },
-
-      { $sort: { totalFeedbacks: -1 } },
-    ];
-
-    const summaries = await Feedback.aggregate(pipeline);
-
-    res.status(200).json({
-      status: 'success',
-      data: { summaries },
-    });
   }
-);
 
+  const feedbacks = await prisma.feedback.findMany({ where, select: { assessmentId: true, rating: true, createdAt: true } });
+  const assessmentIds = [...new Set(feedbacks.map(f => f.assessmentId))];
+
+  const assessments = assessmentIds.length
+    ? await prisma.assessment.findMany({ where: { id: { in: assessmentIds } }, select: { id: true, description: true, targetGroup: true, purpose: true, competencyId: true } })
+    : [];
+  const compIds = [...new Set(assessments.map(a => a.competencyId))];
+  const competencies = compIds.length
+    ? await prisma.competency.findMany({ where: { id: { in: compIds } }, select: { id: true, name: true, category: true } })
+    : [];
+
+  const compMap = Object.fromEntries(competencies.map(c => [c.id, c]));
+
+  const byAssessment = {};
+  feedbacks.forEach(f => {
+    if (!byAssessment[f.assessmentId]) byAssessment[f.assessmentId] = { ratings: [], total: 0, rated: 0, sum: 0 };
+    byAssessment[f.assessmentId].total++;
+    if (f.rating != null) { byAssessment[f.assessmentId].rated++; byAssessment[f.assessmentId].ratings.push(f.rating); byAssessment[f.assessmentId].sum += f.rating; }
+  });
+
+  function buildSummary(a) {
+    const agg = byAssessment[a.id] || { ratings: [], total: 0, rated: 0, sum: 0 };
+    const counts = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+    agg.ratings.forEach(r => { if (counts[r] !== undefined) counts[r]++; });
+    return {
+      assessmentId: a.id,
+      assessmentDescription: a.description,
+      competencyName: compMap[a.competencyId]?.name || 'N/A',
+      competencyCategory: compMap[a.competencyId]?.category || 'N/A',
+      targetGroup: a.targetGroup,
+      purpose: a.purpose,
+      avgRating: agg.rated ? Math.round((agg.sum / agg.rated) * 100) / 100 : null,
+      totalFeedbacks: agg.total,
+      ratedCount: agg.rated,
+      rating5: counts[5], rating4: counts[4], rating3: counts[3], rating2: counts[2], rating1: counts[1],
+    };
+  }
+
+  const summaries = assessments.map(buildSummary);
+
+  const finalSummaries = competencyId
+    ? assessments.filter(a => a.competencyId === competencyId).map(buildSummary)
+    : summaries;
+
+  finalSummaries.sort((a, b) => b.totalFeedbacks - a.totalFeedbacks);
+
+  res.status(200).json({ status: 'success', data: { summaries: finalSummaries } });
+});
 
 // ───────────────────────────────────────────────────────────────
 // ADMIN DETAIL (BY ASSESSMENT)
 // ───────────────────────────────────────────────────────────────
-export const getFeedbacksByAssessment = asyncHandler(
-  async (req, res) => {
-    const { assessmentId } = req.params;
-    const { page = 1, limit = 20 } = req.query;
+export const getFeedbacksByAssessment = asyncHandler(async (req, res) => {
+  const { assessmentId } = req.params;
+  const { page = 1, limit = 20 } = req.query;
 
-    const filter = { assessmentId };
+  const where = { assessmentId };
+  const skip = (parseInt(page, 10) - 1) * parseInt(limit, 10);
 
-    const skip = (parseInt(page, 10) - 1) * parseInt(limit, 10);
+  const [feedbacks, total] = await Promise.all([
+    prisma.feedback.findMany({
+      where,
+      include: { user: { select: { id: true, name: true, email: true, department: true, position: true, employeeId: true } } },
+      skip,
+      take: parseInt(limit, 10),
+      orderBy: { createdAt: 'desc' },
+    }),
+    prisma.feedback.count({ where }),
+  ]);
 
-    const [feedbacks, total] = await Promise.all([
-      Feedback.find(filter)
-        .populate('userId', 'name email department position employeeId')
-        .skip(skip)
-        .limit(parseInt(limit, 10))
-        .sort({ createdAt: -1 })
-        .lean(),
-      Feedback.countDocuments(filter),
-    ]);
-
-    res.status(200).json({
-      status: 'success',
-      data: {
-        feedbacks,
-        pagination: {
-          total,
-          page: parseInt(page, 10),
-          limit: parseInt(limit, 10),
-        },
-      },
-    });
-  }
-);
-
+  res.status(200).json({
+    status: 'success',
+    data: {
+      feedbacks: feedbacks.map(f => ({ ...f, _id: f.id })),
+      pagination: { total, page: parseInt(page, 10), limit: parseInt(limit, 10) },
+    },
+  });
+});
 
 // ─── GET EMPLOYEE'S ELIGIBLE ASSESSMENTS ──────────────────────────────────────
 export const getEligibleAssessmentsForFeedback = asyncHandler(async (req, res) => {
-  const results = await Result.find({ userId: req.user.id }).distinct('assessmentId');
+  const results = await prisma.result.findMany({
+    where: { userId: req.user.id },
+    select: { assessmentId: true },
+    distinct: ['assessmentId'],
+  });
+  const resultIds = results.map(r => r.assessmentId);
 
-  const existingFeedback = await Feedback.find({ userId: req.user.id }).distinct('assessmentId');
-  const existingIds = existingFeedback.map(id => id.toString());
+  const existingFeedback = await prisma.feedback.findMany({
+    where: { userId: req.user.id },
+    select: { assessmentId: true },
+    distinct: ['assessmentId'],
+  });
+  const existingIds = existingFeedback.map(f => f.assessmentId);
 
-  const assessments = await Assessment.find({
-    _id:    { $in: results },
-    status: { $in: ['COMPLETED', 'ARCHIVED', 'ACTIVE'] },
-  })
-    .populate('competencyId', 'name category')
-    .select('description competencyId type status targetGroup purpose createdAt')
-    .sort({ createdAt: -1 })
-    .lean();
+  const assessments = await prisma.assessment.findMany({
+    where: {
+      id: { in: resultIds },
+      status: { in: ['COMPLETED', 'ARCHIVED', 'ACTIVE'] },
+    },
+    include: { competency: { select: { id: true, name: true, category: true } } },
+    select: { id: true, description: true, competencyId: true, type: true, status: true, targetGroup: true, purpose: true, createdAt: true, competency: { select: { id: true, name: true, category: true } } },
+    orderBy: { createdAt: 'desc' },
+  });
 
-  const assessmentsWithStatus = assessments.map(a => ({
-    ...a,
-    alreadySubmitted: existingIds.includes(a._id.toString()),
+  const assessesWithStatus = assessments.map(a => ({
+    _id: a.id,
+    id: a.id,
+    description: a.description,
+    competencyId: a.competency,
+    type: a.type,
+    status: a.status,
+    targetGroup: a.targetGroup,
+    purpose: a.purpose,
+    createdAt: a.createdAt,
+    alreadySubmitted: existingIds.includes(a.id),
   }));
 
-  res.status(200).json({ status: 'success', data: { assessments: assessmentsWithStatus } });
+  res.status(200).json({ status: 'success', data: { assessments: assessesWithStatus } });
 });
-
 
 // ─── GET ONE ──────────────────────────────────────────────────────────────────
 export const getFeedback = asyncHandler(async (req, res, next) => {
-  const feedback = await Feedback.findById(req.params.id)
-    .populate('userId', 'name email department position')
-    .populate({
-      path: 'assessmentId',
-      populate: {
-        path: 'competencyId',
-        select: 'name'
-      }
-    })
-    .lean();
+  const feedback = await prisma.feedback.findUnique({ where: { id: req.params.id }, include: feedbackInclude });
 
   if (!feedback) return next(new AppError('Feedback not found.', 404));
 
-  if (
-    req.user.role === 'EMPLOYEE' &&
-    feedback.userId._id?.toString() !== req.user.id
-  ) {
+  if (req.user.role === 'EMPLOYEE' && feedback.userId !== req.user.id) {
     return next(new AppError('Access denied.', 403));
   }
 
-  res.status(200).json({ status: 'success', data: { feedback } });
+  res.status(200).json({ status: 'success', data: { feedback: { ...feedback, _id: feedback.id } } });
 });

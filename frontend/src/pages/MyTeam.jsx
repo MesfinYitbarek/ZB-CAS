@@ -57,8 +57,7 @@ export default function MyTeam() {
       {/* ── Sticky header ────────────────────────────────────────────────── */}
       <div className="flex-shrink-0  px-6 py-4 flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-display font-bold text-brand-black">My Team</h1>
-          <p className="text-sm text-gray-400 mt-0.5">{members.length} member{members.length !== 1 ? 's' : ''}</p>
+          <h1 className="text-xl  font-bold text-brand-black">My Team</h1>
         </div>
 
         {/* Search */}

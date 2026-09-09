@@ -306,6 +306,49 @@ export const exportToExcel = async (data, filename = 'export.xlsx') => {
       }
     }
 
+    if (data.type === 'activities') {
+
+      // ── Activity Log sheet ────────────────────────────────────────────────
+      const ws = wb.addWorksheet('Activity Log');
+
+      ws.columns = [
+        { header: 'Date',        key: 'date',        width: 20 },
+        { header: 'Entity',      key: 'entity',      width: 22 },
+        { header: 'Action',      key: 'action',      width: 20 },
+        { header: 'Description', key: 'description', width: 60 },
+        { header: 'User',        key: 'user',        width: 28 },
+        { header: 'Role',        key: 'role',        width: 14 },
+        { header: 'IP Address',  key: 'ip',          width: 18 },
+        { header: 'Metadata',    key: 'metadata',    width: 50 },
+      ];
+
+      const activityHeaderRow = ws.getRow(1);
+      activityHeaderRow.eachCell((cell) => {
+        cell.fill   = headerFill;
+        cell.font   = boldWhiteFont;
+        cell.border = allBorders;
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      });
+      activityHeaderRow.height = 22;
+
+      (data.activities || []).forEach((a, idx) => {
+        const row = ws.addRow({
+          date:        new Date(a.date).toLocaleString(),
+          entity:      a.entity || '',
+          action:      a.action || '',
+          description: a.description || '',
+          user:        a.user || 'System',
+          role:        a.role || '',
+          ip:          a.ip || '',
+          metadata:    a.metadata ? JSON.stringify(a.metadata) : '',
+        });
+
+        if (idx % 2 === 0) row.eachCell((cell) => { cell.fill = altRowFill; });
+        row.eachCell((cell) => { cell.border = allBorders; });
+        row.getCell('description').alignment = { wrapText: true };
+      });
+    }
+
     // Write to buffer and trigger browser download
     const buffer = await wb.xlsx.writeBuffer();
     const blob   = new Blob([buffer], {

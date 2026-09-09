@@ -115,23 +115,22 @@ export default function AssessmentRequests() {
   return (
     <div className="h-[calc(100vh-4rem)] flex flex-col p-7">
       {/* Header */}
-      <div className="flex justify-between items-start mb-6 flex-shrink-0">
+      <div className="flex justify-between items-start mb-3 flex-shrink-0">
         <div>
           <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-display font-bold text-brand-black">Assessment Requests</h1>
+            <h1 className="text-xl  font-bold text-brand-black">Assessment Requests</h1>
             {pendingCount > 0 && (
               <span className="px-2.5 py-1 bg-orange-100 text-orange-700 rounded-full text-xs font-bold border border-orange-200">
                 {pendingCount} pending
               </span>
             )}
           </div>
-          <p className="text-gray-500 mt-1">Incoming assessment requests from ZB Succession Planning</p>
         </div>
         <button
           onClick={loadRequests}
-          className="flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-lg font-medium text-sm text-gray-600 hover:bg-gray-50 transition-colors shadow-sm"
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 rounded-lg font-medium text-sm text-gray-600 hover:bg-gray-50 transition-colors shadow-sm"
         >
-          <RefreshCw className="w-4 h-4" /> Refresh
+          <RefreshCw className="w-3.5 h-3.5" /> Refresh
         </button>
       </div>
 

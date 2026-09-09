@@ -8,7 +8,6 @@
 import helmetPkg from 'helmet';
 import corsPkg from 'cors';
 import { rateLimit } from 'express-rate-limit';
-import mongoSanitizePkg from 'express-mongo-sanitize';
 import hppPkg from 'hpp';
 import compressionPkg from 'compression';
 import cookieParserPkg from 'cookie-parser';
@@ -57,38 +56,10 @@ export const authLimiter = rateLimit({
   message: { status: 'fail', message: 'Too many login attempts. Please try again later.' },
 });
 
-// ─── Mongo sanitize middleware ────────────────────────────────────────────────
-// FIX A03: Now sanitizes req.query too (creates a safe sanitized copy)
-export const mongoSanitize = (req, res, next) => {
-  const { sanitize } = mongoSanitizePkg;
-
-  if (req.body)   req.body   = sanitize(req.body);
-  if (req.params) {
-    Object.keys(req.params).forEach(k => {
-      req.params[k] = sanitize(req.params[k]);
-    });
-  }
-
-  // FIX A03: Sanitize query by building a new object (req.query is read-only)
-  if (req.query) {
-    const sanitizedQuery = {};
-    for (const [key, value] of Object.entries(req.query)) {
-      sanitizedQuery[key] = sanitize(value);
-    }
-    // Replace req.query via Object.defineProperty to bypass read-only guard
-    Object.defineProperty(req, 'query', {
-      value: sanitizedQuery,
-      writable: true,
-      configurable: true,
-    });
-  }
-
-  next();
-};
-
 // ─── Regex-safe escape helper ─────────────────────────────────────────────────
-// FIX A03: Exported for use in controllers that build RegExp from user input
-// Usage: new RegExp(escapeRegex(userInput), 'i')
+// Kept for controllers that translate user free-text into case-insensitive
+// search tokens. Prisma `contains` mode is preferred, but this remains for
+// any remaining regex-based matching.
 export const escapeRegex = (str) =>
   String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 

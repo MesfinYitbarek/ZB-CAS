@@ -82,18 +82,17 @@ export default function PendingEvaluations() {
       {/* ── Sticky header ────────────────────────────────────────────────── */}
       <div className="flex-shrink-0 border-b border-gray-100 px-6 py-4 flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-display font-bold text-brand-black">Pending Evaluations</h1>
-          <p className="text-sm text-gray-400 mt-0.5">Supervisor assessments for your team</p>
+          <h1 className="text-xl  font-bold text-brand-black">Pending Evaluations</h1>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           {pendingCount > 0 && (
             <span className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 bg-orange-50 text-orange-600 rounded-lg border border-orange-100">
               <AlertTriangle className="w-3.5 h-3.5" />
               {pendingCount} pending
             </span>
           )}
-          <button onClick={load} className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 transition text-gray-500">
-            <RefreshCw className="w-4 h-4" />
+          <button onClick={load} className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 transition text-gray-500">
+            <RefreshCw className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>

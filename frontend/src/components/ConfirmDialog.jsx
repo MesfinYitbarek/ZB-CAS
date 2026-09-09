@@ -12,7 +12,7 @@ export default function ConfirmDialog({ open, onClose, onConfirm, title, message
               <AlertTriangle className={`w-6 h-6 ${danger ? 'text-red-600' : 'text-brand-red'}`} />
             </div>
             <div className="flex-1">
-              <h3 className="text-lg font-display font-bold text-brand-black mb-2">{title}</h3>
+              <h3 className="text-lg  font-bold text-brand-black mb-2">{title}</h3>
               <p className="text-sm text-gray-600 leading-relaxed">{message}</p>
             </div>
           </div>
