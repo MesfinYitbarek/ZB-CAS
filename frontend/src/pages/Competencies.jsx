@@ -6,6 +6,8 @@ import {
   Eye,
   X,
   Search,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import Modal from '../components/Modal';
@@ -189,7 +191,7 @@ export default function Competencies() {
   };
 
   return (
-    <div className="p-7 bg-gradient-to-br from-gray-50 to-white h-[calc(100vh-4rem)] flex flex-col">
+    <div className="p-7 h-[calc(100vh-4rem)] flex flex-col">
       {/* HEADER */}
       <div className="flex justify-between items-start mb-3 flex-shrink-0">
         <div>
@@ -197,53 +199,58 @@ export default function Competencies() {
         </div>
         <button
           onClick={openCreate}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-transform hover:scale-105"
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors"
         >
           <Plus className="w-3.5 h-3.5" /> Add Competency
         </button>
       </div>
 
       {/* FILTERS */}
-      <div className="flex flex-wrap items-center gap-3 mb-6 flex-shrink-0">
-        {/* Search bar */}
-        <div className="relative flex-1 min-w-[220px] max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => { setSearch(e.target.value); setPagination(p => ({ ...p, page: 1 })); }}
-            placeholder="Search competencies…"
-            className="w-full h-9 pl-9 pr-8 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 placeholder:text-gray-400 focus:outline-none focus:border-red-400 focus:ring-1 focus:ring-red-100 transition"
-          />
-          {search && (
-            <button onClick={() => { setSearch(''); setPagination(p => ({ ...p, page: 1 })); }} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
+      <div className="flex justify-between items-center gap-3 mb-5 flex-wrap flex-shrink-0">
+        <div className="flex items-center gap-3 flex-wrap">
+          {/* Search bar */}
+          <div className="relative min-w-[220px]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => { setSearch(e.target.value); setPagination(p => ({ ...p, page: 1 })); }}
+              placeholder="Search competencies…"
+              className="w-full h-10 pl-10 pr-4 rounded-lg border border-gray-300 focus-brand text-sm"
+            />
+            {search && (
+              <button onClick={() => { setSearch(''); setPagination(p => ({ ...p, page: 1 })); }} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Category dropdown */}
+          <select
+            value={catFilter}
+            onChange={(e) => handleCatFilter(e.target.value)}
+            className="h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm font-medium cursor-pointer"
+          >
+            {CATEGORIES.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
         </div>
 
-        {/* Category dropdown */}
-        <select
-          value={catFilter}
-          onChange={(e) => handleCatFilter(e.target.value)}
-          className="h-9 px-3 rounded-lg border border-gray-200 bg-white text-sm font-medium text-gray-700 focus:outline-none focus:border-red-400 focus:ring-1 focus:ring-red-100 cursor-pointer"
-        >
-          {CATEGORIES.map((c) => (
-            <option key={c} value={c}>{c}</option>
-          ))}
-        </select>
-
         {/* Page size */}
-        <select
-          value={pagination.limit}
-          onChange={handlePageSizeChange}
-          className="h-9 px-3 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 cursor-pointer"
-        >
-          <option value="6">6 / page</option>
-          <option value="12">12 / page</option>
-          <option value="24">24 / page</option>
-          <option value="48">48 / page</option>
-        </select>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-gray-600">Show:</span>
+          <select
+            value={pagination.limit}
+            onChange={handlePageSizeChange}
+            className="px-3 py-1.5 rounded-lg border border-gray-300 focus-brand text-sm"
+          >
+            <option value="6">6 per page</option>
+            <option value="12">12 per page</option>
+            <option value="24">24 per page</option>
+            <option value="48">48 per page</option>
+          </select>
+        </div>
       </div>
 
       {/* CONTENT - Scrollable */}
@@ -253,11 +260,11 @@ export default function Competencies() {
             <div className="w-10 h-10 border-4 border-brand-red border-t-transparent rounded-full animate-spin" />
           </div>
         ) : (
-          <div className="bg-white rounded-xl border border-gray-200/70 overflow-hidden mb-6">
+          <div className="bg-white rounded-xl shadow-card border border-gray-100 overflow-hidden mb-6">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-left text-xs uppercase tracking-wide text-gray-500 border-b border-gray-200 bg-gray-50">
+                  <tr className="text-left text-xs uppercase tracking-wide text-gray-500 border-b border-gray-100 bg-gray-50">
                     <th className="px-4 py-2.5 font-semibold">Competency</th>
                     <th className="px-4 py-2.5 font-semibold">Category</th>
                     <th className="px-4 py-2.5 font-semibold">Target Groups</th>
@@ -295,14 +302,14 @@ export default function Competencies() {
                         </div>
                       </td>
                       <td className="px-4 py-3">
-                        <div className="flex items-center justify-end gap-1">
-                          <button onClick={() => setViewItem(c)} className="p-1.5 rounded-md hover:bg-blue-50 transition" title="View">
+                        <div className="flex items-center justify-end gap-2">
+                          <button onClick={() => setViewItem(c)} className="p-1.5 rounded-lg hover:bg-blue-50 transition" title="View">
                             <Eye className="w-4 h-4 text-blue-600" />
                           </button>
-                          <button onClick={() => openEdit(c)} className="p-1.5 rounded-md hover:bg-gray-100 transition" title="Edit">
-                            <Edit2 className="w-4 h-4 text-gray-600" />
+                          <button onClick={() => openEdit(c)} className="p-1.5 rounded-lg hover:bg-gray-100 transition" title="Edit">
+                            <Edit2 className="w-4 h-4 text-gray-500" />
                           </button>
-                          <button onClick={() => handleDelete(c._id)} className="p-1.5 rounded-md hover:bg-red-50 transition" title="Delete">
+                          <button onClick={() => handleDelete(c._id)} className="p-1.5 rounded-lg hover:bg-red-50 transition" title="Delete">
                             <Trash2 className="w-4 h-4 text-red-600" />
                           </button>
                         </div>
@@ -311,6 +318,44 @@ export default function Competencies() {
                   ))}
                 </tbody>
               </table>
+            </div>
+
+            {/* Pagination — fixed at bottom of the card */}
+            <div className="flex-shrink-0 px-4 py-3 border-t border-gray-100 bg-white">
+              {pagination.total > pagination.limit && (
+                <div className="flex flex-col sm:flex-row justify-between items-center gap-3">
+                  <p className="text-sm text-gray-500">
+                    Showing {(pagination.page - 1) * pagination.limit + 1} to{' '}
+                    {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total}
+                  </p>
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => goToPage(pagination.page - 1)} disabled={pagination.page === 1} className="flex items-center gap-1 px-3 py-2 rounded-lg border border-gray-300 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50">
+                      <ChevronLeft className="w-4 h-4" /> Prev
+                    </button>
+                    {(() => {
+                      const maxV = 5;
+                      const pages = [];
+                      if (pagination.totalPages <= maxV) {
+                        for (let i = 1; i <= pagination.totalPages; i++) pages.push(i);
+                      } else {
+                        let start = Math.max(1, pagination.page - Math.floor(maxV / 2));
+                        let end = Math.min(pagination.totalPages, start + maxV - 1);
+                        if (end - start + 1 < maxV) start = Math.max(1, end - maxV + 1);
+                        for (let i = start; i <= end; i++) pages.push(i);
+                      }
+                      return pages.map((p) => (
+                        <button key={p} onClick={() => goToPage(p)}
+                          className={`w-9 h-9 rounded-lg text-sm font-medium ${pagination.page === p ? 'bg-brand-red text-white' : 'border border-gray-300 text-gray-700 hover:bg-gray-50'}`}>
+                          {p}
+                        </button>
+                      ));
+                    })()}
+                    <button onClick={() => goToPage(pagination.page + 1)} disabled={pagination.page === pagination.totalPages} className="flex items-center gap-1 px-3 py-2 rounded-lg border border-gray-300 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50">
+                      Next <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -327,13 +372,13 @@ export default function Competencies() {
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
             placeholder="Competency Name"
-            className="w-full h-10 px-3 border rounded-lg"
+            className="w-full h-10 px-3 border border-gray-300 focus-brand rounded-lg text-sm"
           />
 
           <select
             value={form.category}
             onChange={(e) => setForm({ ...form, category: e.target.value })}
-            className="w-full h-10 px-3 border rounded-lg"
+            className="w-full h-10 px-3 border border-gray-300 focus-brand rounded-lg text-sm"
           >
             {CATEGORIES.slice(1).map((c) => (
               <option key={c} value={c}>{c}</option>
@@ -359,7 +404,7 @@ export default function Competencies() {
                   <select
                     value={tg.targetGroup}
                     onChange={(e) => updateTargetGroup(index, 'targetGroup', e.target.value)}
-                    className="w-1/3 h-10 px-3 border rounded-lg"
+                    className="w-1/3 h-10 px-3 border border-gray-300 focus-brand rounded-lg text-sm"
                   >
                     {available.map((t) => (
                       <option key={t} value={t}>
@@ -372,12 +417,12 @@ export default function Competencies() {
                     value={tg.description}
                     onChange={(e) => updateTargetGroup(index, 'description', e.target.value)}
                     placeholder="Description..."
-                    className="flex-1 px-3 py-2 border rounded-lg"
+                    className="flex-1 px-3 py-2 border border-gray-300 focus-brand rounded-lg text-sm"
                   />
                   {form.targetGroups.length > 1 && (
                     <button
                       onClick={() => removeTargetGroup(index)}
-                      className="p-2 text-red-600 hover:bg-red-50 rounded"
+                      className="p-2 text-brand-red hover:bg-red-50 rounded-lg"
                     >
                       <X className="w-4 h-4" />
                     </button>
@@ -389,12 +434,12 @@ export default function Competencies() {
         </div>
 
         <div className="flex justify-end gap-3 mt-6">
-          <button onClick={() => setModal(null)} className="px-4 py-2 text-gray-600">
+          <button onClick={() => setModal(null)} className="px-4 py-2 text-sm font-semibold text-brand-black border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
             Cancel
           </button>
           <button
             onClick={handleSave}
-            className="px-4 py-2 bg-brand-red text-white rounded-lg font-semibold"
+            className="px-4 py-2 bg-brand-red text-white rounded-lg text-sm font-semibold hover:bg-brand-red-dark transition-colors"
           >
             {modal === 'create' ? 'Create' : 'Save Changes'}
           </button>

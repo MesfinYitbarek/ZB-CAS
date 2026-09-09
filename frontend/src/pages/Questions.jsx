@@ -802,7 +802,7 @@ export default function Questions() {
                   value={form.scenario || ''}
                   onChange={(e) => setForm({ ...form, scenario: e.target.value })}
                   placeholder="Describe the scenario..."
-                  className="w-full px-3 py-1.5 rounded-lg border border-gray-300 focus:border-red-500 text-sm resize-none"
+                  className="w-full px-3 py-1.5 rounded-lg border border-gray-300 focus-brand text-sm resize-none"
                 />
               </div>
             )}
@@ -814,7 +814,7 @@ export default function Questions() {
                   name={isEdit ? 'edit-correct' : `correct-${groupIndex}-${questionIndex}`}
                   checked={form.correctAnswer === opt && opt !== ''}
                   onChange={() => setForm({ ...form, correctAnswer: opt })}
-                  className="w-3.5 h-3.5 text-red-600 focus:ring-red-500"
+                  className="w-3.5 h-3.5 text-brand-red focus:ring-red-500"
                 />
                 <input
                   value={opt}
@@ -829,7 +829,7 @@ export default function Questions() {
                     });
                   }}
                   placeholder={`Option ${String.fromCharCode(65 + i)}`}
-                  className="flex-1 h-8 px-2 rounded-lg border border-gray-300 focus:border-red-500 text-sm"
+                  className="flex-1 h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm"
                 />
                 {form.options.length > 2 && (
                   <button
@@ -842,7 +842,7 @@ export default function Questions() {
                         correctAnswer: form.correctAnswer === opt ? '' : form.correctAnswer,
                       });
                     }}
-                    className="p-0.5 text-gray-400 hover:text-red-500"
+                    className="p-0.5 text-gray-400 hover:text-brand-red"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
@@ -852,7 +852,7 @@ export default function Questions() {
             <button
               type="button"
               onClick={() => setForm({ ...form, options: [...form.options, ''] })}
-              className="text-xs text-red-600 hover:underline mt-1"
+              className="text-xs text-brand-red hover:underline mt-1"
             >
               + Add option
             </button>
@@ -866,7 +866,7 @@ export default function Questions() {
             <select
               value={form.correctAnswer || ''}
               onChange={(e) => setForm({ ...form, correctAnswer: e.target.value })}
-              className="w-full h-8 px-2 rounded-lg border border-gray-300 focus:border-red-500 text-sm"
+              className="w-full h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm"
             >
               <option value="">— Select —</option>
               <option value="True">True</option>
@@ -896,7 +896,7 @@ export default function Questions() {
                     }
                     setForm({ ...form, correctAnswers: ca });
                   }}
-                  className="w-3.5 h-3.5 text-red-600 rounded focus:ring-red-500"
+                  className="w-3.5 h-3.5 text-brand-red rounded focus:ring-red-500"
                 />
                 <input
                   value={opt}
@@ -908,7 +908,7 @@ export default function Questions() {
                     setForm({ ...form, options: o, correctAnswers: ca });
                   }}
                   placeholder={`Option ${String.fromCharCode(65 + i)}`}
-                  className="flex-1 h-8 px-2 rounded-lg border border-gray-300 focus:border-red-500 text-sm"
+                  className="flex-1 h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm"
                 />
                 {form.options.length > 2 && (
                   <button
@@ -918,7 +918,7 @@ export default function Questions() {
                       const ca = form.correctAnswers.filter(a => a !== opt);
                       setForm({ ...form, options: o, correctAnswers: ca });
                     }}
-                    className="p-0.5 text-gray-400 hover:text-red-500"
+                    className="p-0.5 text-gray-400 hover:text-brand-red"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
@@ -928,7 +928,7 @@ export default function Questions() {
             <button
               type="button"
               onClick={() => setForm({ ...form, options: [...form.options, ''] })}
-              className="text-xs text-red-600 hover:underline mt-1"
+              className="text-xs text-brand-red hover:underline mt-1"
             >
               + Add option
             </button>
@@ -950,7 +950,7 @@ export default function Questions() {
                       setForm({ ...form, matchingPairs: p });
                     }}
                     placeholder={`Term ${i + 1}`}
-                    className="h-8 px-2 rounded-lg border border-gray-300 focus:border-red-500 text-sm"
+                    className="h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm"
                   />
                   <span className="text-gray-400 text-xs">↔</span>
                   <input
@@ -961,7 +961,7 @@ export default function Questions() {
                       setForm({ ...form, matchingPairs: p });
                     }}
                     placeholder={`Match ${i + 1}`}
-                    className="h-8 px-2 rounded-lg border border-gray-300 focus:border-red-500 text-sm"
+                    className="h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm"
                   />
                   {form.matchingPairs.length > 2 && (
                     <button
@@ -970,7 +970,7 @@ export default function Questions() {
                         ...form,
                         matchingPairs: form.matchingPairs.filter((_, idx) => idx !== i)
                       })}
-                      className="p-0.5 text-gray-400 hover:text-red-500"
+                      className="p-0.5 text-gray-400 hover:text-brand-red"
                     >
                       <X className="w-3.5 h-3.5" />
                     </button>
@@ -985,7 +985,7 @@ export default function Questions() {
                 ...form,
                 matchingPairs: [...form.matchingPairs, { left: '', right: '' }]
               })}
-              className="text-xs text-red-600 hover:underline mt-1"
+              className="text-xs text-brand-red hover:underline mt-1"
             >
               + Add pair
             </button>
@@ -1010,7 +1010,7 @@ export default function Questions() {
                     setForm({ ...form, correctOrder: o });
                   }}
                   placeholder={`Step ${i + 1}`}
-                  className="flex-1 h-8 px-2 rounded-lg border border-gray-300 focus:border-red-500 text-sm"
+                  className="flex-1 h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm"
                 />
                 {form.correctOrder.length > 2 && (
                   <button
@@ -1019,7 +1019,7 @@ export default function Questions() {
                       ...form,
                       correctOrder: form.correctOrder.filter((_, idx) => idx !== i)
                     })}
-                    className="p-0.5 text-gray-400 hover:text-red-500"
+                    className="p-0.5 text-gray-400 hover:text-brand-red"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
@@ -1029,7 +1029,7 @@ export default function Questions() {
             <button
               type="button"
               onClick={() => setForm({ ...form, correctOrder: [...form.correctOrder, ''] })}
-              className="text-xs text-red-600 hover:underline mt-1"
+              className="text-xs text-brand-red hover:underline mt-1"
             >
               + Add item
             </button>
@@ -1041,7 +1041,7 @@ export default function Questions() {
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">Categories & Items</label>
             {Object.entries(form.categories || { '': [''] }).map(([cat, catItems], ci) => (
-              <div key={ci} className="mb-3 p-2 bg-gray-50 rounded-lg border border-gray-200">
+              <div key={ci} className="mb-3 p-2 bg-gray-50 rounded-xl border border-gray-100">
                 <div className="flex items-center gap-1.5 mb-1.5">
                   <input
                     value={cat}
@@ -1052,7 +1052,7 @@ export default function Questions() {
                       setForm({ ...form, categories: newCats });
                     }}
                     placeholder={`Category ${ci + 1}`}
-                    className="flex-1 h-8 px-2 rounded-lg border border-gray-300 focus:border-red-500 text-sm font-semibold"
+                    className="flex-1 h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm font-semibold"
                   />
                   {Object.keys(form.categories || {}).length > 1 && cat !== '' && (
                     <button
@@ -1062,7 +1062,7 @@ export default function Questions() {
                         delete newCats[cat];
                         setForm({ ...form, categories: newCats });
                       }}
-                      className="p-0.5 text-gray-400 hover:text-red-500"
+                      className="p-0.5 text-gray-400 hover:text-brand-red"
                     >
                       <X className="w-3.5 h-3.5" />
                     </button>
@@ -1081,7 +1081,7 @@ export default function Questions() {
                         setForm({ ...form, categories: newCats });
                       }}
                       placeholder={`Item ${ii + 1}`}
-                      className="flex-1 h-7 px-2 rounded-lg border border-gray-200 focus:border-red-500 text-sm"
+                      className="flex-1 h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm"
                     />
                     {(catItems || []).length > 1 && (
                       <button
@@ -1091,7 +1091,7 @@ export default function Questions() {
                           newCats[cat] = newCats[cat].filter((_, idx) => idx !== ii);
                           setForm({ ...form, categories: newCats });
                         }}
-                        className="p-0.5 text-gray-400 hover:text-red-500"
+                        className="p-0.5 text-gray-400 hover:text-brand-red"
                       >
                         <X className="w-3 h-3" />
                       </button>
@@ -1105,7 +1105,7 @@ export default function Questions() {
                     newCats[cat] = [...(newCats[cat] || []), ''];
                     setForm({ ...form, categories: newCats });
                   }}
-                  className="text-xs text-red-600 hover:underline mt-0.5 ml-2"
+                  className="text-xs text-brand-red hover:underline mt-0.5 ml-2"
                 >
                   + Add item
                 </button>
@@ -1117,7 +1117,7 @@ export default function Questions() {
                 const newCats = { ...(form.categories || {}), '': [''] };
                 setForm({ ...form, categories: newCats });
               }}
-              className="text-xs text-red-600 hover:underline mt-1"
+              className="text-xs text-brand-red hover:underline mt-1"
             >
               + Add category
             </button>
@@ -1182,7 +1182,7 @@ export default function Questions() {
                   : q.correctAnswer === opt;
                 
                 return (
-                  <div key={idx} className={`flex items-center gap-2 p-2 rounded-lg border ${isCorrect ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'}`}>
+                  <div key={idx} className={`flex items-center gap-2 p-2 rounded-lg border ${isCorrect ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-100'}`}>
                     <span className="text-xs font-medium w-6">{String.fromCharCode(65 + idx)}</span>
                     <span className="text-sm flex-1">{opt}</span>
                     {isCorrect && <Check className="w-4 h-4 text-green-600" />}
@@ -1257,16 +1257,16 @@ export default function Questions() {
   };
 
   return (
-    <div className="p-7  h-[calc(100vh-4rem)] flex flex-col">
+    <div className="p-7 h-[calc(100vh-4rem)] flex flex-col">
       {/* Header */}
-      <div className="flex justify-between items-center mb-3 flex-shrink-0">
+      <div className="flex justify-between items-start mb-3 flex-shrink-0">
         <div>
           <h1 className="text-xl  font-bold text-brand-black">Question Bank</h1>
         </div>
         <div className="flex gap-2">
           <button
             onClick={openUpload}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-950 text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-300 bg-white text-brand-black rounded-lg font-semibold hover:bg-gray-50 transition-colors"
           >
             <Upload className="w-3.5 h-3.5" /> Upload
           </button>
@@ -1280,44 +1280,49 @@ export default function Questions() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-2 mb-4 flex-shrink-0">
-        <select
-          value={filterComp}
-          onChange={(e) => setFilterComp(e.target.value)}
-          className="h-8 px-2 border rounded-lg text-sm min-w-[200px]"
-        >
-          <option value="">All Competencies</option>
-          {competencies.map(c => (
-            <option key={c._id} value={c._id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
+      <div className="flex justify-between items-center gap-3 mb-5 flex-wrap flex-shrink-0">
+        <div className="flex gap-2 flex-wrap">
+          <select
+            value={filterComp}
+            onChange={(e) => setFilterComp(e.target.value)}
+            className="h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm"
+          >
+            <option value="">All Competencies</option>
+            {competencies.map(c => (
+              <option key={c._id} value={c._id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
 
-        <select
-          value={filterType}
-          onChange={(e) => setFilterType(e.target.value)}
-          className="h-8 px-2 border rounded-lg text-sm w-44"
-        >
-          <option value="">All Types</option>
-          {TYPES.map(t => (
-            <option key={t} value={t}>{TYPE_LABELS[t]}</option>
-          ))}
-        </select>
+          <select
+            value={filterType}
+            onChange={(e) => setFilterType(e.target.value)}
+            className="h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm"
+          >
+            <option value="">All Types</option>
+            {TYPES.map(t => (
+              <option key={t} value={t}>{TYPE_LABELS[t]}</option>
+            ))}
+          </select>
+        </div>
 
-        <select
-          value={pagination.limit}
-          onChange={(e) => {
-            const lim = Number(e.target.value);
-            setPagination(p => ({ ...p, page: 1, limit: lim }));
-          }}
-          className="h-8 px-2 border rounded-lg text-sm"
-        >
-          <option value="10">10</option>
-          <option value="20">20</option>
-          <option value="30">30</option>
-          <option value="50">50</option>
-        </select>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-gray-600">Show:</span>
+          <select
+            value={pagination.limit}
+            onChange={(e) => {
+              const lim = Number(e.target.value);
+              setPagination(p => ({ ...p, page: 1, limit: lim }));
+            }}
+            className="px-3 py-1.5 rounded-lg border border-gray-300 focus-brand text-sm"
+          >
+            <option value="10">10 per page</option>
+            <option value="20">20 per page</option>
+            <option value="30">30 per page</option>
+            <option value="50">50 per page</option>
+          </select>
+        </div>
       </div>
 
       {/* Bulk action bar */}
@@ -1326,7 +1331,7 @@ export default function Questions() {
           <span className="font-medium">{selectedIds.size} selected</span>
           <button
             onClick={() => setBulkDeleteModal(true)}
-            className="bg-red-600 text-white px-3 py-1 rounded-lg hover:bg-red-700 text-sm"
+            className="bg-brand-red text-white px-3 py-1 rounded-lg hover:bg-brand-red-dark text-sm"
           >
             Delete Selected
           </button>
@@ -1334,17 +1339,17 @@ export default function Questions() {
       )}
 
       {/* Questions Table - Scrollable */}
-      <div className="bg-white rounded-lg shadow-sm border overflow-hidden flex flex-col flex-1 min-h-0">
+      <div className="bg-white rounded-xl shadow-card border border-gray-100 overflow-hidden flex flex-col flex-1 min-h-0">
         {loading ? (
-          <div className="flex justify-center items-center p-12 flex-1">
-            <div className="w-8 h-8 border-3 border-red-500 border-t-transparent rounded-full animate-spin" />
+          <div className="flex justify-center items-center p-16 flex-1">
+            <div className="w-10 h-10 border-4 border-brand-red border-t-transparent rounded-full animate-spin" />
           </div>
         ) : (
           <div className="overflow-auto flex-1">
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 sticky top-0 z-10">
+              <thead className="bg-gray-50 border-b border-gray-100 sticky top-0 z-10">
                 <tr>
-                  <th className="w-10 p-2">
+                  <th className="w-10 px-4 py-2.5">
                     <input
                       type="checkbox"
                       checked={isAllSelected}
@@ -1352,25 +1357,25 @@ export default function Questions() {
                       className="w-3.5 h-3.5"
                     />
                   </th>
-                  <th className="text-left p-2 font-semibold text-gray-700">Question</th>
-                  <th className="text-left p-2 font-semibold text-gray-700 w-28">Type</th>
-                  <th className="text-left p-2 font-semibold text-gray-700">Competency</th>
-                  <th className="text-left p-2 font-semibold text-gray-700 w-28">Target</th>
-                  <th className="text-right p-2 font-semibold text-gray-700 w-16">Score</th>
-                  <th className="text-left p-2 font-semibold text-gray-700 w-20">Actions</th>
+                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap bg-gray-50">Question</th>
+                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap bg-gray-50 w-28">Type</th>
+                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap bg-gray-50">Competency</th>
+                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap bg-gray-50 w-28">Target</th>
+                  <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap bg-gray-50 text-right w-16">Score</th>
+                  <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap bg-gray-50 text-right w-20">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y">
+              <tbody className="divide-y divide-gray-100">
                 {items.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="p-8 text-center text-gray-500 text-sm">
+                    <td colSpan={7} className="px-4 py-16 text-center text-gray-400 text-sm">
                       No questions found
                     </td>
                   </tr>
                 ) : (
                   items.map(q => (
-                    <tr key={q._id} className="hover:bg-gray-50">
-                      <td className="p-2">
+                    <tr key={q._id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-4 py-3">
                         <input
                           type="checkbox"
                           checked={selectedIds.has(q._id)}
@@ -1378,27 +1383,27 @@ export default function Questions() {
                           className="w-3.5 h-3.5"
                         />
                       </td>
-                      <td className="p-2 max-w-md">
+                      <td className="px-4 py-3 max-w-md">
                         <div className="line-clamp-1 font-medium text-sm">{q.text}</div>
                       </td>
-                      <td className="p-2">
+                      <td className="px-4 py-3">
                         <span className={`px-2 py-0.5 text-xs rounded ${TYPE_BADGES[q.type]}`}>
                           {TYPE_LABELS[q.type]?.split(' ')[0] || q.type}
                         </span>
                       </td>
-                      <td className="p-2 text-sm">{q.competencyId?.name || '—'}</td>
-                      <td className="p-2 text-sm capitalize">{q.targetGroup?.[0]?.toUpperCase() + q.targetGroup?.slice(1) || '—'}</td>
-                      <td className="p-2 text-right text-sm font-medium">{q.score ?? 1}</td>
-                      <td className="p-2">
-        <div className="flex gap-1.5">
-                          <button onClick={() => openView(q)} title="View Details">
-                            <Eye size={16} className="text-gray-600 hover:text-blue-600" />
+                      <td className="px-4 py-3 text-sm">{q.competencyId?.name || '—'}</td>
+                      <td className="px-4 py-3 text-sm capitalize">{q.targetGroup?.[0]?.toUpperCase() + q.targetGroup?.slice(1) || '—'}</td>
+                      <td className="px-4 py-3 text-right text-sm font-medium">{q.score ?? 1}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-end gap-2">
+                          <button onClick={() => openView(q)} title="View Details" className="p-1.5 hover:bg-blue-50 rounded transition-colors">
+                            <Eye size={16} className="text-blue-600" />
                           </button>
-                          <button onClick={() => openEdit(q)} title="Edit">
-                            <Edit2 size={16} className="text-gray-600 hover:text-blue-600" />
+                          <button onClick={() => openEdit(q)} title="Edit" className="p-1.5 hover:bg-gray-100 rounded transition-colors">
+                            <Edit2 size={16} className="text-gray-500" />
                           </button>
-                          <button onClick={() => setDeleteModal(q)} title="Delete">
-                            <Trash2 size={16} className="text-red-600 hover:text-red-800" />
+                          <button onClick={() => setDeleteModal(q)} title="Delete" className="p-1.5 hover:bg-red-50 rounded transition-colors">
+                            <Trash2 size={16} className="text-brand-red" />
                           </button>
                         </div>
                       </td>
@@ -1413,24 +1418,50 @@ export default function Questions() {
 
       {/* Pagination */}
       {pagination.totalPages > 1 && (
-        <div className="flex justify-between items-center mt-4 text-sm flex-shrink-0">
-          <span className="text-gray-600">
-            Page {pagination.page} of {pagination.totalPages}
-          </span>
-          <div className="flex gap-1">
+        <div className="flex flex-col sm:flex-row justify-between items-center gap-3 mt-4 flex-shrink-0">
+          <p className="text-sm text-gray-500">
+            Showing {(pagination.page - 1) * pagination.limit + 1} to{' '}
+            {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total}
+          </p>
+          <div className="flex items-center gap-1">
             <button
               onClick={() => goToPage(pagination.page - 1)}
               disabled={pagination.page === 1}
-              className="p-1 border rounded hover:bg-gray-50 disabled:opacity-50"
+              className="flex items-center gap-1 px-3 py-2 rounded-lg border border-gray-300 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
             >
-              <ChevronLeft className="w-4 h-4" />
+              <ChevronLeft className="w-4 h-4" /> Prev
             </button>
+            {(() => {
+              const maxV = 5;
+              const pages = [];
+              if (pagination.totalPages <= maxV) {
+                for (let i = 1; i <= pagination.totalPages; i++) pages.push(i);
+              } else {
+                let start = Math.max(1, pagination.page - Math.floor(maxV / 2));
+                let end = Math.min(pagination.totalPages, start + maxV - 1);
+                if (end - start + 1 < maxV) start = Math.max(1, end - maxV + 1);
+                for (let i = start; i <= end; i++) pages.push(i);
+              }
+              return pages.map((p) => (
+                <button
+                  key={p}
+                  onClick={() => goToPage(p)}
+                  className={`w-9 h-9 rounded-lg text-sm font-medium ${
+                    pagination.page === p
+                      ? 'bg-brand-red text-white'
+                      : 'border border-gray-300 text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  {p}
+                </button>
+              ));
+            })()}
             <button
               onClick={() => goToPage(pagination.page + 1)}
               disabled={pagination.page === pagination.totalPages}
-              className="p-1 border rounded hover:bg-gray-50 disabled:opacity-50"
+              className="flex items-center gap-1 px-3 py-2 rounded-lg border border-gray-300 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
             >
-              <ChevronRight className="w-4 h-4" />
+              Next <ChevronRight className="w-4 h-4" />
             </button>
           </div>
         </div>
@@ -1459,12 +1490,12 @@ export default function Questions() {
           {/* Competency */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Competency <span className="text-red-600">*</span>
+              Competency <span className="text-brand-red">*</span>
             </label>
             <select
               value={batchForm.competencyId}
               onChange={(e) => setBatchForm({ ...batchForm, competencyId: e.target.value })}
-              className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:border-red-500"
+              className="w-full h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm"
             >
               <option value="">— Select —</option>
               {competencies.map(c => (
@@ -1479,7 +1510,7 @@ export default function Questions() {
           {batchForm.competencyId && (
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                Target Group <span className="text-red-600">*</span>
+                Target Group <span className="text-brand-red">*</span>
               </label>
 
               {targetGroupsForComp.length === 0 ? (
@@ -1503,7 +1534,7 @@ export default function Questions() {
                           ${!isAvailable
                             ? 'bg-gray-100 text-gray-400 cursor-not-allowed opacity-60 line-through'
                             : isSelected
-                            ? 'bg-red-600 text-white ring-2 ring-red-300'
+                            ? 'bg-brand-red text-white ring-2 ring-brand-red/30'
                             : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
                           }
                         `}
@@ -1521,7 +1552,7 @@ export default function Questions() {
           {batchForm.questionGroups.map((group, groupIndex) => (
             <div
               key={groupIndex}
-              className="border border-gray-200 rounded-lg p-3 bg-white shadow-sm"
+              className="border border-gray-100 rounded-xl p-3 bg-white"
             >
               <div className="flex justify-between items-center mb-2 pb-2 border-b">
                 <div className="flex items-center gap-2">
@@ -1537,7 +1568,7 @@ export default function Questions() {
                       }));
                       updateQuestionGroup(groupIndex, { type: newType, questions: updatedQs });
                     }}
-                    className="border border-gray-300 rounded px-2 py-0.5 text-xs"
+                    className="border border-gray-300 rounded-lg px-2 py-1 text-xs focus-brand"
                   >
                     {TYPES.map(t => (
                       <option key={t} value={t}>{TYPE_LABELS[t]}</option>
@@ -1551,7 +1582,7 @@ export default function Questions() {
                 {batchForm.questionGroups.length > 1 && (
                   <button
                     onClick={() => removeQuestionGroup(groupIndex)}
-                    className="text-red-600 hover:text-red-700 text-xs font-medium"
+                    className="text-brand-red hover:text-brand-red-dark text-xs font-medium"
                   >
                     Remove
                   </button>
@@ -1560,7 +1591,7 @@ export default function Questions() {
 
               <div className="space-y-3">
                 {group.questions.map((q, qIndex) => (
-                  <div key={qIndex} className="p-3 border border-gray-200 rounded-lg bg-gray-50">
+                  <div key={qIndex} className="p-3 border border-gray-100 rounded-xl bg-gray-50">
                     <div className="flex justify-between items-start mb-2">
                       <h4 className="font-medium text-xs">Q{qIndex + 1}</h4>
                       <div className="flex items-center gap-2">
@@ -1572,12 +1603,12 @@ export default function Questions() {
                           onChange={e => updateQuestionInGroup(groupIndex, qIndex, {
                             score: parseFloat(e.target.value) || 1
                           })}
-                          className="w-16 px-2 py-0.5 border rounded text-xs"
+                          className="w-16 px-2 py-1 border border-gray-300 rounded-lg text-xs focus-brand"
                         />
                         {group.questions.length > 1 && (
                           <button
                             onClick={() => removeQuestionFromGroup(groupIndex, qIndex)}
-                            className="text-gray-500 hover:text-red-600"
+                            className="text-gray-500 hover:text-brand-red"
                           >
                             <X size={14} />
                           </button>
@@ -1591,7 +1622,7 @@ export default function Questions() {
                         value={q.text}
                         onChange={e => updateQuestionInGroup(groupIndex, qIndex, { text: e.target.value })}
                         placeholder="Enter question..."
-                        className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-xs focus:border-red-500 resize-none"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-xs focus-brand resize-none"
                       />
                     </div>
 
@@ -1602,7 +1633,7 @@ export default function Questions() {
                 <button
                   type="button"
                   onClick={() => addQuestionToGroup(groupIndex)}
-                  className="w-full py-2 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-red-500 hover:text-red-600 transition text-xs font-medium"
+                  className="w-full py-2 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-brand-red hover:text-brand-red transition text-xs font-medium"
                 >
                   + Add question
                 </button>
@@ -1613,7 +1644,7 @@ export default function Questions() {
           <button
             type="button"
             onClick={addQuestionGroup}
-            className="w-full py-2 border-2 border-dashed border-red-500 rounded-lg text-red-600 hover:bg-red-50 font-medium text-sm transition"
+            className="w-full py-2 border-2 border-dashed border-brand-red rounded-lg text-brand-red hover:bg-red-50 font-medium text-sm transition"
           >
             + Add Group
           </button>
@@ -1631,7 +1662,7 @@ export default function Questions() {
             disabled={!batchForm.competencyId || !selectedBatchTargetGroup}
             className={`px-4 py-1.5 rounded-lg text-white font-medium text-sm ${
               batchForm.competencyId && selectedBatchTargetGroup
-                ? 'bg-red-600 hover:bg-red-700'
+                ? 'bg-brand-red hover:bg-brand-red-dark'
                 : 'bg-gray-400 cursor-not-allowed'
             }`}
           >
@@ -1720,7 +1751,7 @@ Question 5: Order the OSI model layers (bottom up).
           </div>
 
           {/* ── Drop zone ──────────────────────────────────────────────────── */}
-          <div className="border-2 border-dashed border-gray-200 rounded-lg p-6 text-center hover:border-red-400 hover:bg-red-50/30 transition-colors cursor-pointer group">
+          <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-brand-red hover:bg-red-50/30 transition-colors cursor-pointer group">
             <input
               ref={fileInputRef}
               type="file"
@@ -1730,7 +1761,7 @@ Question 5: Order the OSI model layers (bottom up).
               id="file-upload"
             />
             <label htmlFor="file-upload" className="cursor-pointer block">
-              <Upload className="w-9 h-9 mx-auto text-gray-300 group-hover:text-red-400 transition-colors mb-2" />
+              <Upload className="w-9 h-9 mx-auto text-gray-300 group-hover:text-brand-red transition-colors mb-2" />
               <p className="text-sm font-medium text-gray-600">Click to choose a file</p>
               <p className="text-xs text-gray-400 mt-0.5">PDF, DOCX, TXT or MD · max 10 MB</p>
             </label>
@@ -1741,7 +1772,7 @@ Question 5: Order the OSI model layers (bottom up).
             <div className="space-y-2">
               <div className="flex items-center justify-between text-xs text-gray-500">
                 <span className="flex items-center gap-1.5">
-                  <span className="w-3.5 h-3.5 border-2 border-red-400 border-t-transparent rounded-full animate-spin inline-block" />
+                  <span className="w-3.5 h-3.5 border-2 border-brand-red border-t-transparent rounded-full animate-spin inline-block" />
                   Extracting text…
                 </span>
                 <span className="tabular-nums">{uploadProgress}%</span>
@@ -1794,7 +1825,7 @@ Question 5: Order the OSI model layers (bottom up).
                 <select
                   value={editForm.competencyId}
                   onChange={(e) => setEditForm({ ...editForm, competencyId: e.target.value })}
-                  className="w-full h-8 px-2 rounded-lg border border-gray-300 focus:border-red-500 text-xs"
+                  className="w-full h-10 px-3 rounded-lg border border-gray-300 focus-brand text-xs"
                 >
                   <option value="">— Select —</option>
                   {competencies.map((c) => (
@@ -1813,7 +1844,7 @@ Question 5: Order the OSI model layers (bottom up).
                     score: editForm.score,
                     type: e.target.value,
                   })}
-                  className="w-full h-8 px-2 rounded-lg border border-gray-300 focus:border-red-500 text-xs"
+                  className="w-full h-10 px-3 rounded-lg border border-gray-300 focus-brand text-xs"
                 >
                   {TYPES.map((t) => (
                     <option key={t} value={t}>{TYPE_LABELS[t]}</option>
@@ -1830,7 +1861,7 @@ Question 5: Order the OSI model layers (bottom up).
                 step="0.5"
                 value={editForm.score}
                 onChange={(e) => setEditForm({ ...editForm, score: parseFloat(e.target.value) || 1 })}
-                className="w-20 h-8 px-2 rounded-lg border border-gray-300 focus:border-red-500 text-xs"
+                className="w-20 h-10 px-3 rounded-lg border border-gray-300 focus-brand text-xs"
               />
             </div>
 
@@ -1841,7 +1872,7 @@ Question 5: Order the OSI model layers (bottom up).
                 value={editForm.text}
                 onChange={(e) => setEditForm({ ...editForm, text: e.target.value })}
                 placeholder="Enter the question..."
-                className="w-full px-3 py-1.5 rounded-lg border border-gray-300 focus:border-red-500 text-xs resize-none"
+                className="w-full px-3 py-1.5 rounded-lg border border-gray-300 focus-brand text-xs resize-none"
               />
             </div>
 
@@ -1858,7 +1889,7 @@ Question 5: Order the OSI model layers (bottom up).
           </button>
           <button
             onClick={handleSave}
-            className="px-4 py-1.5 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 text-sm"
+            className="px-4 py-1.5 bg-brand-red text-white rounded-lg font-medium hover:bg-brand-red-dark text-sm"
           >
             Save
           </button>
@@ -1886,7 +1917,7 @@ Question 5: Order the OSI model layers (bottom up).
               </button>
               <button
                 onClick={handleDelete}
-                className="px-3 py-1.5 text-sm bg-red-600 text-white hover:bg-red-700 rounded-lg font-medium"
+                className="px-3 py-1.5 text-sm bg-brand-red text-white hover:bg-brand-red-dark rounded-lg font-medium"
               >
                 Delete
               </button>
@@ -1907,7 +1938,7 @@ Question 5: Order the OSI model layers (bottom up).
           >
             <div className="flex items-center gap-2 mb-3">
               <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
-                <Trash2 className="w-4 h-4 text-red-600" />
+                <Trash2 className="w-4 h-4 text-brand-red" />
               </div>
               <h3 className="text-base font-bold text-gray-900">
                 Delete {selectedIds.size} Question{selectedIds.size !== 1 ? 's' : ''}
@@ -1925,7 +1956,7 @@ Question 5: Order the OSI model layers (bottom up).
               </button>
               <button
                 onClick={handleBulkDelete}
-                className="px-3 py-1.5 text-sm bg-red-600 text-white hover:bg-red-700 rounded-lg font-medium"
+                className="px-3 py-1.5 text-sm bg-brand-red text-white hover:bg-brand-red-dark rounded-lg font-medium"
               >
                 Delete
               </button>

@@ -23,27 +23,27 @@ const TYPE_META = {
   ASSESSMENT_ASSIGNED: {
     icon: ClipboardList,
     color: 'text-blue-600',
-    bg:    'bg-blue-50',
+    bg: 'bg-blue-50',
   },
   RESULT_READY: {
-    icon:  Award,
+    icon: Award,
     color: 'text-emerald-600',
-    bg:    'bg-emerald-50',
+    bg: 'bg-emerald-50',
   },
   SUPERVISOR_REMINDER: {
-    icon:  UserCheck,
+    icon: UserCheck,
     color: 'text-violet-600',
-    bg:    'bg-violet-50',
+    bg: 'bg-violet-50',
   },
   DEADLINE_REMINDER: {
-    icon:  Clock,
+    icon: Clock,
     color: 'text-amber-600',
-    bg:    'bg-amber-50',
+    bg: 'bg-amber-50',
   },
   ACCOUNT_CREATED: {
-    icon:  Sparkles,
+    icon: Sparkles,
     color: 'text-brand-red',
-    bg:    'bg-brand-red/10',
+    bg: 'bg-brand-red/10',
   },
 };
 const DEFAULT_META = { icon: Info, color: 'text-gray-500', bg: 'bg-gray-100' };
@@ -52,12 +52,12 @@ const DEFAULT_META = { icon: Info, color: 'text-gray-500', bg: 'bg-gray-100' };
 function timeAgo(dateStr) {
   const diff = Date.now() - new Date(dateStr).getTime();
   const m = Math.floor(diff / 60000);
-  if (m < 1)  return 'just now';
+  if (m < 1) return 'just now';
   if (m < 60) return `${m}m ago`;
   const h = Math.floor(m / 60);
   if (h < 24) return `${h}h ago`;
   const d = Math.floor(h / 24);
-  if (d < 7)  return `${d}d ago`;
+  if (d < 7) return `${d}d ago`;
   return new Date(dateStr).toLocaleDateString();
 }
 
@@ -111,12 +111,12 @@ function NotifRow({ notif, onRead, onDelete }) {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 export default function NotificationBell({ socket }) {
-  const [open, setOpen]               = useState(false);
-  const [notifs, setNotifs]           = useState([]);
-  const [unread, setUnread]           = useState(0);
-  const [loading, setLoading]         = useState(false);
-  const [hasMore, setHasMore]         = useState(false);
-  const [page, setPage]               = useState(1);
+  const [open, setOpen] = useState(false);
+  const [notifs, setNotifs] = useState([]);
+  const [unread, setUnread] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [page, setPage] = useState(1);
   const panelRef = useRef(null);
 
   // ── Load notifications ──────────────────────────────────────────────────
@@ -227,8 +227,9 @@ export default function NotificationBell({ socket }) {
 
       {/* ── Dropdown panel ─────────────────────────────────────────────── */}
       {open && (
-        <div className="absolute top-12 right-0 w-80 sm:w-96 bg-white rounded-2xl shadow-2xl border border-gray-100 z-50 flex flex-col overflow-hidden"
-          style={{ maxHeight: '520px' }}>
+        <div
+          className="absolute top-12 right-0 w-[calc(100vw-2rem)] sm:w-[280px] lg:w-[280px] bg-white rounded-2xl shadow-2xl border border-gray-100 z-50 flex flex-col overflow-hidden"
+        >
 
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 flex-shrink-0">

@@ -55,7 +55,7 @@ function FieldPill({ field, zone, onDrop, children }) {
       onDragLeave={() => setOver(false)}
       onDrop={e => { e.preventDefault(); setOver(false); const id = e.dataTransfer.getData('fieldId'); if (id) onDrop(id, zone); }}
       className={`min-h-[36px] flex items-center gap-1.5 px-3 rounded-lg border transition-all text-sm flex-wrap
-        ${over ? 'border-brand-red bg-brand-red/5' : 'border-dashed border-gray-300 bg-gray-50/60'}`}
+        ${over ? 'border-brand-red bg-brand-red/5' : 'border-dashed border-gray-300 bg-gray-50'}`}
     >
       {children || <span className="text-gray-400 text-xs italic">Drag field here</span>}
     </div>
@@ -116,7 +116,7 @@ export default function CustomReportBuilder({ filterParams }) {
 
   return (
     <div className="space-y-5">
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+      <div className="bg-white rounded-xl border border-gray-100 shadow-card p-5">
         <div className="flex items-center gap-3 mb-5">
           <div className="w-8 h-8 bg-brand-red/10 rounded-xl flex items-center justify-center">
             <Table2 className="w-4 h-4 text-brand-red" />
@@ -140,7 +140,7 @@ export default function CustomReportBuilder({ filterParams }) {
                   ${dragging === f.id ? 'opacity-40' : ''}
                   ${rowField === f.id ? 'border-brand-red bg-brand-red/10 text-brand-red' :
                     colField === f.id ? 'border-blue-500 bg-blue-50 text-blue-700' :
-                    'border-gray-200 bg-white text-gray-700 hover:border-gray-400'}`}
+                    'border-gray-300 bg-white text-gray-700 hover:border-gray-400'}`}
               >
                 <GripVertical className="w-3 h-3 opacity-40" />
                 {f.label}
@@ -185,7 +185,7 @@ export default function CustomReportBuilder({ filterParams }) {
           <div>
             <p className="text-xs font-semibold text-gray-600 mb-1.5">Value</p>
             <select value={valueField} onChange={e => setValueField(e.target.value)}
-              className="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm focus:ring-2 focus:ring-brand-red bg-white">
+              className="w-full h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm bg-white">
               {VALUE_OPTIONS.map(v => <option key={v.id} value={v.id}>{v.label}</option>)}
             </select>
           </div>
@@ -193,7 +193,7 @@ export default function CustomReportBuilder({ filterParams }) {
           <div>
             <p className="text-xs font-semibold text-gray-600 mb-1.5">Aggregation</p>
             <select value={aggregation} onChange={e => setAgg(e.target.value)}
-              className="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm focus:ring-2 focus:ring-brand-red bg-white">
+              className="w-full h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm bg-white">
               {AGG_OPTIONS.map(a => <option key={a.id} value={a.id}>{a.label}</option>)}
             </select>
           </div>
@@ -201,7 +201,7 @@ export default function CustomReportBuilder({ filterParams }) {
 
         <div className="flex items-center gap-3 flex-wrap">
           <button onClick={runQuery} disabled={!rowField || loading}
-            className="flex items-center gap-2 px-5 py-2.5 bg-brand-red text-white rounded-xl text-sm font-semibold hover:bg-brand-red-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+            className="flex items-center gap-2 px-5 py-2.5 bg-brand-red text-white rounded-lg text-sm font-semibold hover:bg-brand-red-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
             {loading
               ? <><Loader2 className="w-4 h-4 animate-spin" />Building…</>
               : <><RefreshCw className="w-4 h-4" />Build report</>}
@@ -209,7 +209,7 @@ export default function CustomReportBuilder({ filterParams }) {
 
           {result && (
             <button onClick={doExport} disabled={exporting}
-              className="flex items-center gap-2 px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors">
+              className="flex items-center gap-2 px-4 py-2.5 border border-gray-300 bg-white rounded-lg text-sm font-semibold text-brand-black hover:bg-gray-50 disabled:opacity-50 transition-colors">
               {exporting
                 ? <><Loader2 className="w-4 h-4 animate-spin" />Exporting…</>
                 : <><FileSpreadsheet className="w-4 h-4 text-green-600" />Export Excel</>}
@@ -227,7 +227,7 @@ export default function CustomReportBuilder({ filterParams }) {
       </div>
 
       {!result && !loading && (
-        <div className="bg-white rounded-2xl border border-dashed border-gray-200 p-12 text-center">
+        <div className="bg-white rounded-xl border border-dashed border-gray-200 p-12 text-center">
           <Table2 className="w-10 h-10 text-gray-300 mx-auto mb-3" />
           <p className="text-sm font-semibold text-gray-600 mb-1">Your pivot table will appear here</p>
           <p className="text-xs text-gray-400">Set a row field, optionally a column field, choose a value and aggregation, then click Build report.</p>
@@ -235,8 +235,8 @@ export default function CustomReportBuilder({ filterParams }) {
       )}
 
       {result && rows.length > 0 && (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="px-5 py-3.5 border-b border-gray-100 bg-gray-50/60 flex items-center justify-between">
+        <div className="bg-white rounded-xl border border-gray-100 shadow-card overflow-hidden">
+          <div className="px-5 py-3 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
             <div>
               <span className="text-sm font-bold text-gray-800">
                 {fieldLabel(result.rowField)}
@@ -250,7 +250,7 @@ export default function CustomReportBuilder({ filterParams }) {
 
           <div className="overflow-x-auto">
             <table className="w-full text-sm min-w-max">
-              <thead className="border-b border-gray-100 bg-gray-50/80 sticky top-0">
+              <thead className="border-b border-gray-100 bg-gray-50 sticky top-0">
                 <tr>
                   <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap min-w-[160px]">
                     {fieldLabel(result.rowField)}
@@ -263,7 +263,7 @@ export default function CustomReportBuilder({ filterParams }) {
                       ))
                     : null}
                   {cols && (
-                    <th className="text-right px-3 py-2.5 text-xs font-bold text-gray-700 uppercase tracking-wide whitespace-nowrap bg-gray-100/80">
+                    <th className="text-right px-3 py-2.5 text-xs font-bold text-gray-700 uppercase tracking-wide whitespace-nowrap bg-gray-100">
                       Total
                     </th>
                   )}
@@ -274,9 +274,9 @@ export default function CustomReportBuilder({ filterParams }) {
                   )}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50">
+              <tbody className="divide-y divide-gray-100">
                 {rows.map((row, ri) => (
-                  <tr key={ri} className="hover:bg-gray-50/50 transition-colors">
+                  <tr key={ri} className="hover:bg-gray-50 transition-colors">
                     <td className="px-4 py-2.5 font-medium text-gray-800 whitespace-nowrap">
                       {result.valueField === 'level'
                         ? <span className="inline-flex items-center gap-1.5">
@@ -300,7 +300,7 @@ export default function CustomReportBuilder({ filterParams }) {
                         })
                       : null}
                     {cols && (
-                      <td className="px-3 py-2.5 text-right bg-gray-50/60">
+                      <td className="px-3 py-2.5 text-right bg-gray-50">
                         {row.cells.__rowTotal !== null && row.cells.__rowTotal !== undefined
                           ? <span className="inline-block px-2 py-0.5 rounded text-xs font-bold tabular-nums" style={scoreStyle(row.cells.__rowTotal, result.valueField)}>
                               {result.valueField === 'count' || result.aggregation === 'count' ? row.cells.__rowTotal : `${row.cells.__rowTotal}%`}
@@ -321,7 +321,7 @@ export default function CustomReportBuilder({ filterParams }) {
                 ))}
               </tbody>
               {cols && result.colTotals && (
-                <tfoot className="border-t-2 border-gray-200 bg-gray-50/80">
+                <tfoot className="border-t-2 border-gray-200 bg-gray-50">
                   <tr>
                     <td className="px-4 py-2.5 text-xs font-bold text-gray-700 uppercase tracking-wide">Total</td>
                     {cols.map(col => {
@@ -336,7 +336,7 @@ export default function CustomReportBuilder({ filterParams }) {
                         </td>
                       );
                     })}
-                    <td className="px-3 py-2.5 text-right bg-gray-100/80">
+                    <td className="px-3 py-2.5 text-right bg-gray-100">
                       {result.colTotals.__rowTotal !== null && result.colTotals.__rowTotal !== undefined
                         ? <span className="inline-block px-2 py-0.5 rounded text-xs font-bold tabular-nums bg-brand-red/10 text-brand-red">
                             {result.valueField === 'count' || result.aggregation === 'count' ? result.colTotals.__rowTotal : `${result.colTotals.__rowTotal}%`}
@@ -352,7 +352,7 @@ export default function CustomReportBuilder({ filterParams }) {
       )}
 
       {result && rows.length === 0 && (
-        <div className="bg-white rounded-2xl border border-gray-100 p-10 text-center">
+        <div className="bg-white rounded-xl border border-gray-100 p-10 text-center">
           <BookOpen className="w-8 h-8 text-gray-300 mx-auto mb-3" />
           <p className="text-sm text-gray-400">No data found for the current configuration and filters.</p>
         </div>

@@ -21,9 +21,9 @@ const NAV_ITEMS = [
   { icon: BookOpen, label: 'Question Bank', path: '/questions', roles: ['HR_ADMIN'] },
   { icon: Lightbulb, label: 'Recommendations', path: '/recommendations', roles: ['HR_ADMIN'] },
   { icon: Target, label: 'Assessments', path: '/assessments', roles: ['HR_ADMIN'] },
-  
 
-  
+
+
 
   // ── Supervisor ───────────────────────────────────────
   { icon: UserCheck, label: 'My Team', path: '/my-team', roles: ['SUPERVISOR'] },
@@ -35,20 +35,22 @@ const NAV_ITEMS = [
 
   // ── Shared ───────────────────────────────────────────
   { icon: FileText, label: 'Competency Results', path: '/results', roles: ['HR_ADMIN'] },
-  { icon: BarChart3, label: 'Reports', roles: ['HR_ADMIN'], children: [
-    { icon: BarChart3,      label: 'Overview',       path: '/reports/overview' },
-    { icon: Building2,      label: 'By Department',  path: '/reports/department' },
-    { icon: Layers,         label: 'By Competency',  path: '/reports/competency' },
-    { icon: UserCheck,      label: 'Individual',     path: '/reports/individual' },
-    { icon: FileText,       label: 'All Reports',    path: '/reports/all' },
-    { icon: FileSpreadsheet,label: 'Custom Builder', path: '/reports/builder' },
-  ]},
+  {
+    icon: BarChart3, label: 'Reports', roles: ['HR_ADMIN'], children: [
+      { icon: BarChart3, label: 'Overview', path: '/reports/overview' },
+      { icon: Building2, label: 'By Department', path: '/reports/department' },
+      { icon: Layers, label: 'By Competency', path: '/reports/competency' },
+      { icon: UserCheck, label: 'Individual', path: '/reports/individual' },
+      { icon: FileText, label: 'All Reports', path: '/reports/all' },
+      { icon: FileSpreadsheet, label: 'Custom Builder', path: '/reports/builder' },
+    ]
+  },
   { icon: MessageSquare, label: 'Feedback', path: '/feedback', roles: ['EMPLOYEE', 'HR_ADMIN'] },
-  
-  
+
+
   { icon: HelpCircle, label: 'FAQ Management', path: '/faqs', roles: ['HR_ADMIN'] },
   // ✅ Activity Log moved to VERY BOTTOM
-  { icon: Activity,   label: 'Activity Log',   path: '/activity-log',   roles: ['HR_ADMIN'] },
+  { icon: Activity, label: 'Activity Log', path: '/activity-log', roles: ['HR_ADMIN'] },
 
   // ── User Manual (all roles) ───────────────────────────────────────────
   { icon: BookMarked, label: 'User Manual', path: '/manual', roles: null },
@@ -180,7 +182,7 @@ export default function Sidebar({
           {(!collapsed || isMobile) && (
             <div className="ml-4 flex-1 flex items-center justify-between">
               <div>
-                <div className="font-display text-lg font-bold tracking-tight">ZB-CAS</div>                
+                <div className="font-display text-lg font-bold tracking-tight">ZB-CAS</div>
               </div>
 
               {isMobile && (
@@ -232,15 +234,18 @@ export default function Sidebar({
                     onMouseEnter={() => setHovering(item.label)}
                     onMouseLeave={() => setHovering(null)}
                     className={`w-full flex items-center gap-3 py-2.5 px-5 border-l-3 transition-base relative group ${childActive
-                        ? 'bg-brand-red/20 border-brand-red text-white font-semibold'
-                        : 'border-transparent text-white/70 hover:bg-white/10 hover:text-white font-medium'
+                      ? 'bg-brand-red/20 border-brand-red text-white font-semibold'
+                      : 'border-transparent text-white/70 hover:bg-white/10 hover:text-white font-medium'
                       } ${collapsed && !isMobile ? 'justify-center' : ''}`}
                   >
                     <Icon className="w-5 h-5" strokeWidth={childActive ? 2.5 : 2} />
                     {(!collapsed || isMobile) && (
                       <>
-                        <span className="text-sm font-medium flex-1">{item.label}</span>
-                        <ChevronDown className={`w-4 h-4 text-white/40 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                        <span className="text-sm font-medium flex-1 text-left">{item.label}</span>
+                        <ChevronDown
+                          className={`w-4 h-4 ml-auto text-white/40 transition-transform ${isOpen ? 'rotate-180' : ''
+                            }`}
+                        />
                       </>
                     )}
 
@@ -267,8 +272,8 @@ export default function Sidebar({
                             key={child.label}
                             onClick={() => handleNavClick(child.path)}
                             className={`w-full flex items-center gap-3 py-2 pl-12 pr-5 border-l-3 transition-base relative group ${cActive
-                                ? 'text-white bg-white/10 border-brand-red font-semibold'
-                                : 'border-transparent text-white/60 hover:bg-white/10 hover:text-white font-medium'
+                              ? 'text-white bg-white/10 border-brand-red font-semibold'
+                              : 'border-transparent text-white/60 hover:bg-white/10 hover:text-white font-medium'
                               }`}
                           >
                             <CIcon className="w-4 h-4" strokeWidth={cActive ? 2.5 : 2} />
@@ -291,8 +296,8 @@ export default function Sidebar({
                 onMouseEnter={() => setHovering(item.label)}
                 onMouseLeave={() => setHovering(null)}
                 className={`w-full flex items-center gap-3 py-2.5 px-5 border-l-3 transition-base relative group ${active
-                    ? 'bg-brand-red/20 border-brand-red text-white font-semibold'
-                    : 'border-transparent text-white/70 hover:bg-white/10 hover:text-white font-medium'
+                  ? 'bg-brand-red/20 border-brand-red text-white font-semibold'
+                  : 'border-transparent text-white/70 hover:bg-white/10 hover:text-white font-medium'
                   } ${collapsed && !isMobile ? 'justify-center' : ''}`}
               >
                 <Icon className="w-5 h-5" strokeWidth={active ? 2.5 : 2} />
@@ -336,7 +341,7 @@ export default function Sidebar({
                   >
                     <span
                       className={`w-2 h-2 rounded-full flex-shrink-0 ${auth.activeRole === 'HR_ADMIN' ? 'bg-red-400' :
-                          auth.activeRole === 'SUPERVISOR' ? 'bg-blue-400' : 'bg-green-400'
+                        auth.activeRole === 'SUPERVISOR' ? 'bg-blue-400' : 'bg-green-400'
                         }`}
                     />
                     <span className="flex-1 text-left text-sm font-semibold text-white">
@@ -356,13 +361,13 @@ export default function Sidebar({
                           key={role}
                           onClick={() => handleRoleSwitch(role)}
                           className={`w-full flex items-center gap-3 px-3 py-2.5 text-sm transition-base ${role === auth.activeRole
-                              ? 'bg-white/10 text-white font-semibold'
-                              : 'text-white/70 hover:bg-white/5 hover:text-white'
+                            ? 'bg-white/10 text-white font-semibold'
+                            : 'text-white/70 hover:bg-white/5 hover:text-white'
                             }`}
                         >
                           <span
                             className={`w-2 h-2 rounded-full flex-shrink-0 ${role === 'HR_ADMIN' ? 'bg-red-400' :
-                                role === 'SUPERVISOR' ? 'bg-blue-400' : 'bg-green-400'
+                              role === 'SUPERVISOR' ? 'bg-blue-400' : 'bg-green-400'
                               }`}
                           />
                           <span className="flex-1 text-left">{ROLE_LABELS[role] ?? role}</span>
@@ -403,13 +408,13 @@ export default function Sidebar({
                           key={role}
                           onClick={() => handleRoleSwitch(role)}
                           className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm transition-base ${role === auth.activeRole
-                              ? 'bg-white/10 text-white font-semibold'
-                              : 'text-white/70 hover:bg-white/5 hover:text-white'
+                            ? 'bg-white/10 text-white font-semibold'
+                            : 'text-white/70 hover:bg-white/5 hover:text-white'
                             }`}
                         >
                           <span
                             className={`w-2 h-2 rounded-full ${role === 'HR_ADMIN' ? 'bg-red-400' :
-                                role === 'SUPERVISOR' ? 'bg-blue-400' : 'bg-green-400'
+                              role === 'SUPERVISOR' ? 'bg-blue-400' : 'bg-green-400'
                               }`}
                           />
                           {ROLE_LABELS[role] ?? role}
@@ -428,19 +433,6 @@ export default function Sidebar({
               )}
             </div>
           )}
-
-          {/* ── Logout ────────────────────────────────────────────────────── */}
-          <button
-            onClick={() => {
-              auth.logout();
-              if (isMobile) handleCloseMobile();
-            }}
-            className={`w-full flex items-center gap-3 py-3 px-5 text-white/60 hover:text-white transition-base group ${collapsed && !isMobile ? 'justify-center' : ''
-              }`}
-          >
-            <LogOut className="w-5 h-5 group-hover:rotate-12 transition-base" />
-            {(!collapsed || isMobile) && <span className="text-sm font-medium">Log Out</span>}
-          </button>
         </div>
       </aside>
     </>

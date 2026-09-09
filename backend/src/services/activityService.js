@@ -10,6 +10,7 @@ const resolveActor = async ({ req, actor }) => {
   let actorId = null;
   let actorName = null;
   let actorRole = null;
+  let actorRoles = null;
 
   const lookup = async (id) => {
     const user = await prisma.user.findUnique({
@@ -17,7 +18,7 @@ const resolveActor = async ({ req, actor }) => {
       select: { id: true, name: true, roles: true },
     });
     if (user) {
-      return { actorId: user.id, actorName: user.name, actorRole: user.roles?.[0] ?? null };
+      return { actorId: user.id, actorName: user.name, actorRole: user.roles?.[0] ?? null, actorRoles: user.roles ?? null };
     }
     return null;
   };
@@ -31,11 +32,15 @@ const resolveActor = async ({ req, actor }) => {
       actorId: actor.id ?? null,
       actorName: actor.name ?? null,
       actorRole: actor.roles?.[0] ?? actor.role ?? null,
+      actorRoles: actor.roles ?? (actor.role ? [actor.role] : null),
     };
   }
 
-  return { actorId, actorName, actorRole };
+  return { actorId, actorName, actorRole, actorRoles };
 };
+
+const isAdminRole = (roles) =>
+  Array.isArray(roles) && (roles.includes('HR_ADMIN') || roles.includes('ADMIN'));
 
 export const logActivity = async ({ req, actor, action, entity, entityId, description, metadata, ipAddress } = {}) => {
   try {
@@ -43,6 +48,10 @@ export const logActivity = async ({ req, actor, action, entity, entityId, descri
     if (typeof entity !== 'string' || !entity.trim()) throw new Error('entity is required');
 
     const resolved = await resolveActor({ req, actor });
+
+    // The activity log is an admin audit trail only — employee and supervisor
+    // actions (and system-triggered events without an admin actor) are skipped.
+    if (!isAdminRole(resolved.actorRoles)) return false;
 
     await prisma.activityLog.create({
       data: {

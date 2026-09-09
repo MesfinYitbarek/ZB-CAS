@@ -329,50 +329,6 @@ export default function EmployeeDashboard() {
               </div>
             )}
           </div>
-
-          {/* COMPETENCY PROGRESS - Full Width Below */}
-          {competencyProgress.length > 0 && (
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h3 className="text-sm font-bold text-gray-900">Competency Progress</h3>
-                  <p className="text-xs text-gray-400 mt-0.5">Your performance across all competencies</p>
-                </div>
-                <button onClick={() => nav('/results')} className="text-xs font-semibold text-brand-red hover:underline flex items-center gap-1">
-                  Full history <ArrowRight className="w-3 h-3" />
-                </button>
-              </div>
-              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {competencyProgress.slice(0, 6).map((c, i) => {
-                  const levelCfg = LEVEL_CONFIG[c.latestLevel];
-                  const catColor = CATEGORY_COLORS[c.category] || '#6366f1';
-                  return (
-                    <div key={i} className="p-4 rounded-xl border border-gray-100 hover:border-gray-200 transition-all">
-                      <div className="flex items-start justify-between mb-2">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-semibold text-gray-800 truncate">{c.name}</p>
-                          <p className="text-xs mt-0.5" style={{ color: catColor }}>{c.category}</p>
-                        </div>
-                        {c.latestLevel && (
-                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ml-2 flex-shrink-0 ${levelCfg?.badge || 'bg-gray-50 text-gray-600 border-gray-200'}`}>
-                            {c.latestLevel}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className="text-lg font-bold text-gray-900">{c.latestScore}%</span>
-                        {c.bestScore > c.latestScore && (
-                          <span className="text-xs text-emerald-600">Best: {c.bestScore}%</span>
-                        )}
-                      </div>
-                      <ScoreBar value={c.latestScore} />
-                      <p className="text-xs text-gray-400 mt-1.5">{c.attempts} attempt{c.attempts !== 1 ? 's' : ''}</p>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
         </div>
       </div>
     </div>

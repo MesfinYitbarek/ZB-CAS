@@ -101,7 +101,7 @@ export default function Login() {
 
         <div className="flex items-center gap-3.5 z-10">
           <img src={zIcon} alt="Zemen Icon" loading="lazy" className="h-14 w-auto object-contain" />
-          <div className="text-white  text-xl font-bold">CAS Platform</div>
+          <div className="text-white  text-xl font-bold">Competency Assessment System</div>
         </div>
 
         <div className="text-white z-10">

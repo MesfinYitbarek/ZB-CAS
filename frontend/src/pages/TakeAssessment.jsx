@@ -59,7 +59,7 @@ const SecurityLawsScreen = ({ assessment, onAccept, onCancel }) => {
         : 'Complete the assessment within the allowed period. You may submit at any time.',
       color: 'red'
     },
-    
+
   ];
 
   return (
@@ -212,57 +212,57 @@ const SeriousViolationModal = ({ count, onAcknowledge }) => (
   </div>
 );
 
-// ─── Security Monitor Modal ───────────────────────────────────────────────────
-const SecurityMonitorModal = ({ violations, isHighRisk, onDismiss }) => {
-  if (!violations || violations.length === 0) return null;
-  
-  return (
-    <div className="fixed bottom-4 right-4 z-50 max-w-sm w-full bg-white rounded-lg shadow-xl border-l-4 border-red-500 overflow-hidden animate-in slide-in-from-bottom-5 duration-300">
-      <div className="bg-gradient-to-r from-red-600 to-red-500 px-4 py-2 flex items-center justify-between text-white">
-        <div className="flex items-center gap-2">
-          <Shield className="w-4 h-4" />
-          <span className="text-xs font-bold">Security Monitor</span>
-          {isHighRisk && (
-            <span className="px-1.5 py-0.5 bg-red-800 rounded text-[9px] font-semibold">HIGH RISK</span>
-          )}
-        </div>
-        <button
-          onClick={onDismiss}
-          className="text-white/80 hover:text-white transition-colors"
-        >
-          <X className="w-4 h-4" />
-        </button>
-      </div>
-      <div className="p-3 bg-red-50">
-        <div className="space-y-1.5">
-          <div className="flex justify-between text-xs">
-            <span className="text-gray-600">Total Violations:</span>
-            <span className="font-bold text-red-600">{violations.length}</span>
-          </div>
-          <div className="flex justify-between text-xs">
-            <span className="text-gray-600">Tab Switches:</span>
-            <span className="font-bold text-red-600">
-              {violations.filter(v => v.type === 'TAB_SWITCH').length}
-            </span>
-          </div>
-          <div className="flex justify-between text-xs">
-            <span className="text-gray-600">Full Screen Exits:</span>
-            <span className="font-bold text-red-600">
-              {violations.filter(v => v.type === 'FULLSCREEN_EXIT').length}
-            </span>
-          </div>
-          {violations.length > 0 && (
-            <div className="mt-2 pt-2 border-t border-red-200">
-              <p className="text-[9px] text-red-700">
-                Last violation: {new Date(violations[violations.length - 1].timestamp).toLocaleTimeString()}
-              </p>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-};
+// // ─── Security Monitor Modal ───────────────────────────────────────────────────
+// const SecurityMonitorModal = ({ violations, isHighRisk, onDismiss }) => {
+//   if (!violations || violations.length === 0) return null;
+
+//   return (
+//     <div className="fixed bottom-4 right-4 z-50 max-w-sm w-full bg-white rounded-lg shadow-xl border-l-4 border-red-500 overflow-hidden animate-in slide-in-from-bottom-5 duration-300">
+//       <div className="bg-gradient-to-r from-red-600 to-red-500 px-4 py-2 flex items-center justify-between text-white">
+//         <div className="flex items-center gap-2">
+//           <Shield className="w-4 h-4" />
+//           <span className="text-xs font-bold">Security Monitor</span>
+//           {isHighRisk && (
+//             <span className="px-1.5 py-0.5 bg-red-800 rounded text-[9px] font-semibold">HIGH RISK</span>
+//           )}
+//         </div>
+//         <button
+//           onClick={onDismiss}
+//           className="text-white/80 hover:text-white transition-colors"
+//         >
+//           <X className="w-4 h-4" />
+//         </button>
+//       </div>
+//       <div className="p-3 bg-red-50">
+//         <div className="space-y-1.5">
+//           <div className="flex justify-between text-xs">
+//             <span className="text-gray-600">Total Violations:</span>
+//             <span className="font-bold text-red-600">{violations.length}</span>
+//           </div>
+//           <div className="flex justify-between text-xs">
+//             <span className="text-gray-600">Tab Switches:</span>
+//             <span className="font-bold text-red-600">
+//               {violations.filter(v => v.type === 'TAB_SWITCH').length}
+//             </span>
+//           </div>
+//           <div className="flex justify-between text-xs">
+//             <span className="text-gray-600">Full Screen Exits:</span>
+//             <span className="font-bold text-red-600">
+//               {violations.filter(v => v.type === 'FULLSCREEN_EXIT').length}
+//             </span>
+//           </div>
+//           {violations.length > 0 && (
+//             <div className="mt-2 pt-2 border-t border-red-200">
+//               <p className="text-[9px] text-red-700">
+//                 Last violation: {new Date(violations[violations.length - 1].timestamp).toLocaleTimeString()}
+//               </p>
+//             </div>
+//           )}
+//         </div>
+//       </div>
+//     </div>
+//   );
+// };
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function TakeAssessment() {
@@ -296,6 +296,10 @@ export default function TakeAssessment() {
   const [submitting, setSubmitting] = useState(false);
   const [isLeavingBack, setIsLeavingBack] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
+
+  // Persisted security summary (survives reloads; live hook state resets on reload)
+  const [securitySummary, setSecuritySummary] = useState(null);
+  const [securityLoaded, setSecurityLoaded] = useState(false);
 
   const debounceRef = useRef({});
   const countdownRef = useRef(null);
@@ -348,6 +352,7 @@ export default function TakeAssessment() {
           });
           if (prog.data.data.isSubmitted) {
             setSubmitted(true);
+            await loadSecuritySummary();
             await checkResult();
           } else {
             // Show security laws before assessment
@@ -433,6 +438,18 @@ export default function TakeAssessment() {
     } catch (_) { }
   };
 
+  // ── Load persisted security summary (accurate after a reload) ────────────────
+  const loadSecuritySummary = async () => {
+    try {
+      const { data } = await api.get(`/responses/security-violations/${assessmentId}/${user._id}`);
+      setSecuritySummary(data.data.securityRecord);
+    } catch (_) {
+      setSecuritySummary(null);
+    } finally {
+      setSecurityLoaded(true);
+    }
+  };
+
   // ── Auto-save ───────────────────────────────────────────────────────────────
   const autoSave = (questionId, value) => {
     if (debounceRef.current[questionId]) clearTimeout(debounceRef.current[questionId]);
@@ -480,6 +497,7 @@ export default function TakeAssessment() {
       setShowSubmitWarning(false);
       setShowBackWarning(false);
       show('Assessment submitted successfully!', 'success');
+      loadSecuritySummary();
 
       setScoringInProgress(true);
       try {
@@ -526,7 +544,7 @@ export default function TakeAssessment() {
   const handleLeaveAndSubmit = async () => {
     setIsLeavingBack(true);
     await handleSubmit(true);
-    
+
     // Navigate based on assessment type
     if (assessment?.type === 'CombinedAssessment') {
       nav(`/assessment/${assessmentId}`);
@@ -839,6 +857,12 @@ export default function TakeAssessment() {
 
   // ── Result view ─────────────────────────────────────────────────────────────
   if (submitted && result) {
+    const effectiveViolations = securityLoaded
+      ? (securitySummary?.summary?.totalViolations ?? 0)
+      : security.totalViolations;
+    const effectiveTabSwitches = securityLoaded
+      ? (securitySummary?.summary?.tabSwitches ?? 0)
+      : security.tabSwitchCount;
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
         <div className="bg-white rounded-xl shadow-lg p-6 max-w-lg w-full">
@@ -883,9 +907,12 @@ export default function TakeAssessment() {
             )}
           </div>
 
-          {security.totalViolations > 0 && (
+          {effectiveViolations > 0 && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-2 mb-4">
-              <div className="text-[9px] font-semibold text-red-800">Security: {security.tabSwitchCount} tab switch(es) recorded</div>
+              <div className="text-[9px] font-semibold text-red-800">
+                Security: {effectiveViolations} violation{effectiveViolations !== 1 ? 's' : ''} recorded
+                {effectiveTabSwitches > 0 && ` (${effectiveTabSwitches} tab switch${effectiveTabSwitches !== 1 ? 'es' : ''})`}
+              </div>
             </div>
           )}
 
@@ -918,14 +945,14 @@ export default function TakeAssessment() {
             <CheckCircle className="w-8 h-8 text-green-600" />
           </div>
           <h2 className="text-xl  font-bold text-brand-black mb-4">Submitted!</h2>
-          <button 
+          <button
             onClick={() => {
               if (assessment?.type === 'CombinedAssessment') {
                 nav(`/assessment/${assessmentId}`);
               } else {
                 nav('/results');
               }
-            }} 
+            }}
             className="px-6 py-2 bg-red-600 text-white rounded-lg text-xs font-semibold"
           >
             {assessment?.type === 'CombinedAssessment' ? 'Continue to Assessment' : 'View Results'}

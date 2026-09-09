@@ -27,9 +27,9 @@ export default function ReportDetailModal({ report, onClose }) {
       onClick={handleOverlayClick}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
     >
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
 
-        <div className="flex items-start justify-between px-6 py-5 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white flex-shrink-0">
+        <div className="flex items-start justify-between px-6 py-5 border-b border-gray-100 bg-gray-50 flex-shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-brand-red/10 rounded-xl flex items-center justify-center flex-shrink-0">
               <span className="text-sm font-bold text-brand-red">{user?.name?.charAt(0) || '?'}</span>
@@ -49,7 +49,7 @@ export default function ReportDetailModal({ report, onClose }) {
         </div>
 
         <div className="overflow-y-auto flex-1 custom-scrollbar">
-          <div className="px-6 py-4 bg-gray-50/60 border-b border-gray-100">
+          <div className="px-6 py-4 bg-gray-50 border-b border-gray-100">
             <div className="flex items-center gap-6 flex-wrap">
               <div>
                 <p className="text-xs text-gray-400 mb-1">Overall Score</p>
@@ -99,7 +99,7 @@ export default function ReportDetailModal({ report, onClose }) {
               {competencyResults.length === 0 ? (
                 <p className="text-sm text-gray-400 text-center py-6">No competency results found.</p>
               ) : competencyResults.map((cr, i) => (
-                <div key={cr._id || i} className="bg-gray-50/80 rounded-xl p-4 border border-gray-100">
+                <div key={cr._id || i} className="bg-gray-50 rounded-xl p-4 border border-gray-100">
                   <div className="flex items-start justify-between gap-3 mb-3">
                     <div className="min-w-0">
                       <p className="text-sm font-bold text-gray-900">{cr.competencyName}</p>
@@ -164,9 +164,9 @@ export default function ReportDetailModal({ report, onClose }) {
           )}
         </div>
 
-        <div className="flex justify-end px-6 py-4 border-t border-gray-100 bg-gray-50/50 flex-shrink-0">
+        <div className="flex justify-end px-6 py-4 border-t border-gray-100 bg-gray-50 flex-shrink-0">
           <button onClick={onClose}
-            className="px-5 py-2 bg-white border border-gray-200 rounded-xl text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors">
+            className="px-5 py-2 bg-white border border-gray-300 rounded-lg text-sm font-semibold text-brand-black hover:bg-gray-50 transition-colors">
             Close
           </button>
         </div>

@@ -28,13 +28,13 @@ const FilterSection = ({ title, icon: Icon, color, children, defaultOpen = true 
 
 const FF = ({ label, children }) => (
   <div>
-    <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">{label}</label>
+    <label className="block text-xs font-semibold text-gray-600 mb-1.5">{label}</label>
     {children}
   </div>
 );
 
-const sCls = "w-full h-9 px-3 rounded-lg border border-gray-200 text-sm text-gray-800 focus:ring-2 focus:ring-brand-red focus:border-brand-red bg-white";
-const iCls = "w-full h-9 px-3 rounded-lg border border-gray-200 text-sm text-gray-800 focus:ring-2 focus:ring-brand-red focus:border-brand-red";
+const sCls = "w-full h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm bg-white";
+const iCls = "w-full h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm";
 
 const FILTER_LABELS = {
   department: 'Department', position: 'Position', gender: 'Gender', employeeIdCode: 'Emp ID Code',
@@ -87,8 +87,8 @@ export default function FilterDrawer(props) {
   const activeCount = Object.entries(filters).filter(([k, v]) => v && k !== 'employeeId').length;
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-200 shadow-lg mb-6 overflow-hidden">
-      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white">
+    <div className="bg-white rounded-xl border border-gray-100 shadow-card mb-5 overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 bg-gray-50">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 bg-brand-red/10 rounded-lg flex items-center justify-center">
             <SlidersHorizontal className="w-4 h-4 text-brand-red" />
@@ -102,7 +102,7 @@ export default function FilterDrawer(props) {
         <div className="flex items-center gap-2">
           {activeCount > 0 && (
             <button type="button" onClick={onClear}
-              className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-brand-red px-3 py-1.5 rounded-lg border border-gray-200 hover:border-brand-red/40 transition-colors">
+              className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-brand-red px-3 py-1.5 rounded-lg border border-gray-300 hover:border-brand-red/40 transition-colors">
               <RotateCcw className="w-3.5 h-3.5" /> Clear All
             </button>
           )}

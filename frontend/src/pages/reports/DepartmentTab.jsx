@@ -42,7 +42,7 @@ export default function DepartmentTab({ stats, departments, selDept, onSelectDep
         title="Department Deep-Dive"
         action={
           <select value={selDept} onChange={e => onSelectDept(e.target.value)}
-            className="h-9 px-3 rounded-lg border border-gray-300 text-sm focus:ring-2 focus:ring-brand-red bg-white">
+            className="h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm bg-white">
             <option value="">— Select Department —</option>
             {departments.map(d => <option key={d} value={d}>{d}</option>)}
           </select>
@@ -51,17 +51,17 @@ export default function DepartmentTab({ stats, departments, selDept, onSelectDep
         {selDept && Array.isArray(summary) && summary.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-200">
+              <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-600 uppercase">Competency</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-600 uppercase">Reports</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-600 uppercase">Avg Score</th>
+                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Competency</th>
+                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Reports</th>
+                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Avg Score</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-gray-600 uppercase w-48">Distribution</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50">
+              <tbody className="divide-y divide-gray-100">
                 {summary.map(row => (
-                  <tr key={row.competencyName} className="hover:bg-gray-50/70">
+                  <tr key={row.competencyName} className="hover:bg-gray-50 transition-colors">
                     <td className="px-4 py-3 font-medium text-gray-900">{row.competencyName}</td>
                     <td className="px-4 py-3 text-gray-600">{row.totalReports}</td>
                     <td className="px-4 py-3"><ScoreBar score={row.avgScore} /></td>

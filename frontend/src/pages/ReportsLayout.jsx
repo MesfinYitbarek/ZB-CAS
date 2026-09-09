@@ -173,15 +173,15 @@ export default function ReportsLayout() {
 
   return (
     <ReportsContext.Provider value={contextValue}>
-      <div className="flex flex-col h-[calc(100vh-4rem)] bg-[#f8f9fb] overflow-hidden">
+      <div className="flex flex-col h-[calc(100vh-4rem)] overflow-hidden">
 
         {/* ── STICKY HEADER ────────────────────────────────────────────── */}
-        <div className="sticky top-0 z-20 bg-[#f8f9fb] border-b border-gray-200/70 shadow-sm flex-shrink-0">
+        <div className="sticky top-0 z-20 bg-gray-50 border-b border-gray-200/70 flex-shrink-0">
           <div className="px-7 py-3">
             <div className="flex justify-between items-center gap-4 flex-wrap">
               <div className="flex items-center gap-4 flex-wrap">
                 <div>
-                  <h1 className="text-lg  font-bold text-brand-black">{meta.title}</h1>
+                  <h1 className="text-xl font-bold text-brand-black">{meta.title}</h1>
                 </div>
 
                 {isAdmin && (
@@ -200,8 +200,8 @@ export default function ReportsLayout() {
               <div className="flex items-center gap-2 flex-wrap">
                 {isAdmin && (
                   <button type="button" onClick={() => setShowFilters(v => !v)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 border rounded-lg font-semibold text-sm transition-all
-                      ${showFilters || activeFilterCount > 0 ? 'border-brand-red bg-brand-red/10 text-brand-red' : 'border-gray-300 text-gray-700 hover:bg-gray-50'}`}>
+                    className={`flex items-center gap-1.5 px-3 py-1.5 border rounded-lg font-semibold text-sm transition-colors
+                      ${showFilters || activeFilterCount > 0 ? 'border-brand-red bg-brand-red/10 text-brand-red' : 'border-gray-300 bg-white text-brand-black hover:bg-gray-50'}`}>
                     <SlidersHorizontal className="w-3.5 h-3.5" />
                     Filters
                     {activeFilterCount > 0 && (
@@ -211,11 +211,11 @@ export default function ReportsLayout() {
                 )}
                 <div className="flex items-center gap-1">
                   <button type="button" onClick={() => doExport('pdf', section === 'individual' ? 'individual' : 'filtered')} disabled={!!exporting}
-                    className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-300 rounded-l-lg text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50">
+                    className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-300 bg-white rounded-l-lg text-sm font-semibold text-brand-black hover:bg-gray-50 transition-colors disabled:opacity-50">
                     {exporting === 'pdf' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5 text-red-500" />}PDF
                   </button>
                   <button type="button" onClick={() => doExport('excel', section === 'individual' ? 'individual' : 'filtered')} disabled={!!exporting}
-                    className="flex items-center gap-1.5 px-3 py-1.5 border border-l-0 border-gray-300 rounded-r-lg text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50">
+                    className="flex items-center gap-1.5 px-3 py-1.5 border border-l-0 border-gray-300 bg-white rounded-r-lg text-sm font-semibold text-brand-black hover:bg-gray-50 transition-colors disabled:opacity-50">
                     {exporting === 'excel' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileSpreadsheet className="w-3.5 h-3.5 text-green-600" />}Excel
                   </button>
                 </div>

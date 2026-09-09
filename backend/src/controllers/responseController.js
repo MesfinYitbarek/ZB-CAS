@@ -443,12 +443,31 @@ export const getProgress = asyncHandler(async (req, res, next) => {
       respondentType: 'self',
     },
   });
-  const submitted = await prisma.response.findFirst({
+  const submittedResponse = await prisma.response.findFirst({
     where: {
       assessmentId,
       userId: req.user.id,
       respondentType: 'self',
       submittedAt: { not: null },
+    },
+    select: { id: true },
+  });
+
+  // A 0% submission (all questions unanswered + "Submit Anyway") leaves no
+  // response row with a submittedAt, so also trust the persisted security log
+  // (written on every submit) or an existing result as proof of completion.
+  const securitySubmitted = await prisma.securityViolation.findFirst({
+    where: {
+      assessmentId,
+      userId: req.user.id,
+      submittedAt: { not: null },
+    },
+    select: { id: true },
+  });
+  const resultExists = await prisma.result.findFirst({
+    where: {
+      assessmentId,
+      userId: req.user.id,
     },
     select: { id: true },
   });
@@ -459,7 +478,7 @@ export const getProgress = asyncHandler(async (req, res, next) => {
       totalQuestions: total,
       answeredCount,
       percentage: total > 0 ? parseFloat(((answeredCount / total) * 100).toFixed(1)) : 0,
-      isSubmitted: !!submitted,
+      isSubmitted: !!(submittedResponse || securitySubmitted || resultExists),
     },
   });
 });

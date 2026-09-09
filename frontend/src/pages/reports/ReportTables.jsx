@@ -3,7 +3,7 @@ import { ScoreBadge, LevelBadge, Paginator, TableShell, Th, Td, EmployeeCell, fo
 
 const DetailButton = ({ onClick }) => (
   <button onClick={onClick}
-    className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-300 hover:text-brand-red hover:bg-red-50 transition-all opacity-0 group-hover:opacity-100"
+    className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-400 hover:text-brand-red hover:bg-red-50 transition-colors"
     title="View detail">
     <Eye className="w-3.5 h-3.5" />
   </button>
@@ -19,7 +19,7 @@ const EmptyRow = ({ colSpan, icon: Icon, title }) => (
 );
 
 const CountHeader = ({ total }) => (
-  <div className="px-5 py-3.5 border-b border-gray-100 bg-gray-50/60">
+  <div className="px-5 py-3 border-b border-gray-100 bg-gray-50">
     <p className="text-sm font-semibold text-gray-700">
       <span className="text-brand-red font-bold">{total}</span> report{total !== 1 ? 's' : ''}
     </p>
@@ -34,7 +34,7 @@ export function IndividualReportsTable({ reports = [], onDetail, pagination, onP
       footer={pagination && <Paginator pagination={pagination} onPage={onPage} />}
     >
       <table className="w-full text-sm">
-        <thead className="border-b border-gray-100 bg-gray-50/80">
+        <thead className="border-b border-gray-100 bg-gray-50">
           <tr>
             <Th>Competency</Th>
             <Th>Target Group</Th>
@@ -45,13 +45,13 @@ export function IndividualReportsTable({ reports = [], onDetail, pagination, onP
             <Th className="w-10" />
           </tr>
         </thead>
-        <tbody className="divide-y divide-gray-50">
+        <tbody className="divide-y divide-gray-100">
           {reports.length === 0 ? (
             <EmptyRow colSpan={7} icon={BookOpen} title="No reports found" />
           ) : reports.map(r => {
             const names = competencyNames(r);
             return (
-              <tr key={r._id} className="hover:bg-gray-50/70 transition-colors group">
+              <tr key={r._id} className="hover:bg-gray-50 transition-colors group">
                 <Td>
                   <p className="text-sm font-medium text-gray-800 max-w-[180px] truncate" title={names}>{names}</p>
                 </Td>
@@ -86,11 +86,10 @@ export function AllReportsTable({ reports = [], onDetail, pagination, onPage, to
       footer={pagination && <Paginator pagination={pagination} onPage={onPage} />}
     >
       <table className="w-full text-sm">
-        <thead className="border-b border-gray-100 bg-gray-50/80">
+        <thead className="border-b border-gray-100 bg-gray-50">
           <tr>
             <Th>Employee</Th>
             <Th>Department</Th>
-            <Th>Position</Th>
             <Th>Competency</Th>
             <Th>Target Group</Th>
             <Th>Purpose</Th>
@@ -100,16 +99,16 @@ export function AllReportsTable({ reports = [], onDetail, pagination, onPage, to
             <Th className="w-10" />
           </tr>
         </thead>
-        <tbody className="divide-y divide-gray-50">
+        <tbody className="divide-y divide-gray-100">
           {reports.length === 0 ? (
             <EmptyRow colSpan={10} icon={BookOpen} title="No reports found matching the current filters." />
           ) : reports.map(r => {
             const names = competencyNames(r);
             return (
-              <tr key={r._id} className="hover:bg-gray-50/70 transition-colors group">
+              <tr key={r._id} className="hover:bg-gray-50 transition-colors group">
                 <Td><EmployeeCell name={r.user?.name} position={r.user?.position} /></Td>
                 <Td className="text-sm text-gray-600 whitespace-nowrap">{r.user?.department || '—'}</Td>
-                <Td className="text-sm text-gray-600 whitespace-nowrap">{r.user?.position || '—'}</Td>
+                
                 <Td>
                   <p className="text-sm font-medium text-gray-800 max-w-[160px] truncate" title={names}>{names}</p>
                 </Td>

@@ -11,7 +11,7 @@ export const LEVELS = ['Basic', 'Intermediate', 'Advanced', 'Expert'];
 
 // ─── Card ─────────────────────────────────────────────────────────────────────
 export const Card = ({ title, icon: Icon, subtitle, action, children, className = '' }) => (
-  <div className={`bg-white rounded-xl border border-gray-100 shadow-sm ${className}`}>
+  <div className={`bg-white rounded-xl border border-gray-100 shadow-card ${className}`}>
     {(title || action) && (
       <div className="flex items-center justify-between px-5 pt-5 pb-4 gap-3 flex-wrap">
         <div className="flex items-center gap-2.5 min-w-0">
@@ -33,7 +33,7 @@ export const Card = ({ title, icon: Icon, subtitle, action, children, className 
 );
 
 export const SectionHeader = ({ title, count, action }) => (
-  <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/60 flex items-center justify-between">
+  <div className="px-5 py-3 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
     <p className="text-sm font-semibold text-gray-700">
       {typeof count === 'number' && (
         <>
@@ -88,7 +88,7 @@ export const LevelBadge = ({ level }) => {
 
 // ─── Table shell ──────────────────────────────────────────────────────────────
 export const TableShell = ({ header, children, footer }) => (
-  <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+  <div className="bg-white rounded-xl border border-gray-100 shadow-card overflow-hidden">
     {header}
     <div className="overflow-x-auto">{children}</div>
     {footer}
@@ -96,7 +96,7 @@ export const TableShell = ({ header, children, footer }) => (
 );
 
 export const Th = ({ children, className = '' }) => (
-  <th className={`text-left px-4 py-2.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap ${className}`}>
+  <th className={`text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap bg-gray-50 ${className}`}>
     {children}
   </th>
 );
@@ -107,8 +107,8 @@ export const Td = ({ children, className = '' }) => (
 
 export const EmployeeCell = ({ name, department, position }) => (
   <div className="flex items-center gap-2.5 min-w-0">
-    <div className="w-7 h-7 bg-brand-red/10 rounded-lg flex items-center justify-center flex-shrink-0">
-      <span className="text-xs font-bold text-brand-red">{name?.charAt(0) || '?'}</span>
+    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-brand-red to-red-700 flex items-center justify-center flex-shrink-0">
+      <span className="text-xs font-bold text-white">{name?.charAt(0) || '?'}</span>
     </div>
     <div className="min-w-0">
       <p className="text-sm font-semibold text-gray-800 whitespace-nowrap truncate">{name || '—'}</p>
@@ -118,27 +118,29 @@ export const EmployeeCell = ({ name, department, position }) => (
   </div>
 );
 
-// ─── Paginator (compact) ──────────────────────────────────────────────────────
+// ─── Paginator ────────────────────────────────────────────────────────────────
 export const Paginator = ({ pagination, onPage }) => {
   if (!pagination || pagination.total <= pagination.limit) return null;
   const tp = pagination.totalPages, cp = pagination.page;
   const start = Math.max(1, Math.min(cp - 2, tp - 4));
   const pages = Array.from({ length: Math.min(5, tp) }, (_, i) => start + i);
+  const from = (cp - 1) * pagination.limit + 1;
+  const to = Math.min(cp * pagination.limit, pagination.total);
   return (
-    <div className="flex justify-between items-center px-5 pb-4 pt-4 border-t border-gray-100">
-      <p className="text-sm text-gray-500">Page {cp} of {tp} · {pagination.total} total</p>
+    <div className="flex flex-col sm:flex-row justify-between items-center gap-3 px-5 py-3 border-t border-gray-100 bg-white">
+      <p className="text-sm text-gray-500">Showing {from} to {to} of {pagination.total}</p>
       <div className="flex items-center gap-1">
-        <button onClick={() => onPage(cp - 1)} disabled={cp === 1} className="p-2 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">
-          <ChevronLeft className="w-4 h-4" />
+        <button onClick={() => onPage(cp - 1)} disabled={cp === 1} className="flex items-center gap-1 px-3 py-2 rounded-lg border border-gray-300 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50">
+          <ChevronLeft className="w-4 h-4" /> Prev
         </button>
         {pages.map(p => (
           <button key={p} onClick={() => onPage(p)}
-            className={`w-9 h-9 rounded-lg text-sm font-medium ${cp === p ? 'bg-brand-red text-white' : 'border border-gray-200 text-gray-700 hover:bg-gray-50'}`}>
+            className={`w-9 h-9 rounded-lg text-sm font-medium ${cp === p ? 'bg-brand-red text-white' : 'border border-gray-300 text-gray-700 hover:bg-gray-50'}`}>
             {p}
           </button>
         ))}
-        <button onClick={() => onPage(cp + 1)} disabled={cp === tp} className="p-2 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">
-          <ChevronRight className="w-4 h-4" />
+        <button onClick={() => onPage(cp + 1)} disabled={cp === tp} className="flex items-center gap-1 px-3 py-2 rounded-lg border border-gray-300 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50">
+          Next <ChevronRight className="w-4 h-4" />
         </button>
       </div>
     </div>

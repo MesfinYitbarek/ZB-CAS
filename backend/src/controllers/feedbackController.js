@@ -200,12 +200,27 @@ export const getFeedbacksByAssessment = asyncHandler(async (req, res) => {
 
 // ─── GET EMPLOYEE'S ELIGIBLE ASSESSMENTS ──────────────────────────────────────
 export const getEligibleAssessmentsForFeedback = asyncHandler(async (req, res) => {
-  const results = await prisma.result.findMany({
-    where: { userId: req.user.id },
-    select: { assessmentId: true },
-    distinct: ['assessmentId'],
-  });
-  const resultIds = results.map(r => r.assessmentId);
+  const [results, submittedResponses, submittedSecurity] = await Promise.all([
+    prisma.result.findMany({ where: { userId: req.user.id }, select: { assessmentId: true }, distinct: ['assessmentId'] }),
+    prisma.response.findMany({
+      where: { userId: req.user.id, respondentType: 'self', submittedAt: { not: null } },
+      select: { assessmentId: true },
+      distinct: ['assessmentId'],
+    }),
+    prisma.securityViolation.findMany({
+      where: { userId: req.user.id, submittedAt: { not: null } },
+      select: { assessmentId: true },
+      distinct: ['assessmentId'],
+    }),
+  ]);
+  // A 0% submission (all unanswered) leaves no response row, and Combined
+  // assessments only get a Result after admin scoring — treat any submitted
+  // self response / security log / result as proof of completion.
+  const resultIds = [...new Set([
+    ...results.map(r => r.assessmentId),
+    ...submittedResponses.map(r => r.assessmentId),
+    ...submittedSecurity.map(r => r.assessmentId),
+  ])];
 
   const existingFeedback = await prisma.feedback.findMany({
     where: { userId: req.user.id },
@@ -219,8 +234,17 @@ export const getEligibleAssessmentsForFeedback = asyncHandler(async (req, res) =
       id: { in: resultIds },
       status: { in: ['COMPLETED', 'ARCHIVED', 'ACTIVE'] },
     },
-    include: { competency: { select: { id: true, name: true, category: true } } },
-    select: { id: true, description: true, competencyId: true, type: true, status: true, targetGroup: true, purpose: true, createdAt: true, competency: { select: { id: true, name: true, category: true } } },
+    select: {
+      id: true,
+      description: true,
+      competencyId: true,
+      type: true,
+      status: true,
+      targetGroup: true,
+      purpose: true,
+      createdAt: true,
+      competency: { select: { id: true, name: true, category: true } },
+    },
     orderBy: { createdAt: 'desc' },
   });
 

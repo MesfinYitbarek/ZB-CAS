@@ -206,7 +206,10 @@ export default function useAssessmentSecurity(assessmentId, onViolation) {
     return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   };
 
-  const totalViolations = tabSwitchCount + copyAttempts + rightClickAttempts + fullscreenExits;
+  // Every logged violation counts — including DevTools, paste/cut, save,
+  // printscreen, view-source, fullscreen-denied and time-expired events.
+  // The per-type counters above are kept for display/stats only.
+  const totalViolations = violations.length;
 
   return {
     violations,

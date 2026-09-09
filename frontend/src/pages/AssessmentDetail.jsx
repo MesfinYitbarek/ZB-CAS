@@ -506,18 +506,32 @@ export default function AssessmentDetail() {
                               <p className="text-sm text-gray-700 leading-relaxed">{q.scenario}</p>
                             </div>
                           )}
-                          {q.type === 'multiple_choice' || q.type === 'single_choice' ? (
+                          {q.options?.length > 0 ? (
                             <div>
                               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Options</p>
                               <ul className="space-y-1.5">
-                                {q.options?.map((opt, oi) => (
+                                {q.options.map((opt, oi) => (
                                   <li key={oi} className="text-sm text-gray-700 flex items-start gap-2">
                                     <span className="w-4 h-4 rounded-full border border-gray-300 flex-shrink-0 mt-0.5" />
-                                    <span>{typeof opt === 'string' ? opt : opt.text}</span>
+                                    <span>{typeof opt === 'string' ? opt : (opt.text ?? JSON.stringify(opt))}</span>
                                   </li>
                                 ))}
                               </ul>
                             </div>
+                          ) : q.type === 'TrueFalse' ? (
+                            <div>
+                              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Options</p>
+                              <ul className="space-y-1.5">
+                                {['True', 'False'].map((opt, oi) => (
+                                  <li key={oi} className="text-sm text-gray-700 flex items-start gap-2">
+                                    <span className="w-4 h-4 rounded-full border border-gray-300 flex-shrink-0 mt-0.5" />
+                                    <span>{opt}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          ) : q.type === 'Rating' ? (
+                            <p className="text-sm text-gray-400">1–5 rating scale.</p>
                           ) : (
                             <p className="text-sm text-gray-400">Open-ended / essay-style question.</p>
                           )}

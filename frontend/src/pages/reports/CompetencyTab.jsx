@@ -36,7 +36,7 @@ const Heatmap = ({ heatmap }) => {
           </thead>
           <tbody>
             {competencies.map(comp => (
-              <tr key={comp} className="border-t border-gray-50">
+              <tr key={comp} className="border-t border-gray-100">
                 <td className="px-2 py-1.5 font-medium text-gray-800">{comp.length > 30 ? comp.substring(0, 30) + '…' : comp}</td>
                 {depts.map(dept => {
                   const score = lookup[comp]?.[dept];

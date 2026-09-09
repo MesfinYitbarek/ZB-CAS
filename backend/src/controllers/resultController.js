@@ -272,7 +272,7 @@ export const getResults = asyncHandler(async (req, res) => {
       include: {
         user: { select: { id: true, name: true, email: true, department: true, position: true } },
         competency: { select: { id: true, name: true, category: true } },
-        assessment: { select: { id: true, description: true, type: true } },
+        assessment: { select: { id: true, description: true, type: true, targetGroup: true, purpose: true } },
       },
       skip,
       take: parseInt(limit),
@@ -294,7 +294,7 @@ export const getResult = asyncHandler(async (req, res, next) => {
     include: {
       user: { select: { id: true, name: true, email: true, department: true, position: true } },
       competency: { select: { id: true, name: true, category: true } },
-      assessment: { select: { id: true, description: true, type: true, selfWeight: true, supervisorWeight: true } },
+      assessment: { select: { id: true, description: true, type: true, targetGroup: true, purpose: true, selfWeight: true, supervisorWeight: true } },
     },
   });
 
@@ -373,7 +373,7 @@ export const getPDP = asyncHandler(async (req, res, next) => {
       where: { id: row.id },
       include: {
         competency: { select: { id: true, name: true, category: true } },
-        assessment: { select: { id: true, description: true, type: true } },
+        assessment: { select: { id: true, description: true, type: true, targetGroup: true, purpose: true } },
       },
     });
     if (result) populated.push(processResultRow(result));

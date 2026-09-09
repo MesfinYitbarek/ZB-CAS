@@ -119,9 +119,13 @@ const httpServer = http.createServer(app);
 initSocket(httpServer);
 
 connectDB().then(() => {
-  httpServer.listen(PORT, () => {
-    logger.info({ event: 'server_start', port: PORT, env: process.env.NODE_ENV || 'development' });
+  httpServer.listen(PORT, '0.0.0.0', () => {
+  logger.info({
+    event: 'server_start',
+    port: PORT,
+    env: process.env.NODE_ENV || 'development',
   });
+});
   // Boot cron jobs after DB is ready so they can query MongoDB
   startScheduler();
 });

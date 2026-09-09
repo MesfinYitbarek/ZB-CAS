@@ -835,7 +835,6 @@ export default function Assessments() {
                           return (
                             <tr key={a._id} className="hover:bg-gray-50 transition-colors align-top">
                               <td className="px-4 py-3 min-w-[220px]">
-                                <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-bold ${TYPE_META[a.type]?.badge || 'bg-gray-100 text-gray-800'}`}>{a.type}</span>
                                 <p className="font-semibold text-brand-black mt-1.5">{a.competencyId?.name || 'No competency'}</p>
                               </td>
                               <td className="px-4 py-3">
