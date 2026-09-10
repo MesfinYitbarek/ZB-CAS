@@ -236,7 +236,7 @@ export default function EmployeeDashboard() {
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-semibold text-gray-800 truncate group-hover:text-brand-red transition-colors">
-                              {a.description || a.competencyId?.name || 'Assessment'}
+                              {a.competency?.name || a.description || 'Assessment'}
                             </p>
                             <div className="flex items-center gap-2 mt-1">
                               <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-700 rounded-full">

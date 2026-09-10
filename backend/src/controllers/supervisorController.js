@@ -132,7 +132,7 @@ export const getPendingEvaluations = asyncHandler(async (req, res) => {
         competency: assessment.competency,
         startDate: assessment.startDate,
         endDate: assessment.endDate,
-        employee: member,
+        employee: { _id: member.id, ...member },
         weight: { self: assessment.selfWeight, supervisor: assessment.supervisorWeight },
         isScheduled,
         supervisorSubmitted,

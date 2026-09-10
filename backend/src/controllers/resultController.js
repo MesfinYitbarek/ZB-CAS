@@ -312,10 +312,26 @@ export const getResult = asyncHandler(async (req, res, next) => {
     }
   }
 
+  // Supervisor evaluation (score + comments) for this result, if any
+  const supervisorEval = await prisma.response.findFirst({
+    where: {
+      assessmentId: result.assessmentId,
+      employeeId: result.userId,
+      respondentType: 'supervisor',
+    },
+    include: { user: { select: { id: true, name: true } } },
+  });
+
   res.status(200).json({
     status: 'success',
     data: {
       result: processResultRow(result),
+      supervisorEvaluation: supervisorEval ? {
+        score: supervisorEval.score,
+        comments: supervisorEval.comments || '',
+        submittedAt: supervisorEval.submittedAt,
+        supervisorName: supervisorEval.user?.name || null,
+      } : null,
       questionDetails: result.scoreDetails?.questionDetails || [],
       questionSummary: {
         totalQuestions: (result.scoreDetails?.questionDetails || []).length,

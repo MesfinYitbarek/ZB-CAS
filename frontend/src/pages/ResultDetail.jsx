@@ -5,7 +5,7 @@ import { useToast } from '../context/ToastContext';
 import {
   ArrowLeft, FileText, Check, ChevronDown, ChevronUp, User, Users,
   Scale, Info, Shield, AlertCircle, CheckCircle2, Award, Clock,
-  Target, Building2, Briefcase, ListChecks
+  Target, Building2, Briefcase, ListChecks, MessageSquare
 } from 'lucide-react';
 import api from '../utils/api';
 
@@ -247,6 +247,7 @@ export default function ResultDetail() {
   const [questionSummary, setQuestionSummary] = useState(null);
   const [securityData, setSecurityData] = useState(null);
   const [loadingSecurity, setLoadingSecurity] = useState(false);
+  const [supervisorEval, setSupervisorEval] = useState(null);
 
   useEffect(() => {
     let active = true;
@@ -255,6 +256,7 @@ export default function ResultDetail() {
         const { data } = await api.get(`/results/${id}`);
         if (!active) return;
         setResult(data.data.result);
+        setSupervisorEval(data.data.supervisorEvaluation || null);
         const details = data.data.questionDetails || [];
         setQuestionDetails(details);
         setQuestionSummary({
@@ -413,6 +415,31 @@ export default function ResultDetail() {
                   <h3 className="text-sm font-bold text-gray-800">Development Recommendation</h3>
                 </div>
                 <p className="px-5 py-4 text-sm text-gray-700 leading-relaxed">{result.recommendation}</p>
+              </div>
+            )}
+
+            {/* Supervisor feedback (recorded with the supervisor evaluation) */}
+            {supervisorEval && (supervisorEval.comments || supervisorEval.submittedAt) && (
+              <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
+                <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-2">
+                  <MessageSquare className="w-4 h-4 text-brand-red" />
+                  <h3 className="text-sm font-bold text-gray-800">Supervisor Feedback</h3>
+                  {supervisorEval.submittedAt && (
+                    <span className="ml-auto text-[11px] text-gray-400">
+                      {new Date(supervisorEval.submittedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                    </span>
+                  )}
+                </div>
+                <div className="px-5 py-4">
+                  {supervisorEval.supervisorName && (
+                    <p className="text-xs font-semibold text-gray-500 mb-1.5">{supervisorEval.supervisorName}</p>
+                  )}
+                  {supervisorEval.comments ? (
+                    <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{supervisorEval.comments}</p>
+                  ) : (
+                    <p className="text-xs text-gray-400 italic">Evaluation submitted without written comments.</p>
+                  )}
+                </div>
               </div>
             )}
           </div>

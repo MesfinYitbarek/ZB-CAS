@@ -61,7 +61,8 @@ export default function PendingEvaluations() {
   useEffect(() => { load(); }, []);
 
   const navigate = (item) => {
-    const base = `/assessments/${item.assessmentId}/evaluate?employeeId=${item.employee._id}`;
+    const empId = item.employee._id || item.employee.id;
+    const base = `/assessments/${item.assessmentId}/evaluate?employeeId=${empId}`;
     nav(item.assessmentType === 'Combined' ? base + '&type=combined' : base);
   };
 
@@ -120,7 +121,7 @@ export default function PendingEvaluations() {
                 const alreadyDone = item.supervisorSubmitted;
                 return (
                   <div
-                    key={`${item.assessmentId}-${item.employee._id}`}
+                    key={`${item.assessmentId}-${item.employee._id || item.employee.id}`}
                     className={`bg-white rounded-xl border transition-all hover:shadow-md overflow-hidden ${alreadyDone ? 'border-gray-200' : 'border-gray-100 hover:border-red-200'}`}
                   >
                     {/* Priority strip */}
@@ -204,7 +205,7 @@ export default function PendingEvaluations() {
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
               {scheduled.map((item) => (
                 <div
-                  key={`sched-${item.assessmentId}-${item.employee._id}`}
+                  key={`sched-${item.assessmentId}-${item.employee._id || item.employee.id}`}
                   className="bg-white rounded-xl border border-gray-200 overflow-hidden opacity-80"
                 >
                   <div className="h-1 bg-gray-400" />
