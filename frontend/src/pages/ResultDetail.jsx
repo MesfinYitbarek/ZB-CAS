@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
@@ -8,8 +8,40 @@ import {
   Target, Building2, Briefcase, ListChecks, MessageSquare
 } from 'lucide-react';
 import api from '../utils/api';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '../hooks/queries';
+
+// ─── HR manual grading for ShortAnswer questions ─────────────────────────────
+const ShortAnswerGrader = ({ grade, maxScore, saving, onSave }) => {
+  const [val, setVal] = useState(grade?.manualScore ?? '');
+  useEffect(() => { setVal(grade?.manualScore ?? ''); }, [grade?.manualScore]);
+  const num = val === '' ? NaN : Number(val);
+  const valid = !Number.isNaN(num) && num >= 0 && num <= maxScore;
+  return (
+    <div className="mt-4 p-3 rounded-xl border border-amber-200 bg-amber-50/70">
+      <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">Manual grading (HR)</p>
+      <div className="flex items-center gap-2">
+        <input
+          type="number" min={0} max={maxScore} step={0.5}
+          value={val} onChange={e => setVal(e.target.value)}
+          placeholder={`0 – ${maxScore}`}
+          className="w-24 h-9 px-3 rounded-lg border border-gray-300 focus:border-brand-red focus:ring focus:ring-red-200 text-sm bg-white"
+        />
+        <span className="text-xs text-gray-500">/ {maxScore}</span>
+        <button
+          onClick={() => valid && onSave(grade._id, num)}
+          disabled={!valid || saving}
+          className="px-3 py-1.5 bg-brand-red text-white rounded-lg text-xs font-semibold hover:bg-brand-red-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+        {grade?.manualScore != null && (
+          <span className="text-[11px] text-gray-500">Graded: {grade.manualScore}</span>
+        )}
+      </div>
+    </div>
+  );
+};
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 const formatAnswer = (answer, questionType) => {
@@ -82,7 +114,7 @@ const getViolationStyle = (type) => ({
 }[type] || { bg: 'bg-gray-100', text: 'text-gray-700', dot: 'bg-gray-400' });
 
 // ─── Question detail row (expandable) ────────────────────────────────────────
-const QuestionDetailRow = ({ detail, isExpanded, onToggle }) => {
+const QuestionDetailRow = ({ detail, isExpanded, onToggle, grade, canGrade, grading, onSaveGrade }) => {
   const scoreColor = detail.isCorrect ? 'text-brand-black' : detail.isPartial ? 'text-gray-500' : detail.isUnanswered ? 'text-gray-400' : 'text-red-700';
   return (
     <div className="border border-gray-200 rounded-xl overflow-hidden bg-white">
@@ -127,13 +159,16 @@ const QuestionDetailRow = ({ detail, isExpanded, onToggle }) => {
                 style={{ width: `${detail.scorePercentage ?? 0}%` }} />
             </div>
           </div>
+          {canGrade && detail.questionType === 'ShortAnswer' && grade && (
+            <ShortAnswerGrader grade={grade} maxScore={detail.maxScore} saving={grading} onSave={onSaveGrade} />
+          )}
         </div>
       )}
     </div>
   );
 };
 
-const QuestionDetailsSection = ({ questionDetails, summary, loading }) => {
+const QuestionDetailsSection = ({ questionDetails, summary, loading, gradeMap, canGrade, gradingId, onSaveGrade }) => {
   const [expanded, setExpanded] = useState({});
   const [filterType, setFilterType] = useState('all');
   if (loading) return <div className="text-center py-6 text-gray-400 text-sm">Loading questions...</div>;
@@ -173,9 +208,13 @@ const QuestionDetailsSection = ({ questionDetails, summary, loading }) => {
         ))}
       </div>
       <div className="space-y-2.5">
-        {filtered.map((d, i) => (
-          <QuestionDetailRow key={i} detail={d} isExpanded={!!expanded[i]} onToggle={() => setExpanded(prev => ({ ...prev, [i]: !prev[i] }))} />
-        ))}
+        {filtered.map((d, i) => {
+          const g = gradeMap?.[d.questionId];
+          return (
+            <QuestionDetailRow key={i} detail={d} isExpanded={!!expanded[i]} onToggle={() => setExpanded(prev => ({ ...prev, [i]: !prev[i] }))}
+              grade={g} canGrade={canGrade} grading={gradingId != null && gradingId === g?._id} onSaveGrade={onSaveGrade} />
+          );
+        })}
       </div>
     </div>
   );
@@ -242,6 +281,7 @@ export default function ResultDetail() {
   const nav = useNavigate();
   const { isAdmin } = useAuth();
   const { show } = useToast();
+  const queryClient = useQueryClient();
 
   const { data, isLoading: loading, isError } = useQuery({
     queryKey: queryKeys.results.detail(id),
@@ -274,6 +314,43 @@ export default function ResultDetail() {
     },
     enabled: isAdmin && !!assessmentId && !!userId,
   });
+
+  // HR manual grading: raw responses (carry response ids + manual scores) for
+  // the viewed employee, keyed by question id.
+  const { data: adminResponses } = useQuery({
+    queryKey: queryKeys.responses.adminAll(assessmentId),
+    queryFn: async () => {
+      const { data } = await api.get(`/responses/admin/${assessmentId}/all`);
+      return data.data.responses || [];
+    },
+    enabled: isAdmin && !!assessmentId,
+  });
+  const gradeMap = useMemo(() => {
+    const map = {};
+    (adminResponses || []).forEach(r => {
+      const takerId = r.employee?.id || r.user?.id;
+      if (takerId && takerId === userId && r.question?.id) map[r.question.id] = r;
+    });
+    return map;
+  }, [adminResponses, userId]);
+
+  const [gradingId, setGradingId] = useState(null);
+  const gradeMutation = useMutation({
+    mutationFn: async ({ responseId, score }) => {
+      await api.patch(`/responses/admin/manual-score/${responseId}`, { manualScore: score });
+      await api.post('/results/auto-score', { assessmentId, employeeId: userId });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.results.detail(id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.results.all });
+      show('Score saved and result recalculated.', 'success');
+    },
+    onError: (err) => show(err.response?.data?.message || 'Failed to save score.', 'error'),
+  });
+  const handleSaveGrade = (responseId, score) => {
+    setGradingId(responseId);
+    gradeMutation.mutate({ responseId, score }, { onSettled: () => setGradingId(null) });
+  };
 
   useEffect(() => {
     if (isError) {
@@ -472,7 +549,8 @@ export default function ResultDetail() {
           <div className="lg:col-span-2 space-y-6">
             {isAdmin ? (
               <>
-                <QuestionDetailsSection questionDetails={questionDetails} summary={questionSummary} loading={loading} />
+                <QuestionDetailsSection questionDetails={questionDetails} summary={questionSummary} loading={loading}
+          gradeMap={gradeMap} canGrade={isAdmin} gradingId={gradingId} onSaveGrade={handleSaveGrade} />
                 <SecuritySection securityData={securityData} loading={loadingSecurity} />
               </>
             ) : (

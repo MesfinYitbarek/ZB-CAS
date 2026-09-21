@@ -96,17 +96,25 @@ const scoreSingleResponse = (question, response) => {
             const correctOrder = question.correctOrder || [];
             if (correctOrder.length === 0) return 0;
 
-            // Handle both array and object formats
-            let userOrder = [];
-            if (Array.isArray(response.selectedAnswer)) {
-                userOrder = response.selectedAnswer;
-            } else if (response.selectedAnswer && typeof response.selectedAnswer === 'object') {
-                userOrder = Object.values(response.selectedAnswer);
+            // The take-assessment UI stores answers as {item: rank}, so invert
+            // to a rank-indexed array before comparing positions. (Comparing
+            // raw Object.values — ranks — against item texts always scored 0.)
+            let userAtRank = [];
+            const ans = response.selectedAnswer;
+            if (Array.isArray(ans)) {
+                userAtRank = ans;
+            } else if (ans && typeof ans === 'object') {
+                Object.entries(ans).forEach(([item, rank]) => {
+                    const r = Number(rank);
+                    if (Number.isInteger(r) && r >= 1 && r <= correctOrder.length) {
+                        userAtRank[r - 1] = item;
+                    }
+                });
             }
 
             let correctPos = 0;
-            for (let i = 0; i < Math.min(correctOrder.length, userOrder.length); i++) {
-                if (userOrder[i] === correctOrder[i]) correctPos++;
+            for (let i = 0; i < correctOrder.length; i++) {
+                if (userAtRank[i] !== undefined && userAtRank[i] === correctOrder[i]) correctPos++;
             }
 
             awarded = (correctPos / correctOrder.length) * maxScore;

@@ -134,7 +134,9 @@ export default function AssessmentDetail() {
     targetAudience: { type: 'ALL_DEPARTMENTS', departments: [], employeeIds: [] },
     questionIds: [],
     startDate: '',
+    startTime: '09:00',
     endDate: '',
+    endTime: '17:00',
     timeLimit: '',
     maxAttempts: '',
     type: 'SelfAssessment',
@@ -173,7 +175,9 @@ export default function AssessmentDetail() {
       targetAudience: a.targetAudience || { type: 'ALL_DEPARTMENTS', departments: [], employeeIds: [] },
       questionIds: a.questionIds?.map((q) => q._id) || [],
       startDate: a.startDate?.split('T')[0] || '',
+      startTime: a.startDate ? new Date(a.startDate).toISOString().slice(11, 16) : '09:00',
       endDate: a.endDate?.split('T')[0] || '',
+      endTime: a.endDate ? new Date(a.endDate).toISOString().slice(11, 16) : '17:00',
       timeLimit: a.timeLimit || '',
       maxAttempts: a.maxAttempts ?? '',
       type: a.type,
@@ -212,8 +216,21 @@ export default function AssessmentDetail() {
 
   const handleUpdate = async () => {
     try {
+      const { startTime, endTime, ...rest } = form;
+      const startDateTime = form.startDate && startTime
+        ? new Date(`${form.startDate}T${startTime}`).toISOString()
+        : form.startDate || undefined;
+      const endDateTime = form.endDate && endTime
+        ? new Date(`${form.endDate}T${endTime}`).toISOString()
+        : form.endDate || undefined;
+      if (startDateTime && endDateTime && new Date(endDateTime) <= new Date(startDateTime)) {
+        show('End date must be after start date.', 'error');
+        return;
+      }
       const payload = {
-        ...form,
+        ...rest,
+        startDate: startDateTime,
+        endDate: endDateTime,
         reminderDaysBefore: form.reminderDaysBefore ? Number(form.reminderDaysBefore) : null,
         timeLimit: form.timeLimit ? Number(form.timeLimit) : null,
         maxAttempts: form.maxAttempts ? Number(form.maxAttempts) : null,
@@ -713,9 +730,21 @@ export default function AssessmentDetail() {
                 className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red text-sm" />
             </div>
             <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Start Time</label>
+              <input type="time" value={form.startTime}
+                onChange={(e) => setForm(prev => ({ ...prev, startTime: e.target.value }))}
+                className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red text-sm" />
+            </div>
+            <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">End Date</label>
               <input type="date" value={form.endDate}
                 onChange={(e) => setForm(prev => ({ ...prev, endDate: e.target.value }))}
+                className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red text-sm" />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">End Time</label>
+              <input type="time" value={form.endTime}
+                onChange={(e) => setForm(prev => ({ ...prev, endTime: e.target.value }))}
                 className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red text-sm" />
             </div>
           </div>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
@@ -31,6 +31,33 @@ const LoadingButton = ({ onClick, loading, disabled, className, children, ...pro
     ) : children}
   </button>
 );
+
+// ─── Deterministic per-employee shuffle ─────────────────────────────────────────
+// Same employee + assessment always sees the same order (stable across reloads
+// and retakes, since answers are keyed by question _id); different employees
+// see different orders.
+const hashSeed = (str = '') => {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+};
+
+const mulberry32 = (seed) => () => {
+  seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+  let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
+
+const shuffleBySeed = (arr = [], seedStr = '') => {
+  const rand = mulberry32(hashSeed(String(seedStr)));
+  const out = [...arr];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+};
 
 // ─── Security Laws Screen ─────────────────────────────────────────────────────
 const SecurityLawsScreen = ({ assessment, onAccept, onCancel }) => {
@@ -596,8 +623,19 @@ export default function TakeAssessment() {
     return true;
   };
 
+  // Per-employee display order: questions and options are shuffled with a seed
+  // derived from the employee + assessment so each employee sees a different order.
+  const orderSeed = `${user?._id || 'anon'}:${assessmentId}`;
+  const orderedQuestions = useMemo(
+    () => shuffleBySeed(assessment?.questionIds || [], `${orderSeed}:questions`),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [assessment?.questionIds, orderSeed]
+  );
+
   // ── Question renderer ───────────────────────────────────────────────────────
   const renderQuestion = (q) => {
+    if (!q) return null;
+    const optSeed = (field) => `${orderSeed}:${q._id}:${field}`;
     switch (q.type) {
       case 'MCQ':
       case 'ScenarioMCQ':
@@ -609,7 +647,7 @@ export default function TakeAssessment() {
                 <p className="text-xs text-gray-700 leading-relaxed whitespace-pre-wrap break-words">{q.scenario}</p>
               </div>
             )}
-            {(q.options || []).map((opt, idx) => {
+            {shuffleBySeed(q.options, optSeed('options')).map((opt, idx) => {
               const chosen = answers[q._id] === opt;
               return (
                 <label key={idx} className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${chosen ? 'border-red-600 bg-red-50' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
@@ -670,7 +708,7 @@ export default function TakeAssessment() {
       case 'MultiSelect':
         return (
           <div className="space-y-2">
-            {(q.options || []).map((opt, idx) => {
+            {shuffleBySeed(q.options, optSeed('options')).map((opt, idx) => {
               const selected = (answers[q._id] || []).includes(opt);
               return (
                 <label key={idx} className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${selected ? 'border-red-600 bg-red-50' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
@@ -694,7 +732,7 @@ export default function TakeAssessment() {
           <div className="space-y-3">
             <p className="text-[10px] text-gray-600 mb-2">Match items from left to right</p>
             <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
-              {(q.matchingLeft || []).map((leftItem, idx) => (
+              {shuffleBySeed(q.matchingLeft, optSeed('left')).map((leftItem, idx) => (
                 <div key={idx} className="flex items-center gap-2 mb-2 last:mb-0">
                   <div className="flex-1 p-2.5 bg-white rounded border border-gray-300 text-xs font-medium text-gray-800 break-words min-w-0">{leftItem}</div>
                   <span className="text-gray-400 text-lg flex-shrink-0">↔</span>
@@ -702,7 +740,7 @@ export default function TakeAssessment() {
                     onChange={(e) => handleAnswer(q._id, { ...(answers[q._id] || {}), [leftItem]: e.target.value })}
                     className="flex-1 h-10 px-3 rounded border border-gray-300 focus:border-red-600 focus:ring focus:ring-red-200 text-xs bg-white min-w-0">
                     <option value="">— Select match —</option>
-                    {(q.matchingRight || []).map((r) => <option key={r} value={r}>{r}</option>)}
+                    {shuffleBySeed(q.matchingRight, optSeed('right')).map((r) => <option key={r} value={r}>{r}</option>)}
                   </select>
                 </div>
               ))}
@@ -715,7 +753,7 @@ export default function TakeAssessment() {
           <div className="space-y-3">
             <p className="text-[10px] text-gray-600 mb-2">Arrange items in correct order — 1 = first</p>
             <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
-              {(q.orderItems || []).map((item, idx) => (
+              {shuffleBySeed(q.orderItems, optSeed('items')).map((item, idx) => (
                 <div key={idx} className="flex items-center gap-2 mb-2 last:mb-0">
                   <select value={(answers[q._id] || {})[item] || ''}
                     onChange={(e) => handleAnswer(q._id, { ...(answers[q._id] || {}), [item]: parseInt(e.target.value, 10) })}
@@ -735,7 +773,7 @@ export default function TakeAssessment() {
           <div className="space-y-3">
             <p className="text-[10px] text-gray-600 mb-2">Classify each item into a category</p>
             <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
-              {(q.classificationItems || []).map((item, idx) => (
+              {shuffleBySeed(q.classificationItems, optSeed('items')).map((item, idx) => (
                 <div key={idx} className="flex items-center gap-2 mb-2 last:mb-0">
                   <div className="flex-1 p-2.5 bg-white rounded border border-gray-300 text-xs font-medium text-gray-800 break-words min-w-0">{item}</div>
                   <span className="text-gray-400 text-lg flex-shrink-0">→</span>
@@ -743,7 +781,7 @@ export default function TakeAssessment() {
                     onChange={(e) => handleAnswer(q._id, { ...(answers[q._id] || {}), [item]: e.target.value })}
                     className="flex-1 h-10 px-3 rounded border border-gray-300 focus:border-red-600 text-xs bg-white">
                     <option value="">— Select category —</option>
-                    {(q.categoryNames || []).map((cat) => <option key={cat} value={cat}>{cat}</option>)}
+                    {shuffleBySeed(q.categoryNames, optSeed('cats')).map((cat) => <option key={cat} value={cat}>{cat}</option>)}
                   </select>
                 </div>
               ))}
@@ -770,7 +808,7 @@ export default function TakeAssessment() {
 
   if (!assessment) return null;
 
-  const questions = assessment.questionIds || [];
+  const questions = orderedQuestions;
   const currentQuestion = questions[currentQuestionIndex];
   const answeredCount = questions.filter(isAnswered).length;
   const progressPercent = questions.length > 0 ? Math.round((answeredCount / questions.length) * 100) : 0;

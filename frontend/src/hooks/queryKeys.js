@@ -60,6 +60,7 @@ export const queryKeys = {
   },
 
   responses: {
+    adminAll: (assessmentId) => ['responses', 'admin', assessmentId],
     progress: (assessmentId) => ['responses', 'progress', assessmentId],
     supervisor: (assessmentId, employeeId) => ['responses', 'supervisor', assessmentId, employeeId],
     securityViolations: (assessmentId, userId) => ['responses', 'security-violations', assessmentId, userId],
