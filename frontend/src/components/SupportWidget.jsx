@@ -1,9 +1,9 @@
 /* components/SupportWidget.jsx — Real-time Telegram/Instagram-quality chat */
 /* Socket.IO WebSocket | Optimistic sends | Typing indicators | Presence | Read receipts */
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { useQuery, useQueries, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueries, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
-import { useSocket } from '../hooks/useSocket';
+import { useAppSocket } from '../context/SocketContext';
 import { queryKeys } from '../hooks/queryKeys';
 import { usePublicFaqs, useFaqCategories } from '../hooks/queries';
 import api from '../utils/api';
@@ -33,6 +33,11 @@ function isSameDay(a, b) {
 function getInitials(name = '') {
   return name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
 }
+
+// Raw senderId/receiverId scalars are always present on message payloads
+// (REST + socket); nested sender/receiver objects may or may not carry _id.
+const senderIdOf = (msg) => msg?.senderId || msg?.sender?._id || msg?.sender?.id || msg?.sender;
+const receiverIdOf = (msg) => msg?.receiverId || msg?.receiver?._id || msg?.receiver?.id || msg?.receiver;
 
 // ─── Avatar ───────────────────────────────────────────────────────────────────
 
@@ -103,19 +108,42 @@ function ChatView({ partner, onBack, socket, connected, currentUserId, onlineUse
   const typingTimer = useRef(null);
   const isOnline = onlineUsers.has(partner._id);
 
-  const conversationQuery = useQuery({
+  // Telegram-style windowed history: newest chunk first, older chunks load on scroll-up
+  const PAGE_SIZE = 30;
+  const conversationQuery = useInfiniteQuery({
     queryKey: queryKeys.chat.conversation(partner._id),
-    queryFn: async () => {
-      const { data } = await api.get(`/chat/conversation/${partner._id}`);
-      return data.data || [];
+    queryFn: async ({ pageParam }) => {
+      const { data } = await api.get(`/chat/conversation/${partner._id}`, {
+        params: { limit: PAGE_SIZE, ...(pageParam ? { before: pageParam } : {}) },
+      });
+      return data.data; // { messages, hasMore }
+    },
+    initialPageParam: undefined,
+    getNextPageParam: (lastPage) => {
+      if (!lastPage?.hasMore || !lastPage.messages?.length) return undefined;
+      return lastPage.messages[0]._id; // oldest of this chunk = cursor for older
     },
     enabled: !!partner._id,
   });
   const loading = conversationQuery.isLoading;
 
   useEffect(() => {
-    if (conversationQuery.data !== undefined) setMessages(conversationQuery.data);
-  }, [conversationQuery.data]);
+    const pages = conversationQuery.data?.pages;
+    if (!pages) return;
+    const serverMsgs = [...pages].reverse().flatMap(p => p.messages || []);
+    setMessages(prev => {
+      const serverIds = new Set(serverMsgs.map(m => m._id));
+      const confirmedTexts = new Set(
+        serverMsgs.filter(m => senderIdOf(m) === currentUserId).map(m => m.message)
+      );
+      // Optimistic sends still in flight + live socket arrivals newer than the snapshot
+      const carry = prev.filter(m =>
+        (m._optimistic && !confirmedTexts.has(m.message)) ||
+        (!m._optimistic && !serverIds.has(m._id))
+      );
+      return [...serverMsgs, ...carry];
+    });
+  }, [conversationQuery.data, currentUserId]);
 
   useEffect(() => {
     socket?.emit('message:read', { senderId: partner._id });
@@ -124,13 +152,13 @@ function ChatView({ partner, onBack, socket, connected, currentUserId, onlineUse
   useEffect(() => {
     if (!socket) return;
     const onNew = (msg) => {
-      const senderId = msg.sender?._id || msg.sender;
-      const receiverId = msg.receiver?._id || msg.receiver;
+      const senderId = senderIdOf(msg);
+      const receiverId = receiverIdOf(msg);
       const related = (senderId === partner._id && receiverId === currentUserId) ||
         (senderId === currentUserId && receiverId === partner._id);
       if (!related) return;
       setMessages(prev => {
-        const withoutOpt = prev.filter(m => !(m._optimistic && m.message === msg.message && (m.sender?._id || m.sender) === currentUserId));
+        const withoutOpt = prev.filter(m => !(m._optimistic && m.message === msg.message && senderIdOf(m) === currentUserId));
         if (withoutOpt.some(m => m._id === msg._id)) return withoutOpt;
         return [...withoutOpt, msg];
       });
@@ -138,7 +166,7 @@ function ChatView({ partner, onBack, socket, connected, currentUserId, onlineUse
     };
     const onRead = ({ byUserId }) => {
       if (byUserId === partner._id) setMessages(prev => prev.map(m =>
-        (m.sender?._id || m.sender) === currentUserId ? { ...m, read: true } : m
+        senderIdOf(m) === currentUserId ? { ...m, read: true } : m
       ));
     };
     const onTypStart = ({ userId }) => { if (userId === partner._id) setPartnerTyping(true); };
@@ -156,12 +184,46 @@ function ChatView({ partner, onBack, socket, connected, currentUserId, onlineUse
     };
   }, [socket, partner._id, currentUserId]);
 
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: loading ? 'instant' : 'smooth' }); }, [messages, partnerTyping, loading]);
+  // Scroll anchor kept across older-chunk prepends so the view doesn't jump
+  const anchorRef = useRef(null);
+  // Stick to the bottom (latest message) until the user scrolls up
+  const followRef = useRef(true);
+  const firstPaintRef = useRef(true);
+
+  useEffect(() => {
+    followRef.current = true;
+    firstPaintRef.current = true;
+    anchorRef.current = null;
+  }, [partner._id]);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    if (anchorRef.current != null) {
+      el.scrollTop = el.scrollHeight - anchorRef.current;
+      anchorRef.current = null;
+      return;
+    }
+    if (!followRef.current) return;
+    if (firstPaintRef.current) {
+      el.scrollTop = el.scrollHeight; // open at the latest message, no sweep
+      firstPaintRef.current = false;
+    } else {
+      endRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages, partnerTyping, loading]);
 
   const handleScroll = () => {
     const el = containerRef.current;
     if (!el) return;
-    setShowScrollBtn(el.scrollHeight - el.scrollTop - el.clientHeight > 100);
+    const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
+    setShowScrollBtn(dist > 100);
+    followRef.current = dist < 120;
+    // Telegram-style: near the top → load the next older chunk
+    if (el.scrollTop < 120 && conversationQuery.hasNextPage && !conversationQuery.isFetchingNextPage) {
+      anchorRef.current = el.scrollHeight;
+      conversationQuery.fetchNextPage();
+    }
   };
 
   const handleInputChange = (e) => {
@@ -208,7 +270,7 @@ function ChatView({ partner, onBack, socket, connected, currentUserId, onlineUse
 
   const grouped = useMemo(() => messages.map((msg, i) => {
     const prev = messages[i - 1], next = messages[i + 1];
-    const sid = msg.sender?._id || msg.sender;
+    const sid = senderIdOf(msg);
     const psid = prev ? (prev.sender?._id || prev.sender) : null;
     const nsid = next ? (next.sender?._id || next.sender) : null;
     const showDate = !prev || !isSameDay(prev.createdAt, msg.createdAt);
@@ -246,21 +308,28 @@ function ChatView({ partner, onBack, socket, connected, currentUserId, onlineUse
             </div>
             <div><p className="text-sm font-medium text-gray-700">Start a conversation</p><p className="text-xs text-gray-400 mt-0.5">with {partner.name}</p></div>
           </div>
-        ) : grouped.map(({ msg, isFirst, isLast, showDate }) => {
-          const sid = msg.sender?._id || msg.sender;
-          return (
-            <div key={msg._id}>
-              {showDate && (
-                <div className="flex items-center gap-2 my-3">
-                  <div className="flex-1 h-px bg-gray-100" />
-                  <span className="text-[10px] font-medium text-gray-400">{formatDateSep(msg.createdAt)}</span>
-                  <div className="flex-1 h-px bg-gray-100" />
-                </div>
-              )}
-              <MessageBubble msg={msg} isMe={sid === currentUserId} isFirst={isFirst} isLast={isLast} />
+        ) : (<>
+          {conversationQuery.isFetchingNextPage && (
+            <div className="flex items-center justify-center py-2">
+              <div className="flex gap-1">{[0,1,2].map(i=><div key={i} className="w-1.5 h-1.5 bg-gray-300 rounded-full animate-bounce" style={{animationDelay:`${i*0.12}s`}}/>)}</div>
             </div>
-          );
-        })}
+          )}
+          {grouped.map(({ msg, isFirst, isLast, showDate }) => {
+            const sid = senderIdOf(msg);
+            return (
+              <div key={msg._id}>
+                {showDate && (
+                  <div className="flex items-center gap-2 my-3">
+                    <div className="flex-1 h-px bg-gray-100" />
+                    <span className="text-[10px] font-medium text-gray-400">{formatDateSep(msg.createdAt)}</span>
+                    <div className="flex-1 h-px bg-gray-100" />
+                  </div>
+                )}
+                <MessageBubble msg={msg} isMe={sid === currentUserId} isFirst={isFirst} isLast={isLast} />
+              </div>
+            );
+          })}
+        </>)}
         {partnerTyping && (
           <div className="flex justify-start mb-2">
             <div className="bg-gray-100 rounded-2xl rounded-bl-sm"><TypingDots /></div>
@@ -332,9 +401,10 @@ function ContactList({ onSelect, socket, onlineUsers }) {
   useEffect(() => {
     if (!socket) return;
     const onNew = (msg) => {
-      const sid = msg.sender?._id || msg.sender;
+      const sid = senderIdOf(msg);
+      const rid = receiverIdOf(msg);
       setContacts(prev => prev.map(c => {
-        if (c.partner._id === sid || c.partner._id === (msg.receiver?._id || msg.receiver)) {
+        if (c.partner._id === sid || c.partner._id === rid) {
           return { ...c, lastMessage: msg, unreadCount: sid !== user?._id ? (c.unreadCount || 0) + 1 : c.unreadCount };
         }
         return c;
@@ -376,8 +446,16 @@ function ContactList({ onSelect, socket, onlineUsers }) {
 
 function ChatTab({ socket, connected }) {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const [selected, setSelected] = useState(null);
   const [onlineUsers, setOnlineUsers] = useState(new Set());
+
+  const handleSelect = (partner) => {
+    // Fresh badges the moment a conversation is opened
+    queryClient.invalidateQueries({ queryKey: queryKeys.chat.conversations });
+    queryClient.invalidateQueries({ queryKey: queryKeys.chat.unread });
+    setSelected(partner);
+  };
 
   useEffect(() => {
     if (!socket) return;
@@ -390,7 +468,7 @@ function ChatTab({ socket, connected }) {
 
   return selected
     ? <ChatView partner={selected} onBack={() => setSelected(null)} socket={socket} connected={connected} currentUserId={user?._id} onlineUsers={onlineUsers} />
-    : <ContactList onSelect={setSelected} socket={socket} onlineUsers={onlineUsers} />;
+    : <ContactList onSelect={handleSelect} socket={socket} onlineUsers={onlineUsers} />;
 }
 
 // ─── FAQ ──────────────────────────────────────────────────────────────────────
@@ -504,10 +582,9 @@ function FAQTab() {
 // ─── Main Widget ──────────────────────────────────────────────────────────────
 
 export default function SupportWidget() {
-  const { isAdmin, isSupervisor, isEmployee, user, getAccessToken } = useAuth();
+  const { isAdmin, isSupervisor, isEmployee, user } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('faq');
-  const [token, setToken] = useState(null);
   const queryClient = useQueryClient();
 
   const unreadQuery = useQuery({
@@ -575,16 +652,18 @@ export default function SupportWidget() {
   const onBtnClick = () => {
     // A drag ending on the button also fires click — swallow it
     if (dragRef.current.moved) { dragRef.current.moved = false; return; }
+    if (!isOpen) queryClient.invalidateQueries({ queryKey: queryKeys.chat.unread });
     setIsOpen(v => !v);
   };
 
-  useEffect(() => { if (getAccessToken) setToken(getAccessToken()); }, [getAccessToken, user]);
-  const { socket, connected } = useSocket(token);
+  const { socket, connected } = useAppSocket();
 
   useEffect(() => {
     if (!socket) return;
     const onNew = (msg) => {
-      if ((msg.receiver?._id || msg.receiver) === user?._id && (!isOpen || activeTab !== 'chat')) {
+      // New partners / corrected unread counts come from the server snapshot
+      queryClient.invalidateQueries({ queryKey: queryKeys.chat.conversations });
+      if (receiverIdOf(msg) === user?._id && (!isOpen || activeTab !== 'chat')) {
         queryClient.setQueryData(queryKeys.chat.unread, (old) => ({ count: (Number(old?.count ?? 0) + 1) }));
       }
     };

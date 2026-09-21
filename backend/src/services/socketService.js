@@ -93,7 +93,8 @@ export function initSocket(httpServer) {
           },
         });
 
-        const payload = { ...saved, _id: saved.id };
+        const withId = (u) => (u ? { ...u, _id: u.id } : u);
+        const payload = { ...saved, _id: saved.id, sender: withId(saved.sender), receiver: withId(saved.receiver) };
 
         // Deliver to receiver (their room) and back to sender
         io.to(receiverId).emit('message:new', payload);

@@ -15,6 +15,7 @@ import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import { LoadingPage } from './components/LoadingSpinner';
 import SupportWidget from './components/SupportWidget';
+import SocketProvider from './context/SocketContext';
 
 // ── Eager-loaded: Auth pages are tiny and needed before the app shell renders
 import Login from './pages/Login';
@@ -102,27 +103,29 @@ function AppShell({ children }) {
   const [mobileOpen,  setMobileOpen]  = useState(false);
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
-      <Sidebar
-        collapsed={collapsed}
-        onToggle={() => setCollapsed((p) => !p)}
-        mobileOpen={mobileOpen}
-        onNavClick={() => setMobileOpen(false)}
-        onMobileClose={() => setMobileOpen(false)}
-      />
+    <SocketProvider>
+      <div className="flex min-h-screen bg-gray-50">
+        <Sidebar
+          collapsed={collapsed}
+          onToggle={() => setCollapsed((p) => !p)}
+          mobileOpen={mobileOpen}
+          onNavClick={() => setMobileOpen(false)}
+          onMobileClose={() => setMobileOpen(false)}
+        />
 
-      <div
-        className={`flex-1 flex flex-col min-w-0 transition-all duration-200 ${
-          collapsed ? 'lg:ml-[65px]' : 'lg:ml-[220px]'
-        }`}
-      >
-        <Header onMobileToggle={() => setMobileOpen((p) => !p)} />
+        <div
+          className={`flex-1 flex flex-col min-w-0 transition-all duration-200 ${
+            collapsed ? 'lg:ml-[65px]' : 'lg:ml-[220px]'
+          }`}
+        >
+          <Header onMobileToggle={() => setMobileOpen((p) => !p)} />
 
-        <main className="flex-1">{children}</main>
+          <main className="flex-1">{children}</main>
 
-        <SupportWidget />
+          <SupportWidget />
+        </div>
       </div>
-    </div>
+    </SocketProvider>
   );
 }
 

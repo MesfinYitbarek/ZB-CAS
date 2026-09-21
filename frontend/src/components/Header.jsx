@@ -4,7 +4,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Menu, User, LogOut, ChevronDown, Home, Users, BookOpen, Target, FileText, MessageSquare, Clock, Zap, ChevronRight, Search, Plus, TrendingUp, Award, Lightbulb, ClipboardList, UserCheck, ClipboardCheck, BarChart3, Activity } from 'lucide-react';
 import NotificationBell from './NotificationBell';
-import { useSocket } from '../hooks/useSocket';
+import { useAppSocket } from '../context/SocketContext';
 
 // Human-readable label + colour for each role
 const ROLE_META = {
@@ -41,8 +41,8 @@ const BREADCRUMB_MAP = {
 
 
 export default function Header({ onMobileToggle }) {
-  const { user, activeRole, logout, getAccessToken } = useAuth();
-  const { socket } = useSocket(getAccessToken ? getAccessToken() : null);
+  const { user, activeRole, logout } = useAuth();
+  const { socket } = useAppSocket();
   const nav = useNavigate();
   const location = useLocation();
 
