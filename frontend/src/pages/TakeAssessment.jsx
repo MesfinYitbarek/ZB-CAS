@@ -1,17 +1,19 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import useAssessmentSecurity from '../hooks/useAssessmentSecurity';
 import {
   CheckCircle, ArrowLeft, Star, AlertTriangle, Clock, Shield,
-  TrendingUp, Award, FileText, Check, ChevronLeft, ChevronRight, X,
+  TrendingUp, Award, Check, ChevronLeft, ChevronRight, X,
   Calendar, Target, Info, Lock, Eye, EyeOff, MonitorX, Wifi,
   BookOpen, AlertCircle, Ban, Loader2
 } from 'lucide-react';
 import SecurityMonitor from '../components/SecurityMonitor';
-import { exportToPDF, generateFilename } from '../utils/exportUtils';
 import api from '../utils/api';
+import { useAssessmentDetail } from '../hooks/queries';
+import { queryKeys } from '../hooks/queryKeys';
 
 // ─── Loading Button ───────────────────────────────────────────────────────────
 const LoadingButton = ({ onClick, loading, disabled, className, children, ...props }) => (
@@ -230,11 +232,10 @@ export default function TakeAssessment() {
   const { user } = useAuth();
   const nav = useNavigate();
   const { show } = useToast();
+  const queryClient = useQueryClient();
 
   // ── State ───────────────────────────────────────────────────────────────────
-  const [assessment, setAssessment] = useState(null);
   const [answers, setAnswers] = useState({});
-  const [loading, setLoading] = useState(true);
   const [submitted, setSubmitted] = useState(false);
   const [result, setResult] = useState(null);
   const [scoringInProgress, setScoringInProgress] = useState(false);
@@ -255,11 +256,6 @@ export default function TakeAssessment() {
   // Button loading states
   const [submitting, setSubmitting] = useState(false);
   const [isLeavingBack, setIsLeavingBack] = useState(false);
-  const [exportingPdf, setExportingPdf] = useState(false);
-
-  // Persisted security summary (survives reloads; live hook state resets on reload)
-  const [securitySummary, setSecuritySummary] = useState(null);
-  const [securityLoaded, setSecurityLoaded] = useState(false);
 
   // Attempt tracking (maxAttempts null = unlimited)
   const [attempts, setAttempts] = useState({ used: 0, maxAttempts: null, remaining: null });
@@ -295,51 +291,105 @@ export default function TakeAssessment() {
     }
   });
 
-  // ── Load assessment ─────────────────────────────────────────────────────────
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const { data } = await api.get(`/assessments/${assessmentId}`);
-        const fetched = data.data.assessment;
-        setAssessment(fetched);
-
-        if (fetched.status === 'SCHEDULED') {
-          setIsWaitingForStart(true);
-        } else if (fetched.status === 'ACTIVE') {
-          setIsWaitingForStart(false);
-          if (fetched.timeLimit) security.startTimer(fetched.timeLimit);
-        }
-
-        if (fetched.status === 'ACTIVE' || fetched.status === 'COMPLETED') {
-          const prog = await api.get(`/responses/progress/${assessmentId}`, {
-            params: { employeeId, respondentType }
-          });
-          if (prog.data.data.isSubmitted) {
-            setSubmitted(true);
-            setAttempts({
-              used: prog.data.data.attemptsUsed || 0,
-              maxAttempts: prog.data.data.maxAttempts ?? null,
-              remaining: prog.data.data.attemptsRemaining ?? null,
-            });
-            await loadSecuritySummary();
-            await checkResult();
-          } else {
-            // Show security laws before assessment
-            setShowSecurityLaws(true);
-          }
-        }
-      } catch (err) {
-        if (err.response?.status === 403) {
-          show('You do not have permission to access this assessment.', 'error');
-        } else {
-          show('Failed to load assessment.', 'error');
-        }
-        nav('/assessments');
+  // ── React Query data ────────────────────────────────────────────────────────
+  const assessmentQuery = useAssessmentDetail(assessmentId, {
+    onError: (err) => {
+      if (err.response?.status === 403) {
+        show('You do not have permission to access this assessment.', 'error');
+      } else {
+        show('Failed to load assessment.', 'error');
       }
-      setLoading(false);
-    };
-    load();
-  }, [assessmentId]);
+      nav('/assessments');
+    },
+  });
+  const assessment = assessmentQuery.data?.assessment || null;
+
+  const needsProgress = assessment?.status === 'ACTIVE' || assessment?.status === 'COMPLETED';
+
+  const progressQuery = useQuery({
+    queryKey: queryKeys.responses.progress(assessmentId),
+    queryFn: async () => {
+      const res = await api.get(`/responses/progress/${assessmentId}`, {
+        params: { employeeId, respondentType }
+      });
+      return res.data.data;
+    },
+    enabled: !!assessment && needsProgress,
+  });
+
+  const userResultsQuery = useQuery({
+    queryKey: queryKeys.results.user(user?._id),
+    queryFn: async () => {
+      const { data } = await api.get(`/results/user/${user._id}`);
+      return data.data.results || [];
+    },
+    enabled: !!user?._id && submitted && !scoringInProgress,
+  });
+
+  const securityQuery = useQuery({
+    queryKey: queryKeys.responses.securityViolations(assessmentId, user?._id),
+    queryFn: async () => {
+      const { data } = await api.get(`/responses/security-violations/${assessmentId}/${user._id}`);
+      return data.data.securityRecord;
+    },
+    enabled: !!user?._id && !!assessmentId && submitted,
+  });
+
+  const securitySummary = securityQuery.data || null;
+  const securityLoaded = securityQuery.isSuccess;
+
+  // Previous status tracking for SCHEDULED → ACTIVE transitions
+  const prevStatusRef = useRef(null);
+
+  useEffect(() => {
+    if (!assessment) return;
+    const prev = prevStatusRef.current;
+    prevStatusRef.current = assessment.status;
+
+    if (assessment.status === 'SCHEDULED') {
+      setIsWaitingForStart(true);
+    } else if (assessment.status === 'ACTIVE') {
+      setIsWaitingForStart(false);
+      setCountdown(null);
+      if (prev === 'SCHEDULED') {
+        setShowSecurityLaws(true);
+        show('Assessment is now active! Review security guidelines.', 'success');
+      }
+      if (assessment.timeLimit && !security.timeRemaining) {
+        security.startTimer(assessment.timeLimit);
+      }
+    }
+  }, [assessment?.status, assessment?.startDate]);
+
+  // Progress gating (submitted state / attempts / show security laws)
+  useEffect(() => {
+    if (!progressQuery.data) return;
+    if (progressQuery.data.isSubmitted) {
+      setSubmitted(true);
+      setAttempts({
+        used: progressQuery.data.attemptsUsed || 0,
+        maxAttempts: progressQuery.data.maxAttempts ?? null,
+        remaining: progressQuery.data.attemptsRemaining ?? null,
+      });
+    } else {
+      setShowSecurityLaws(true);
+    }
+  }, [progressQuery.data]);
+
+  // Restore previously-submitted result from the live results table on reload
+  useEffect(() => {
+    if (!userResultsQuery.data) return;
+    const r = userResultsQuery.data.find(r =>
+      r.assessmentId?._id === assessmentId || r.assessmentId === assessmentId
+    );
+    if (r) setResult(r);
+  }, [userResultsQuery.data]);
+
+  const pendingResultData = submitted && !scoringInProgress && !result && userResultsQuery.isLoading;
+  const loading = assessmentQuery.isLoading
+    || (!!assessment && needsProgress && progressQuery.isLoading)
+    || pendingResultData
+    || (submitted && !scoringInProgress && securityQuery.isLoading);
 
   // ── Countdown for scheduled assessments ────────────────────────────────────
   useEffect(() => {
@@ -364,19 +414,8 @@ export default function TakeAssessment() {
     return () => clearInterval(countdownRef.current);
   }, [assessment?.status, assessment?.startDate]);
 
-  const refetchAssessment = async () => {
-    try {
-      const { data } = await api.get(`/assessments/${assessmentId}`);
-      const fetched = data.data.assessment;
-      setAssessment(fetched);
-      if (fetched.status === 'ACTIVE') {
-        setIsWaitingForStart(false);
-        setCountdown(null);
-        setShowSecurityLaws(true);
-        show('Assessment is now active! Review security guidelines.', 'success');
-        if (fetched.timeLimit) security.startTimer(fetched.timeLimit);
-      }
-    } catch { show('Failed to refresh assessment.', 'error'); }
+  const refetchAssessment = () => {
+    queryClient.invalidateQueries({ queryKey: queryKeys.assessments.detail(assessmentId) });
   };
 
   // ── Prevent accidental navigation ──────────────────────────────────────────
@@ -397,27 +436,6 @@ export default function TakeAssessment() {
       handleSubmit(true);
     }
   }, [security.timeExpired]);
-
-  // ── Result check ────────────────────────────────────────────────────────────
-  const checkResult = async () => {
-    try {
-      const { data } = await api.get(`/results/user/${user._id}`);
-      const r = data.data.results.find(r => r.assessmentId?._id === assessmentId);
-      if (r) setResult(r);
-    } catch (_) { }
-  };
-
-  // ── Load persisted security summary (accurate after a reload) ────────────────
-  const loadSecuritySummary = async () => {
-    try {
-      const { data } = await api.get(`/responses/security-violations/${assessmentId}/${user._id}`);
-      setSecuritySummary(data.data.securityRecord);
-    } catch (_) {
-      setSecuritySummary(null);
-    } finally {
-      setSecurityLoaded(true);
-    }
-  };
 
   // ── Auto-save ───────────────────────────────────────────────────────────────
   const autoSave = (questionId, value) => {
@@ -474,7 +492,7 @@ export default function TakeAssessment() {
       setShowSubmitWarning(false);
       setShowBackWarning(false);
       show('Assessment submitted successfully!', 'success');
-      loadSecuritySummary();
+      securityQuery.refetch();
 
       setScoringInProgress(true);
       try {
@@ -525,8 +543,8 @@ export default function TakeAssessment() {
       });
       setAnswers({});
       setResult(null);
-      setSecuritySummary(null);
-      setSecurityLoaded(false);
+      queryClient.removeQueries({ queryKey: queryKeys.responses.securityViolations(assessmentId, user?._id) });
+      queryClient.removeQueries({ queryKey: queryKeys.results.user(user?._id) });
       setCurrentQuestionIndex(0);
       violationCountRef.current = 0;
       setSubmitted(false);
@@ -557,22 +575,6 @@ export default function TakeAssessment() {
       nav('/results');
     }
   };
-
-  // ── Export ──────────────────────────────────────────────────────────────────
-  // const handleExportResult = async () => {
-  //   setExportingPdf(true);
-  //   try {
-  //     await exportToPDF(
-  //       { type: 'results', user, results: [{ ...result, competencyName: result.competencyId?.name }] },
-  //       generateFilename(`result_${assessment.competencyId?.name}`, 'pdf')
-  //     );
-  //     show('Exported!', 'success');
-  //   } catch (err) {
-  //     show('Export failed: ' + err.message, 'error');
-  //   } finally {
-  //     setExportingPdf(false);
-  //   }
-  // };
 
   // ── Security acknowledgment from laws screen ────────────────────────────────
   const handleStartSecure = () => {
@@ -933,13 +935,6 @@ export default function TakeAssessment() {
                 {retaking ? 'Starting…' : `Retake${attempts.maxAttempts != null ? ` (${attempts.remaining} left)` : ''}`}
               </button>
             )}
-            {/* <LoadingButton
-              onClick={handleExportResult}
-              loading={exportingPdf}
-              className="flex-1 py-2 border border-red-600 text-red-600 rounded-lg text-xs font-semibold hover:bg-red-50 flex items-center justify-center gap-1"
-            >
-              <FileText className="w-3 h-3" /> Export
-            </LoadingButton> */}
             <button onClick={() => nav('/results')} className="flex-1 py-2 border border-red-600 text-red-600 rounded-lg text-xs font-semibold hover:bg-red-50">
               View All
             </button>
@@ -1054,7 +1049,7 @@ export default function TakeAssessment() {
 
       {/* ── Sticky Header ── */}
       <div className="sticky top-0 z-30 bg-white border-b border-gray-200 shadow-sm">
-        <div className="max-w-4xl mx-auto px-4 py-2">
+        <div className="max-w-6xl mx-auto px-4 py-2">
           <div className="flex justify-between items-center mb-2">
             <button
               onClick={handleBackClick}
@@ -1088,8 +1083,10 @@ export default function TakeAssessment() {
         </div>
       </div>
 
-      {/* ── Main Content ── */}
-      <div className="max-w-4xl mx-auto px-4 py-4 space-y-4">
+      {/* ── Main Content: question + right-side navigator ── */}
+      <div className="max-w-6xl mx-auto px-4 py-4 flex flex-col lg:flex-row gap-4 items-start">
+
+        <div className="flex-1 min-w-0 w-full space-y-4">
 
         {/* Question Card */}
         <div className="bg-white rounded-xl shadow border border-gray-100 overflow-hidden">
@@ -1149,32 +1146,32 @@ export default function TakeAssessment() {
             </div>
           </div>
         </div>
+        {/* Question Navigator — right side, sticky, scrollable */}
+        </div>
 
-        {/* Question Navigator */}
-        <div className="bg-white rounded-xl shadow border border-gray-100 p-3">
-          <h3 className="text-xs font-bold text-brand-black mb-2">Navigator</h3>
-          <div className="grid grid-cols-10 gap-1">
+        <aside className="w-full lg:w-56 flex-shrink-0 bg-white rounded-xl shadow border border-gray-100 p-4 lg:sticky lg:top-32 lg:max-h-[calc(100vh-10rem)] lg:overflow-y-auto scrollbar-none">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-bold text-brand-black">Navigator</h3>
+            <span className="text-xs text-gray-500 font-medium">{answeredCount}/{questions.length}</span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
             {questions.map((q, idx) => {
               const ans = isAnswered(q);
               const isCurrent = idx === currentQuestionIndex;
               return (
-                <button key={q._id} onClick={() => goToQuestion(idx)}
-                  className={`w-full aspect-square rounded-md text-[10px] font-medium transition-all ${isCurrent ? 'bg-red-600 text-white shadow scale-105' : ans ? 'bg-gray-200 text-gray-700 border border-gray-400' : 'bg-gray-100 text-gray-600 border border-gray-200'}`}>
+                <button key={q._id} onClick={() => goToQuestion(idx)} title={`Question ${idx + 1}`}
+                  className={`w-9 h-9 rounded-lg text-xs font-semibold transition-all flex items-center justify-center flex-shrink-0 ${isCurrent ? 'bg-red-600 text-white shadow scale-105' : ans ? 'bg-green-300 text-gray-700 border border-gray-400' : 'bg-gray-100 text-gray-600 border border-gray-200 hover:border-gray-300'}`}>
                   {idx + 1}
                 </button>
               );
             })}
           </div>
-          <div className="flex items-center justify-center gap-4 mt-3 text-[9px]">
-            <div className="flex items-center gap-1"><div className="w-4 h-4 rounded bg-red-600" /><span className="text-gray-600">Current</span></div>
-            <div className="flex items-center gap-1"><div className="w-4 h-4 rounded bg-gray-200 border border-gray-400" /><span className="text-gray-600">Answered</span></div>
-            <div className="flex items-center gap-1"><div className="w-4 h-4 rounded bg-gray-100 border border-gray-200" /><span className="text-gray-600">Unanswered</span></div>
+          <div className="flex lg:flex-col flex-wrap gap-x-3 gap-y-1.5 mt-4 text-[10px]">
+            <div className="flex items-center gap-1.5"><div className="w-3.5 h-3.5 rounded bg-red-600 flex-shrink-0" /><span className="text-gray-600">Current</span></div>
+            <div className="flex items-center gap-1.5"><div className="w-3.5 h-3.5 rounded bg-green-300 border border-gray-400 flex-shrink-0" /><span className="text-gray-600">Answered</span></div>
+            <div className="flex items-center gap-1.5"><div className="w-3.5 h-3.5 rounded bg-gray-100 border border-gray-200 flex-shrink-0" /><span className="text-gray-600">Unanswered</span></div>
           </div>
-        </div>
-
-        <p className="text-center text-[10px] text-gray-500">
-          Results shown immediately after submission
-        </p>
+        </aside>
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import {
@@ -9,6 +9,8 @@ import { exportToExcel, generateFilename } from '../utils/exportUtils';
 import api from '../utils/api';
 import Pagination from '../components/Pagination';
 import EmptyState from '../components/EmptyState';
+import { useQuery } from '@tanstack/react-query';
+import { queryKeys } from '../hooks/queries';
 
 const ENTITY_FILTERS = [
   { value: '', label: 'All Entities' },
@@ -18,21 +20,20 @@ const ENTITY_FILTERS = [
   { value: 'Question', label: 'Questions' },
   { value: 'Recommendation', label: 'Recommendations' },
   { value: 'FAQ', label: 'FAQs' },
-  { value: 'Feedback', label: 'Feedback' },
-  { value: 'Result', label: 'Results' },
-  { value: 'SupervisorEvaluation', label: 'Supervisor Evaluations' },
-  { value: 'Response', label: 'Responses' },
+  { value: 'GeneratedReport', label: 'Reports' },
 ];
 
 const ENTITY_META = {
   User:                 { icon: User,            color: 'text-gray-700 bg-gray-200' },
   Assessment:           { icon: ClipboardList,   color: 'text-brand-red bg-brand-red/10' },
-  Result:               { icon: FileText,        color: 'text-gray-700 bg-gray-200' },
-  Feedback:             { icon: MessageSquare,   color: 'text-gray-700 bg-gray-200' },
   Competency:           { icon: Target,          color: 'text-gray-700 bg-gray-200' },
   Question:             { icon: HelpCircle,      color: 'text-gray-700 bg-gray-200' },
   Recommendation:       { icon: Lightbulb,       color: 'text-gray-700 bg-gray-200' },
   FAQ:                  { icon: BookOpen,        color: 'text-gray-700 bg-gray-200' },
+  GeneratedReport:      { icon: FileText,        color: 'text-gray-700 bg-gray-200' },
+  // Legacy entries (no longer logged, kept so old rows still render sensibly)
+  Result:               { icon: FileText,        color: 'text-gray-700 bg-gray-200' },
+  Feedback:             { icon: MessageSquare,   color: 'text-gray-700 bg-gray-200' },
   SupervisorEvaluation: { icon: ClipboardCheck,  color: 'text-gray-700 bg-gray-200' },
   Response:             { icon: CheckCircle,     color: 'text-gray-700 bg-gray-200' },
 };
@@ -45,10 +46,6 @@ export default function ActivityLog() {
   const { isAdmin } = useAuth();
   const { show } = useToast();
 
-  const [activities, setActivities] = useState([]);
-  const [users, setUsers] = useState([]);
-  const [loading, setLoading] = useState(true);
-
   const [filterEntity, setFilterEntity] = useState('');
   const [filterUser, setFilterUser] = useState('');
   const [fromDate, setFromDate] = useState('');
@@ -56,43 +53,45 @@ export default function ActivityLog() {
   const [search, setSearch] = useState('');
 
   const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [total, setTotal] = useState(0);
 
-  useEffect(() => {
-    if (!isAdmin) return;
-    api.get('/users', { params: { limit: 200 } })
-      .then(({ data }) => setUsers(data.data.users || []))
-      .catch(() => {});
-  }, [isAdmin]);
+  const { data: usersData } = useQuery({
+    queryKey: queryKeys.users.list({ limit: 200, role: 'HR_ADMIN' }),
+    queryFn: async () => {
+      const { data } = await api.get('/users', { params: { limit: 200, role: 'HR_ADMIN' } });
+      return data.data;
+    },
+    enabled: isAdmin,
+  });
 
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
+  const users = (usersData?.users || []).filter(
+    (u) => !u.roles || u.roles.includes('HR_ADMIN') || u.roles.includes('ADMIN')
+  );
 
+  const activityParams = useMemo(() => {
     const params = { limit: 50, page };
     if (filterEntity) params.entity = filterEntity;
     if (filterUser)   params.actorId = filterUser;
     if (fromDate)     params.from = fromDate;
     if (toDate)       params.to = toDate;
     if (search.trim()) params.search = search.trim();
-
-    api.get('/activities', { params })
-      .then(({ data }) => {
-        if (cancelled) return;
-        setActivities(data.data.activities || []);
-        setTotalPages(data.data.pagination?.totalPages || 1);
-        setTotal(data.data.pagination?.total || 0);
-      })
-      .catch(() => {
-        if (!cancelled) show('Failed to load activity log.', 'error');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-
-    return () => { cancelled = true; };
+    return params;
   }, [page, filterEntity, filterUser, fromDate, toDate, search]);
+
+  const { data: activitiesData, isLoading, isError } = useQuery({
+    queryKey: queryKeys.activityLog.list(activityParams),
+    queryFn: async () => {
+      const { data } = await api.get('/activities', { params: activityParams });
+      return data.data;
+    },
+  });
+
+  useEffect(() => {
+    if (isError) show('Failed to load activity log.', 'error');
+  }, [isError, show]);
+
+  const activities = activitiesData?.activities || [];
+  const totalPages = activitiesData?.pagination?.totalPages || 1;
+  const total = activitiesData?.pagination?.total || 0;
 
   const applyAndReset = (setter) => (value) => {
     setter(value);
@@ -159,7 +158,7 @@ export default function ActivityLog() {
             onChange={(e) => applyAndReset(setFilterUser)(e.target.value)}
             className="h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm w-52"
           >
-            <option value="">All Users</option>
+            <option value="">All Admins</option>
             {users.map(u => (
               <option key={u._id} value={u._id}>{u.name}</option>
             ))}
@@ -196,7 +195,7 @@ export default function ActivityLog() {
 
       {/* Scrollable Activity Timeline */}
       <div className="flex-1 overflow-y-auto scrollbar-none bg-white rounded-xl shadow-card border border-gray-100">
-        {loading ? (
+        {isLoading ? (
           <div className="flex items-center justify-center p-16">
             <div className="w-10 h-10 border-4 border-brand-red border-t-transparent rounded-full animate-spin" />
           </div>

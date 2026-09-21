@@ -1,15 +1,25 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import {
-  Plus, Star, ChevronLeft, ChevronRight, Filter,
-  MessageSquare, BarChart3, X, Eye, ArrowLeft,
+  Plus, Star, MessageSquare, BarChart3, X, Eye, ArrowLeft,
   RefreshCw, AlertCircle, Calendar, Search,
-  ClipboardList, Inbox,
+  ClipboardList,
 } from 'lucide-react';
 import Modal from '../components/Modal';
-import { LoadingCard } from '../components/LoadingSpinner';
+import EmptyState from '../components/EmptyState';
+import Pagination from '../components/Pagination';
 import api from '../utils/api';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { queryKeys, useAllCompetencies } from '../hooks/queries';
+
+// ─── Loading spinner (matches Users / Competencies / ActivityLog) ─────────────
+
+const Spinner = () => (
+  <div className="flex items-center justify-center p-16">
+    <div className="w-10 h-10 border-4 border-brand-red border-t-transparent rounded-full animate-spin" />
+  </div>
+);
 
 // ─── Shared helpers ────────────────────────────────────────────────────────────
 
@@ -48,7 +58,7 @@ function StarRating({ value, onChange, size = 'md' }) {
 function RatingDistribution({ summary, accent = 'bg-brand-red' }) {
   const { ratedCount } = summary;
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-1">
       {[5, 4, 3, 2, 1].map(star => {
         const count = summary[`rating${star}`] || 0;
         const pct = ratedCount > 0 ? (count / ratedCount) * 100 : 0;
@@ -114,52 +124,10 @@ function Avatar({ name, size = 'sm' }) {
   );
 }
 
-// ─── Paginator ────────────────────────────────────────────────────────────────
+// ─── Page header (matches Users / Competencies / ActivityLog) ─────────────────
 
-function Paginator({ pagination, goToPage }) {
-  if (!pagination || pagination.total <= pagination.limit) return null;
-  const tp = pagination.totalPages, cp = pagination.page;
-  const start = Math.max(1, Math.min(cp - 2, tp - 4));
-  const pages = Array.from({ length: Math.min(5, tp) }, (_, i) => start + i);
-  const from = (cp - 1) * pagination.limit + 1;
-  const to = Math.min(cp * pagination.limit, pagination.total);
-  return (
-    <div className="flex justify-between items-center pt-4 border-t border-gray-100 mt-4 flex-shrink-0">
-      <p className="text-sm text-gray-500">
-        <span className="font-semibold text-brand-black">{from}–{to}</span> of {pagination.total}
-      </p>
-      <div className="flex items-center gap-1">
-        <button onClick={() => goToPage(cp - 1)} disabled={cp === 1}
-          className="p-1.5 rounded-lg border border-gray-200 text-gray-400 hover:bg-gray-50 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
-          <ChevronLeft className="w-4 h-4" />
-        </button>
-        {pages.map(p => (
-          <button key={p} onClick={() => goToPage(p)}
-            className={`w-8 h-8 rounded-lg text-sm font-semibold transition-colors ${cp === p ? 'bg-brand-red text-white shadow-sm' : 'border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
-            {p}
-          </button>
-        ))}
-        <button onClick={() => goToPage(cp + 1)} disabled={cp === tp}
-          className="p-1.5 rounded-lg border border-gray-200 text-gray-400 hover:bg-gray-50 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
-          <ChevronRight className="w-4 h-4" />
-        </button>
-      </div>
-    </div>
-  );
-}
-
-const EmptyState = ({ icon: IconComp = Inbox, title, sub }) => (
-  <div className="flex flex-col items-center justify-center py-16 text-center">
-    <div className="w-12 h-12 rounded-2xl bg-gray-100 flex items-center justify-center mb-3">
-      <IconComp className="w-5 h-5 text-gray-300" />
-    </div>
-    <p className="text-sm font-semibold text-gray-500">{title}</p>
-    {sub && <p className="text-xs text-gray-400 mt-1">{sub}</p>}
-  </div>
-);
-
-const PageHeader = ({ title, subtitle, actions }) => (
-  <div className="flex justify-between items-start gap-4 mb-4 flex-shrink-0">
+const PageHeader = ({ title, actions }) => (
+  <div className="flex justify-between items-start mb-3 flex-shrink-0">
     <div>
       <h1 className="text-xl  font-bold text-brand-black">{title}</h1>
     </div>
@@ -174,111 +142,110 @@ export default function Feedback() {
 
   const [adminView, setAdminView] = useState('summary');
   const [selectedSummary, setSelectedSummary] = useState(null);
-  const [loading, setLoading] = useState(true);
 
   // modal
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState({ assessmentId: '', content: '', rating: 0 });
 
   // admin summary
-  const [summaries, setSummaries] = useState([]);
   const [summaryFilters, setSummaryFilters] = useState({ competencyId: '', dateFrom: '', dateTo: '' });
-  const [competencies, setCompetencies] = useState([]);
+  const [summaryPage, setSummaryPage] = useState(1);
+  const SUMMARY_PAGE_SIZE = 8;
 
   // admin detail
-  const [detailFeedbacks, setDetailFeedbacks] = useState([]);
   const [detailPagination, setDetailPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 0 });
 
   // employee
-  const [myFeedbacks, setMyFeedbacks] = useState([]);
   const [myPagination, setMyPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 0 });
-  const [eligibleAssessments, setEligibleAssessments] = useState([]);
 
-  useEffect(() => {
-    api.get('/competencies').then(({ data }) => setCompetencies(data.data?.competencies || [])).catch(() => {});
-  }, []);
+  const queryClient = useQueryClient();
 
-  useEffect(() => {
-    if (!isAdmin) {
-      api.get('/feedback/eligible-assessments')
-        .then(({ data }) => setEligibleAssessments(data.data?.assessments || []))
-        .catch(() => {});
-    }
-  }, [isAdmin]);
+  const { data: competenciesData } = useAllCompetencies({ staleTime: 5 * 60 * 1000 });
+  const competencies = competenciesData || [];
 
-  const loadSummaries = useCallback(async () => {
-    setLoading(true);
-    try {
+  const { data: eligibleData } = useQuery({
+    queryKey: queryKeys.feedback.eligible,
+    queryFn: async () => {
+      const { data } = await api.get('/feedback/eligible-assessments');
+      return data.data?.assessments || [];
+    },
+    enabled: !isAdmin,
+  });
+  const eligibleAssessments = eligibleData || [];
+
+  const { data: summariesData, isLoading: loadingSummary, refetch: refetchSummaries } = useQuery({
+    queryKey: queryKeys.feedback.adminSummary(summaryFilters),
+    queryFn: async () => {
       const params = {};
       if (summaryFilters.competencyId) params.competencyId = summaryFilters.competencyId;
       if (summaryFilters.dateFrom) params.dateFrom = summaryFilters.dateFrom;
       if (summaryFilters.dateTo) params.dateTo = summaryFilters.dateTo;
       const { data } = await api.get('/feedback/admin/summary', { params });
-      setSummaries(data.data?.summaries || []);
-    } catch { show('Failed to load feedback summaries.', 'error'); }
-    setLoading(false);
-  }, [summaryFilters, show]);
+      return data.data?.summaries || [];
+    },
+    enabled: isAdmin && adminView === 'summary',
+  });
+  const summaries = summariesData || [];
 
-  const loadDetail = useCallback(async () => {
-    if (!selectedSummary) return;
-    setLoading(true);
-    try {
+  const detailAssessmentId = selectedSummary?.assessmentId || null;
+  const { data: detailData, isLoading: loadingDetail } = useQuery({
+    queryKey: queryKeys.feedback.byAssessment(detailAssessmentId, { page: detailPagination.page, limit: detailPagination.limit }),
+    queryFn: async () => {
       const params = { page: detailPagination.page, limit: detailPagination.limit };
-      const { data } = await api.get(`/feedback/admin/by-assessment/${selectedSummary.assessmentId}`, { params });
-      setDetailFeedbacks(data.data?.feedbacks || []);
-      const pg = data.data?.pagination;
-      if (pg) setDetailPagination(prev => ({ ...prev, total: pg.total, totalPages: Math.ceil(pg.total / prev.limit) }));
-    } catch { show('Failed to load feedback details.', 'error'); }
-    setLoading(false);
-  }, [selectedSummary, detailPagination.page, detailPagination.limit, show]);
+      const { data } = await api.get(`/feedback/admin/by-assessment/${detailAssessmentId}`, { params });
+      return data.data;
+    },
+    enabled: isAdmin && adminView === 'detail' && !!detailAssessmentId,
+  });
+  const detailFeedbacks = detailData?.feedbacks || [];
+  const detailTotal = detailData?.pagination?.total ?? detailPagination.total;
+  const detailTotalPages = detailData?.pagination ? Math.ceil(detailData.pagination.total / detailPagination.limit) : detailPagination.totalPages;
 
-  const loadMyFeedbacks = useCallback(async () => {
-    setLoading(true);
-    try {
+  const { data: myData, isLoading: loadingMy, refetch: refetchMy } = useQuery({
+    queryKey: queryKeys.feedback.list({ page: myPagination.page, limit: myPagination.limit }),
+    queryFn: async () => {
       const { data } = await api.get('/feedback', { params: { page: myPagination.page, limit: myPagination.limit } });
-      setMyFeedbacks(data.data?.feedbacks || []);
-      const pg = data.data?.pagination;
-      if (pg) setMyPagination(prev => ({ ...prev, total: pg.total, totalPages: Math.ceil(pg.total / prev.limit) }));
-    } catch { show('Failed to load feedback.', 'error'); }
-    setLoading(false);
-  }, [myPagination.page, myPagination.limit, show]);
+      return data.data;
+    },
+    enabled: !isAdmin,
+  });
+  const myFeedbacks = myData?.feedbacks || [];
+  const myTotalPages = myData?.pagination ? Math.ceil(myData.pagination.total / myPagination.limit) : myPagination.totalPages;
 
-  useEffect(() => {
-    if (isAdmin) {
-      if (adminView === 'summary') loadSummaries();
-      else if (adminView === 'detail') loadDetail();
-    } else {
-      loadMyFeedbacks();
-    }
-  }, [isAdmin, adminView, loadSummaries, loadDetail, loadMyFeedbacks]);
+  const loading = isAdmin ? (adminView === 'summary' ? loadingSummary : loadingDetail) : loadingMy;
+
+  const submitFeedback = useMutation({
+    mutationFn: (payload) => api.post('/feedback', payload),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.feedback.all }),
+  });
+
+  const refreshSummaries = () => { setSummaryPage(1); refetchSummaries(); };
+  const applySummary = () => { setSummaryPage(1); refetchSummaries(); };
 
   const handleSubmit = async () => {
     if (!form.assessmentId || !form.content.trim()) return show('Please select an assessment and write feedback.', 'error');
     try {
-      await api.post('/feedback', form);
+      await submitFeedback.mutateAsync(form);
       show('Feedback submitted!', 'success');
       setModal(false);
       setForm({ assessmentId: '', content: '', rating: 0 });
-      api.get('/feedback/eligible-assessments').then(({ data }) => setEligibleAssessments(data.data?.assessments || [])).catch(() => {});
-      loadMyFeedbacks();
     } catch (err) { show(err.response?.data?.message || 'Failed to submit feedback.', 'error'); }
   };
 
-  const inputCls = 'w-full h-10 px-3 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:border-red-400 focus:ring-1 focus:ring-red-100 transition';
+  const inputCls = 'w-full h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm';
 
   // ─── EMPLOYEE VIEW ──────────────────────────────────────────────────────────
   if (!isAdmin) {
     const pending = eligibleAssessments.filter(a => !a.alreadySubmitted);
     return (
-      <div className="p-7 bg-gradient-to-br from-gray-50 to-white h-[calc(100vh-4rem)] flex flex-col">
+      <div className="p-7 h-[calc(100vh-4rem)] flex flex-col">
         <PageHeader
           title="My Feedback"
-          subtitle="Submit feedback for completed assessments"
           actions={
             <button
               onClick={() => { setForm({ assessmentId: '', content: '', rating: 0 }); setModal(true); }}
               disabled={pending.length === 0}
-              className="flex items-center gap-1.5 px-2 py-1 text-sm bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-transform hover:scale-105 disabled:opacity-40 disabled:cursor-not-allowed">
+              className="flex items-center gap-1.5 px-2 py-1 bg-brand-red text-white rounded-lg text-sm font-semibold hover:bg-brand-red-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
               <Plus className="w-3 h-3" /> New Feedback
             </button>
           }
@@ -287,7 +254,7 @@ export default function Feedback() {
         {pending.length > 0 && (
           <button
             onClick={() => { setForm({ assessmentId: '', content: '', rating: 0 }); setModal(true); }}
-            className="flex items-center gap-2.5 bg-white border border-gray-200 rounded-xl px-4 py-2.5 mb-4 text-sm text-gray-600 hover:border-brand-red/40 transition-colors flex-shrink-0 text-left">
+            className="flex items-center gap-2.5 bg-white border border-gray-100 rounded-xl shadow-card px-4 py-2.5 mb-4 text-sm text-gray-600 hover:border-brand-red/40 transition-colors flex-shrink-0 text-left">
             <AlertCircle className="w-4 h-4 flex-shrink-0 text-brand-red" />
             <span>
               <span className="font-semibold text-brand-black">{pending.length}</span>
@@ -297,25 +264,25 @@ export default function Feedback() {
         )}
 
         {eligibleAssessments.length === 0 && (
-          <div className="flex items-center gap-2.5 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 mb-4 text-sm text-gray-500 flex-shrink-0">
+          <div className="flex items-center gap-2.5 bg-white border border-gray-100 rounded-xl shadow-card px-4 py-3 mb-4 text-sm text-gray-500 flex-shrink-0">
             <AlertCircle className="w-4 h-4 flex-shrink-0 text-gray-400" />
             Complete assessments first to be able to submit feedback.
           </div>
         )}
 
-        <div className="flex-1 overflow-auto min-h-0">
-          {loading ? <LoadingCard /> : (
+        <div className="flex-1 overflow-auto min-h-0 scrollbar-none">
+          {loading ? <Spinner /> : (
             <>
               {myFeedbacks.length === 0 ? (
-                <div className="bg-white rounded-xl border border-gray-200/70">
+                <div className="bg-white rounded-xl shadow-card border border-gray-100 overflow-hidden">
                   <EmptyState icon={MessageSquare} title="No feedback submitted yet"
-                    sub="Your submitted feedback will appear here." />
+                    description="Your submitted feedback will appear here." />
                 </div>
               ) : (
                 <>
                   <div className="space-y-3">
                     {myFeedbacks.map(f => (
-                      <div key={f._id} className="bg-white border border-gray-200 rounded-xl p-4 hover:border-gray-300 transition-colors">
+                      <div key={f._id} className="bg-white border border-gray-100 rounded-xl shadow-card p-4 hover:border-brand-red/40 transition-colors">
                         <div className="flex justify-between items-start mb-2">
                           <div>
                             <p className="font-semibold text-sm text-gray-800 leading-snug">
@@ -334,7 +301,11 @@ export default function Feedback() {
                       </div>
                     ))}
                   </div>
-                  <Paginator pagination={myPagination} goToPage={p => setMyPagination(prev => ({ ...prev, page: p }))} />
+                  <Pagination
+                    currentPage={myPagination.page}
+                    totalPages={myTotalPages}
+                    onPageChange={p => setMyPagination(prev => ({ ...prev, page: p }))}
+                  />
                 </>
               )}
             </>
@@ -358,7 +329,7 @@ export default function Feedback() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Rating <span className="font-normal text-gray-400">(optional)</span></label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Rating</label>
               <StarRating value={form.rating} onChange={v => setForm(p => ({ ...p, rating: v }))} />
             </div>
             <div>
@@ -366,13 +337,13 @@ export default function Feedback() {
               <textarea rows={4} value={form.content}
                 onChange={e => setForm(p => ({ ...p, content: e.target.value }))}
                 placeholder="Share your thoughts on the assessment experience..."
-                className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm text-gray-700 resize-none focus:outline-none focus:border-red-400 focus:ring-1 focus:ring-red-100 transition"
+                className="w-full px-3 py-2 rounded-lg border border-gray-300 focus-brand text-sm resize-none"
                 maxLength={2000} />
               <p className="text-[10px] text-gray-400 text-right mt-1">{form.content.length} / 2000</p>
             </div>
           </div>
-          <div className="flex justify-end gap-2 mt-5 pt-4 border-t border-gray-100">
-            <button onClick={() => setModal(false)} className="px-3.5 py-2 border border-gray-200 rounded-lg text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors">Cancel</button>
+          <div className="flex justify-end gap-3 mt-6">
+            <button onClick={() => setModal(false)} className="px-4 py-2 text-sm font-semibold text-brand-black border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">Cancel</button>
             <button onClick={handleSubmit} className="px-4 py-2 bg-brand-red text-white rounded-lg text-sm font-semibold hover:bg-brand-red-dark transition-colors">Submit</button>
           </div>
         </Modal>
@@ -383,8 +354,8 @@ export default function Feedback() {
   // ─── ADMIN DETAIL VIEW ──────────────────────────────────────────────────────
   if (adminView === 'detail' && selectedSummary) {
     return (
-      <div className="p-7 bg-gradient-to-br from-gray-50 to-white h-[calc(100vh-4rem)] flex flex-col">
-        <div className="flex items-start gap-3 mb-4 flex-shrink-0">
+      <div className="p-7 h-[calc(100vh-4rem)] flex flex-col">
+        <div className="flex items-start gap-3 mb-3 flex-shrink-0">
           <button
             onClick={() => { setAdminView('summary'); setSelectedSummary(null); }}
             className="mt-0.5 p-2 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0">
@@ -402,10 +373,10 @@ export default function Feedback() {
           </div>
         </div>
 
-        <div className="flex-1 overflow-auto min-h-0">
+        <div className="flex-1 overflow-auto min-h-0 scrollbar-none">
           {/* Rating breakdown */}
           {selectedSummary.ratedCount > 0 && (
-            <div className="bg-white border border-gray-200 rounded-xl p-5 mb-5">
+            <div className="bg-white border border-gray-100 rounded-xl shadow-card p-5 mb-5">
               <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
                 <p className="text-sm font-bold text-gray-700 uppercase tracking-wide flex items-center gap-1.5">
                   <BarChart3 className="w-3.5 h-3.5 text-brand-red" /> Rating Breakdown
@@ -423,21 +394,21 @@ export default function Feedback() {
 
           <div className="flex items-center justify-between mb-3 flex-shrink-0">
             <p className="text-sm font-semibold text-gray-700">Feedback Entries</p>
-            <span className="text-xs text-gray-500">{detailPagination.total} total</span>
+            <span className="text-xs text-gray-500">{detailTotal} total</span>
           </div>
 
-          {loading ? <LoadingCard /> : (
+          {loading ? <Spinner /> : (
             <>
               {detailFeedbacks.length === 0 ? (
-                <div className="bg-white rounded-xl border border-gray-200/70">
+                <div className="bg-white rounded-xl shadow-card border border-gray-100 overflow-hidden">
                   <EmptyState icon={MessageSquare} title="No feedback entries found."
-                    sub="Employees haven't submitted feedback for this assessment yet." />
+                    description="Employees haven't submitted feedback for this assessment yet." />
                 </div>
               ) : (
                 <>
                   <div className="space-y-3">
                     {detailFeedbacks.map(f => (
-                      <div key={f._id} className="bg-white border border-gray-200 rounded-xl p-4 hover:border-gray-300 transition-colors">
+                      <div key={f._id} className="bg-white border border-gray-100 rounded-xl shadow-card p-4 hover:border-brand-red/40 transition-colors">
                         <div className="flex justify-between items-start mb-3">
                           <div className="flex items-center gap-3">
                             <Avatar name={f.userId?.name} />
@@ -459,7 +430,11 @@ export default function Feedback() {
                       </div>
                     ))}
                   </div>
-                  <Paginator pagination={detailPagination} goToPage={p => setDetailPagination(prev => ({ ...prev, page: p }))} />
+                  <Pagination
+                    currentPage={detailPagination.page}
+                    totalPages={detailTotalPages}
+                    onPageChange={p => setDetailPagination(prev => ({ ...prev, page: p }))}
+                  />
                 </>
               )}
             </>
@@ -479,21 +454,28 @@ export default function Feedback() {
 
   const hasFilters = summaryFilters.competencyId || summaryFilters.dateFrom || summaryFilters.dateTo;
 
+  // ── Summary pagination (client-side; summaries load as one batch) ──────────
+  const summaryTotalPages = Math.max(1, Math.ceil(summaries.length / SUMMARY_PAGE_SIZE));
+  const safeSummaryPage = Math.min(summaryPage, summaryTotalPages);
+  const pagedSummaries = summaries.slice(
+    (safeSummaryPage - 1) * SUMMARY_PAGE_SIZE,
+    safeSummaryPage * SUMMARY_PAGE_SIZE
+  );
+
   return (
-    <div className="p-7 bg-gradient-to-br from-gray-50 to-white h-[calc(100vh-4rem)] flex flex-col">
+    <div className="p-7 h-[calc(100vh-4rem)] flex flex-col">
       <PageHeader
         title="Feedback Overview"
-        subtitle="Ratings and responses per assessment"
         actions={
-          <button onClick={loadSummaries}
-            className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 bg-white rounded-lg text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors">
-            <RefreshCw className="w-3.5 h-3.5" /> Refresh
+          <button onClick={refreshSummaries}
+            className="flex items-center gap-1.5 px-2 py-1 text-sm border border-gray-300 bg-white text-brand-black rounded-lg font-semibold hover:bg-gray-50 transition-colors">
+            <RefreshCw className="w-3 h-3" /> Refresh
           </button>
         }
       />
 
       {/* Stat cards */}
-      <div className="bg-white border border-gray-200 rounded-lg px-4 py-2 mb-4 flex items-center gap-x-6 gap-y-1.5 flex-wrap flex-shrink-0">
+      <div className="bg-white border border-gray-100 rounded-xl shadow-card px-5 py-3 mb-5 flex items-center gap-x-6 gap-y-1.5 flex-wrap flex-shrink-0">
         <StatCard label="Total Feedback" value={totalFeedbacks}
           accent="bg-brand-red/10 text-brand-red" Icon={MessageSquare} />
         <StatCard label="Avg Rating" value={avgOverall ? `${avgOverall.toFixed(1)}/5` : '—'}
@@ -504,72 +486,68 @@ export default function Feedback() {
           accent="bg-gray-100 text-gray-700" Icon={ClipboardList} />
       </div>
 
-      {/* Filter bar — single row */}
-      <div className="bg-white border border-gray-200 rounded-xl px-4 py-3 mb-4 flex-shrink-0">
-        <div className="flex items-center gap-3 flex-wrap">
-          <Filter className="w-4 h-4 text-gray-400 flex-shrink-0" />
-          <select value={summaryFilters.competencyId}
-            onChange={e => setSummaryFilters(p => ({ ...p, competencyId: e.target.value }))}
-            className="h-9 px-3 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:border-red-400 focus:ring-1 focus:ring-red-100 cursor-pointer min-w-[180px]">
-            <option value="">All Competencies</option>
-            {competencies.map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
-          </select>
-          <div className="flex items-center gap-2">
-            <input type="date" value={summaryFilters.dateFrom}
-              onChange={e => setSummaryFilters(p => ({ ...p, dateFrom: e.target.value }))}
-              className="h-9 px-3 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:border-red-400 focus:ring-1 focus:ring-red-100" />
-            <span className="text-gray-300 text-sm">—</span>
-            <input type="date" value={summaryFilters.dateTo}
-              onChange={e => setSummaryFilters(p => ({ ...p, dateTo: e.target.value }))}
-              className="h-9 px-3 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:border-red-400 focus:ring-1 focus:ring-red-100" />
-          </div>
-          <div className="flex items-center gap-1.5 ml-auto">
-            {hasFilters && (
-              <button onClick={() => setSummaryFilters({ competencyId: '', dateFrom: '', dateTo: '' })}
-                className="h-9 px-3 flex items-center gap-1 border border-gray-200 rounded-lg text-sm text-gray-500 hover:bg-gray-50 transition-colors">
-                <X className="w-3.5 h-3.5" /> Clear
-              </button>
-            )}
-            <button onClick={loadSummaries}
-              className="h-9 px-4 bg-brand-red text-white rounded-lg text-sm font-semibold hover:bg-brand-red-dark transition-colors flex items-center gap-1.5">
-              <Search className="w-3.5 h-3.5" /> Apply
+      {/* Filter bar */}
+      <div className="flex items-center gap-3 mb-5 flex-wrap flex-shrink-0">
+        <select value={summaryFilters.competencyId}
+          onChange={e => setSummaryFilters(p => ({ ...p, competencyId: e.target.value }))}
+          className="h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm min-w-[180px]">
+          <option value="">All Competencies</option>
+          {competencies.map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
+        </select>
+        <div className="flex items-center gap-2">
+          <input type="date" value={summaryFilters.dateFrom}
+            onChange={e => setSummaryFilters(p => ({ ...p, dateFrom: e.target.value }))}
+            className="h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm text-gray-600" />
+          <span className="text-gray-400 text-sm">to</span>
+          <input type="date" value={summaryFilters.dateTo}
+            onChange={e => setSummaryFilters(p => ({ ...p, dateTo: e.target.value }))}
+            className="h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm text-gray-600" />
+        </div>
+        <div className="flex items-center gap-2 ml-auto">
+          {hasFilters && (
+            <button onClick={() => { setSummaryFilters({ competencyId: '', dateFrom: '', dateTo: '' }); setSummaryPage(1); }}
+              className="flex items-center gap-1.5 px-2 py-1 text-sm border border-gray-300 bg-white text-brand-black rounded-lg font-semibold hover:bg-gray-50 transition-colors">
+              <X className="w-3 h-3" /> Clear
             </button>
-          </div>
+          )}
+          <button onClick={applySummary}
+            className="flex items-center gap-1.5 px-2 py-1 bg-brand-red text-white rounded-lg text-sm font-semibold hover:bg-brand-red-dark transition-colors">
+            <Search className="w-3 h-3" /> Apply
+          </button>
         </div>
       </div>
 
       {/* Cards grid */}
-      <div className="flex-1 overflow-auto min-h-0">
-        {loading ? <LoadingCard /> : summaries.length === 0 ? (
-          <div className="bg-white rounded-xl border border-gray-200/70">
+      <div className="flex-1 overflow-auto min-h-0 scrollbar-none">
+        {loading ? <Spinner /> : summaries.length === 0 ? (
+          <div className="bg-white rounded-xl shadow-card border border-gray-100 overflow-hidden">
             <EmptyState icon={MessageSquare} title="No feedback data yet"
-              sub="Feedback will appear once employees submit reviews." />
+              description="Feedback will appear once employees submit reviews." />
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {summaries.map(s => (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+            {pagedSummaries.map(s => (
               <div key={s.assessmentId}
                 onClick={() => {
                   setSelectedSummary(s);
-                  setDetailFeedbacks([]);
                   setDetailPagination({ page: 1, limit: 10, total: 0, totalPages: 0 });
                   setAdminView('detail');
                 }}
-                className="bg-white border border-gray-200 rounded-xl p-4 hover:border-brand-red/40 hover:shadow-sm transition-all cursor-pointer group flex flex-col">
+                className="bg-white border border-gray-100 rounded-xl shadow-card p-3 hover:border-brand-red/40 hover:shadow-md transition-all cursor-pointer group flex flex-col">
 
                 {/* Title + chips */}
-                <div className="flex items-center gap-2 mb-2.5 flex-wrap">
-                  <span className="text-sm font-semibold text-brand-black leading-snug">{s.competencyName}</span>
+                <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
+                  <span className="text-[13px] font-semibold text-brand-black leading-snug line-clamp-1">{s.competencyName}</span>
                   {s.targetGroup && <Badge tone="gray">{s.targetGroup.replace('-', ' ')}</Badge>}
                 </div>
                 {s.assessmentDescription && (
-                  <p className="text-[11px] text-gray-400 mb-3 line-clamp-1">{s.assessmentDescription}</p>
+                  <p className="text-[11px] text-gray-400 mb-2 line-clamp-1">{s.assessmentDescription}</p>
                 )}
 
                 {/* Rating highlight + count */}
-                <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center justify-between mb-2">
                   {s.avgRating ? (
-                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-sm font-bold border ${ratingTone(s.avgRating).badge}`}>
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold border ${ratingTone(s.avgRating).badge}`}>
                       <Star className="w-3 h-3" fill="currentColor" color="currentColor" />
                       {s.avgRating.toFixed(1)}
                     </span>
@@ -581,13 +559,13 @@ export default function Feedback() {
 
                 {/* Compact rating bars */}
                 {s.ratedCount > 0 && (
-                  <div className="mb-3">
+                  <div className="mb-2">
                     <RatingDistribution summary={s} accent={ratingTone(s.avgRating || 3).bar} />
                   </div>
                 )}
 
                 {/* Footer CTA */}
-                <div className="flex items-center justify-end pt-3 border-t border-gray-100 mt-auto">
+                <div className="flex items-center justify-end pt-2 border-t border-gray-100 mt-auto">
                   <span className="text-[11px] font-semibold text-brand-red flex items-center gap-1 group-hover:gap-1.5 transition-all">
                     View entries
                     {s.totalFeedbacks > 0 && <span className="min-w-[18px] h-[18px] rounded-full bg-brand-red text-white text-[10px] flex items-center justify-center px-1">{s.totalFeedbacks}</span>}
@@ -598,6 +576,20 @@ export default function Feedback() {
             ))}
           </div>
         )}
+      </div>
+
+      {/* Pagination sticky footer */}
+      <div className="flex-shrink-0 border-t border-gray-100">
+        {summaries.length > 0 && (
+          <div className="pt-3 px-4 pb-0 text-xs text-gray-400">
+            {summaries.length} assessment(s) · page {safeSummaryPage} of {summaryTotalPages}
+          </div>
+        )}
+        <Pagination
+          currentPage={safeSummaryPage}
+          totalPages={summaryTotalPages}
+          onPageChange={setSummaryPage}
+        />
       </div>
     </div>
   );

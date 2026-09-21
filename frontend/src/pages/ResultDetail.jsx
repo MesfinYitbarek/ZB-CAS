@@ -8,6 +8,8 @@ import {
   Target, Building2, Briefcase, ListChecks, MessageSquare
 } from 'lucide-react';
 import api from '../utils/api';
+import { useQuery } from '@tanstack/react-query';
+import { queryKeys } from '../hooks/queries';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 const formatAnswer = (answer, questionType) => {
@@ -241,50 +243,44 @@ export default function ResultDetail() {
   const { isAdmin } = useAuth();
   const { show } = useToast();
 
-  const [result, setResult] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [questionDetails, setQuestionDetails] = useState([]);
-  const [questionSummary, setQuestionSummary] = useState(null);
-  const [securityData, setSecurityData] = useState(null);
-  const [loadingSecurity, setLoadingSecurity] = useState(false);
-  const [supervisorEval, setSupervisorEval] = useState(null);
+  const { data, isLoading: loading, isError } = useQuery({
+    queryKey: queryKeys.results.detail(id),
+    queryFn: async () => {
+      const { data } = await api.get(`/results/${id}`);
+      return data.data;
+    },
+  });
+
+  const detail = data || {};
+  const result = detail.result || null;
+  const supervisorEval = detail.supervisorEvaluation || null;
+  const questionDetails = detail.questionDetails || [];
+  const questionSummary = {
+    totalQuestions: questionDetails.length,
+    fullyCorrect: questionDetails.filter(q => q.isCorrect).length,
+    partialCredit: questionDetails.filter(q => q.isPartial).length,
+    incorrect: questionDetails.filter(q => !q.isCorrect && !q.isPartial && !q.isUnanswered).length,
+    unanswered: questionDetails.filter(q => q.isUnanswered).length,
+  };
+
+  const userId = result ? (typeof result.userId === 'object' ? (result.userId._id || result.userId.id) : result.userId) : null;
+  const assessmentId = result ? (result.assessmentId?._id || result.assessmentId) : null;
+
+  const { data: securityData, isLoading: loadingSecurity } = useQuery({
+    queryKey: queryKeys.responses.securityViolations(assessmentId, userId),
+    queryFn: async () => {
+      const { data: sData } = await api.get(`/responses/security-violations/${assessmentId}/${userId}`);
+      return sData.data.securityRecord || null;
+    },
+    enabled: isAdmin && !!assessmentId && !!userId,
+  });
 
   useEffect(() => {
-    let active = true;
-    const load = async () => {
-      try {
-        const { data } = await api.get(`/results/${id}`);
-        if (!active) return;
-        setResult(data.data.result);
-        setSupervisorEval(data.data.supervisorEvaluation || null);
-        const details = data.data.questionDetails || [];
-        setQuestionDetails(details);
-        setQuestionSummary({
-          totalQuestions: details.length,
-          fullyCorrect: details.filter(q => q.isCorrect).length,
-          partialCredit: details.filter(q => q.isPartial).length,
-          incorrect: details.filter(q => !q.isCorrect && !q.isPartial && !q.isUnanswered).length,
-          unanswered: details.filter(q => q.isUnanswered).length,
-        });
-
-        if (isAdmin) {
-          setLoadingSecurity(true);
-          try {
-            const userId = typeof data.data.result.userId === 'object' ? (data.data.result.userId._id || data.data.result.userId.id) : data.data.result.userId;
-            const assessmentId = data.data.result.assessmentId?._id || data.data.result.assessmentId;
-            const { data: sData } = await api.get(`/responses/security-violations/${assessmentId}/${userId}`);
-            if (active) setSecurityData(sData.data.securityRecord || null);
-          } catch { /* no security data */ }
-          setLoadingSecurity(false);
-        }
-      } catch {
-        if (active) { show('Failed to load result.', 'error'); nav('/results'); }
-      }
-      if (active) setLoading(false);
-    };
-    load();
-    return () => { active = false; };
-  }, [id]);
+    if (isError) {
+      show('Failed to load result.', 'error');
+      nav('/results');
+    }
+  }, [isError, show, nav]);
 
   if (loading) {
     return (
@@ -294,6 +290,34 @@ export default function ResultDetail() {
     );
   }
   if (!result) return null;
+
+  const isNotTaken = result.notTaken || result.status === 'PENDING';
+  if (isNotTaken) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <div className="sticky top-0 z-30 bg-white/90 backdrop-blur border-b border-gray-200">
+          <div className="max-w-6xl mx-auto px-6 py-3 flex items-center gap-3">
+            <button onClick={() => nav(-1)} className="p-2 -ml-2 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0" title="Back to results">
+              <ArrowLeft className="w-5 h-5 text-gray-600" />
+            </button>
+            <h1 className="text-lg  font-bold text-brand-black truncate">{result.competencyName}</h1>
+            <TypeBadge type={result.assessmentType} />
+          </div>
+        </div>
+        <div className="max-w-6xl mx-auto px-6 py-16">
+          <div className="bg-white rounded-2xl border border-gray-200 p-12 text-center">
+            <div className="w-14 h-14 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-4">
+              <Clock className="w-7 h-7 text-gray-400" />
+            </div>
+            <h2 className="text-lg font-bold text-brand-black mb-1">Not Taken</h2>
+            <p className="text-sm text-gray-500">
+              {result.userName || 'This employee'} did not take this assessment before it closed, so there is no score to show.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const scoreColor = result.finalScore >= 75 ? 'text-brand-black' : result.finalScore >= 50 ? 'text-gray-500' : 'text-red-600';
   const scoreBarColor = result.assessmentType === 'Combined' ? 'bg-brand-red' : result.assessmentType === 'SupervisorOnly' ? 'bg-gray-500' : 'bg-brand-red';

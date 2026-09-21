@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Plus,
   Edit2,
@@ -16,10 +16,27 @@ import {
 import { useToast } from '../context/ToastContext';
 import Modal from '../components/Modal';
 import api from '../utils/api';
-import * as mammoth from 'mammoth';
-import * as pdfjsLib from 'pdfjs-dist';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuestions, useAllCompetencies, queryKeys } from '../hooks/queries';
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+// PDF/DOCX parsers load on demand — keeps mammoth + pdfjs-dist (~900 kB) out
+// of the page's initial chunk until a file is actually uploaded.
+let pdfjsLibPromise = null;
+const getPdfjsLib = () => {
+  if (!pdfjsLibPromise) {
+    pdfjsLibPromise = import('pdfjs-dist').then((mod) => {
+      mod.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${mod.version}/pdf.worker.min.js`;
+      return mod;
+    });
+  }
+  return pdfjsLibPromise;
+};
+
+let mammothLibPromise = null;
+const getMammothLib = () => {
+  if (!mammothLibPromise) mammothLibPromise = import('mammoth');
+  return mammothLibPromise;
+};
 
 const TYPES = [
   'MCQ',
@@ -86,9 +103,6 @@ const initBatchForm = () => ({
 export default function Questions() {
   const { show } = useToast();
 
-  const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [competencies, setCompetencies] = useState([]);
   const [filterComp, setFilterComp] = useState('');
   const [filterType, setFilterType] = useState('');
   const [modal, setModal] = useState(null); // 'create' | 'edit' | 'upload' | 'view'
@@ -102,12 +116,26 @@ export default function Questions() {
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [bulkDeleteModal, setBulkDeleteModal] = useState(false);
 
-  const [pagination, setPagination] = useState({
-    page: 1,
-    limit: 10,
-    total: 0,
-    totalPages: 0,
-  });
+  const [pagination, setPagination] = useState({ page: 1, limit: 10 });
+
+  const { data: competenciesData } = useAllCompetencies();
+  const competencies = competenciesData || [];
+
+  const questionsParams = useMemo(() => {
+    const params = { page: pagination.page, limit: pagination.limit };
+    if (filterComp) params.competencyId = filterComp;
+    if (filterType) params.type = filterType;
+    return params;
+  }, [pagination.page, pagination.limit, filterComp, filterType]);
+
+  const { data, isLoading } = useQuestions(questionsParams);
+  const items = data?.questions || [];
+  const total = data?.pagination?.total || 0;
+  const totalPages = data?.pagination?.totalPages || Math.ceil(total / pagination.limit);
+
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [data]);
 
   const [batchForm, setBatchForm] = useState(initBatchForm());
   const [editForm, setEditForm] = useState(null);
@@ -118,14 +146,6 @@ export default function Questions() {
   // Target group state
   const [targetGroupsForComp, setTargetGroupsForComp] = useState([]);
   const [selectedBatchTargetGroup, setSelectedBatchTargetGroup] = useState('');
-
-  // Fetch competencies
-  useEffect(() => {
-    api
-      .get('/competencies')
-      .then(({ data }) => setCompetencies(data.data.competencies || []))
-      .catch(() => show('Failed to load competencies', 'error'));
-  }, [show]);
 
   // Load target groups when competency changes
   useEffect(() => {
@@ -149,34 +169,27 @@ export default function Questions() {
     }
   }, [batchForm.competencyId, competencies]);
 
-  // Fetch questions
-  const fetch = useCallback(async () => {
-    setLoading(true);
-    try {
-      const params = { page: pagination.page, limit: pagination.limit };
-      if (filterComp) params.competencyId = filterComp;
-      if (filterType) params.type = filterType;
+  const queryClient = useQueryClient();
 
-      const { data } = await api.get('/questions', { params });
-      setItems(data.data.questions || []);
-      setSelectedIds(new Set());
+  const createQuestions = useMutation({
+    mutationFn: (questions) => api.post('/questions/batch', { questions }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.questions.all }),
+  });
 
-      if (data.data.pagination) {
-        setPagination((prev) => ({
-          ...prev,
-          total: data.data.pagination.total,
-          totalPages: Math.ceil(data.data.pagination.total / prev.limit),
-        }));
-      }
-    } catch {
-      show('Failed to load questions.', 'error');
-    }
-    setLoading(false);
-  }, [filterComp, filterType, pagination.page, pagination.limit, show]);
+  const updateQuestion = useMutation({
+    mutationFn: ({ id, payload }) => api.put(`/questions/${id}`, payload),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.questions.all }),
+  });
 
-  useEffect(() => {
-    fetch();
-  }, [fetch]);
+  const deleteQuestion = useMutation({
+    mutationFn: (id) => api.delete(`/questions/${id}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.questions.all }),
+  });
+
+  const bulkDelete = useMutation({
+    mutationFn: (ids) => api.post('/questions/bulk-delete', { ids }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.questions.all }),
+  });
 
   // ─── Bulk selection helpers ─────────────────────────────────────────────
   const toggleSelect = (id) => {
@@ -327,6 +340,7 @@ export default function Questions() {
 
   // PDF: use pdf.js with sorted TextItems to handle multi-column layouts
   const extractTextFromPDF = async (file) => {
+    const pdfjsLib = await getPdfjsLib();
     const arrayBuffer = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
     const pageTexts = [];
@@ -359,6 +373,7 @@ export default function Questions() {
 
   // DOCX: mammoth extractRawText — preserves paragraph structure cleanly
   const extractTextFromDOCX = async (file) => {
+    const mammoth = await getMammothLib();
     const arrayBuffer = await file.arrayBuffer();
     const { value } = await mammoth.extractRawText({ arrayBuffer });
     return value
@@ -690,16 +705,15 @@ export default function Questions() {
 
         if (allQuestions.length === 0) return show('Add at least one question', 'error');
 
-        await api.post('/questions/batch', { questions: allQuestions });
+        await createQuestions.mutateAsync(allQuestions);
         show(`${allQuestions.length} questions created`, 'success');
       } else {
         const payload = buildQuestionPayload(editForm, editForm.competencyId);
-        await api.put(`/questions/${selected._id}`, payload);
+        await updateQuestion.mutateAsync({ id: selected._id, payload });
         show('Question updated', 'success');
       }
 
       setModal(null);
-      fetch();
     } catch (err) {
       show(err?.response?.data?.message || 'Save failed', 'error');
     }
@@ -711,10 +725,9 @@ export default function Questions() {
   const handleDelete = async () => {
     if (!deleteModal) return;
     try {
-      await api.delete(`/questions/${deleteModal._id}`);
+      await deleteQuestion.mutateAsync(deleteModal._id);
       show('Question deleted.', 'success');
       setDeleteModal(null);
-      fetch();
     } catch (err) {
       show(err.response?.data?.message || 'Delete failed.', 'error');
       setDeleteModal(null);
@@ -724,11 +737,10 @@ export default function Questions() {
   const handleBulkDelete = async () => {
     if (selectedIds.size === 0) return;
     try {
-      await api.post('/questions/bulk-delete', { ids: Array.from(selectedIds) });
+      await bulkDelete.mutateAsync(Array.from(selectedIds));
       show(`${selectedIds.size} question(s) deleted.`, 'success');
       setSelectedIds(new Set());
       setBulkDeleteModal(false);
-      fetch();
     } catch (err) {
       show(err.response?.data?.message || 'Bulk delete failed.', 'error');
       setBulkDeleteModal(false);
@@ -784,7 +796,7 @@ export default function Questions() {
 
   // ─── Pagination ─────────────────────────────────────────────────────────
   const goToPage = (page) => {
-    if (page >= 1 && page <= pagination.totalPages) {
+    if (page >= 1 && page <= totalPages) {
       setPagination((p) => ({ ...p, page }));
     }
   };
@@ -795,7 +807,6 @@ export default function Questions() {
       ...p,
       page: 1,
       limit,
-      totalPages: Math.ceil(p.total / limit),
     }));
   };
 
@@ -1357,7 +1368,7 @@ export default function Questions() {
 
       {/* Questions Table - Scrollable */}
       <div className="bg-white rounded-xl shadow-card border border-gray-100 overflow-hidden flex flex-col flex-1 min-h-0">
-        {loading ? (
+        {isLoading ? (
           <div className="flex justify-center items-center p-16 flex-1">
             <div className="w-10 h-10 border-4 border-brand-red border-t-transparent rounded-full animate-spin" />
           </div>
@@ -1434,11 +1445,11 @@ export default function Questions() {
       </div>
 
       {/* Pagination */}
-      {pagination.totalPages > 1 && (
+      {totalPages > 1 && (
         <div className="flex flex-col sm:flex-row justify-between items-center gap-3 mt-4 flex-shrink-0">
           <p className="text-sm text-gray-500">
             Showing {(pagination.page - 1) * pagination.limit + 1} to{' '}
-            {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total}
+            {Math.min(pagination.page * pagination.limit, total)} of {total}
           </p>
           <div className="flex items-center gap-1">
             <button
@@ -1451,11 +1462,11 @@ export default function Questions() {
             {(() => {
               const maxV = 5;
               const pages = [];
-              if (pagination.totalPages <= maxV) {
-                for (let i = 1; i <= pagination.totalPages; i++) pages.push(i);
+              if (totalPages <= maxV) {
+                for (let i = 1; i <= totalPages; i++) pages.push(i);
               } else {
                 let start = Math.max(1, pagination.page - Math.floor(maxV / 2));
-                let end = Math.min(pagination.totalPages, start + maxV - 1);
+                let end = Math.min(totalPages, start + maxV - 1);
                 if (end - start + 1 < maxV) start = Math.max(1, end - maxV + 1);
                 for (let i = start; i <= end; i++) pages.push(i);
               }
@@ -1475,7 +1486,7 @@ export default function Questions() {
             })()}
             <button
               onClick={() => goToPage(pagination.page + 1)}
-              disabled={pagination.page === pagination.totalPages}
+              disabled={pagination.page === totalPages}
               className="flex items-center gap-1 px-3 py-2 rounded-lg border border-gray-300 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
             >
               Next <ChevronRight className="w-4 h-4" />

@@ -1,5 +1,5 @@
 /* pages/UserProfile.jsx */
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
@@ -9,6 +9,8 @@ import {
 } from 'lucide-react';
 import StatusBadge from '../components/StatusBadge';
 import api from '../utils/api';
+import { useQuery } from '@tanstack/react-query';
+import { queryKeys } from '../hooks/queries';
 
 const ROLE_LABELS = {
   HR_ADMIN:   'HR Admin',
@@ -35,31 +37,28 @@ export default function UserProfile() {
   const nav  = useNavigate();
   const { show } = useToast();
 
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-
   const actualUserId = id || 'me';
   const isOwnProfile = !id || id === 'me' || id === currentUser?._id;
 
+  const { data: user, isLoading, isError } = useQuery({
+    queryKey: actualUserId === 'me' ? queryKeys.users.me : queryKeys.users.detail(actualUserId),
+    queryFn: async () => {
+      const endpoint =
+        actualUserId === 'me' ? '/users/me' : `/users/${actualUserId}`;
+      const { data } = await api.get(endpoint);
+      return data.data.user;
+    },
+    retry: false,
+  });
+
   useEffect(() => {
-    const load = async () => {
-      try {
-        const endpoint =
-          actualUserId === 'me' ? '/users/me' : `/users/${actualUserId}`;
+    if (isError) {
+      show('Failed to load profile.', 'error');
+      nav('/dashboard');
+    }
+  }, [isError, nav, show]);
 
-        const { data } = await api.get(endpoint);
-        setUser(data.data.user);
-      } catch {
-        show('Failed to load profile.', 'error');
-        nav('/dashboard');
-      }
-      setLoading(false);
-    };
-
-    load();
-  }, [actualUserId, isAdmin, isOwnProfile, nav, show]);
-
-  if (loading)
+  if (isLoading)
     return (
       <div className="h-[calc(100vh-4rem)] flex items-center justify-center">
         <div className="text-center">

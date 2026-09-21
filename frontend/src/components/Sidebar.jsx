@@ -37,12 +37,10 @@ const NAV_ITEMS = [
   { icon: FileText, label: 'Competency Results', path: '/results', roles: ['HR_ADMIN'] },
   {
     icon: BarChart3, label: 'Reports', roles: ['HR_ADMIN'], children: [
-      { icon: BarChart3, label: 'Overview', path: '/reports/overview' },
-      { icon: Building2, label: 'By Department', path: '/reports/department' },
-      { icon: Layers, label: 'By Competency', path: '/reports/competency' },
-      { icon: UserCheck, label: 'Individual', path: '/reports/individual' },
-      { icon: FileText, label: 'All Reports', path: '/reports/all' },
-      { icon: FileSpreadsheet, label: 'Custom Builder', path: '/reports/builder' },
+      { icon: BarChart3, label: 'Overview', path: '/reports/overview', tag: 'Live' },
+      { icon: Building2, label: 'By Department', path: '/reports/department', tag: 'Live' },
+      { icon: Layers, label: 'By Competency', path: '/reports/competency', tag: 'Live' },
+      { icon: FileSpreadsheet, label: 'Generated Reports', path: '/reports/generated', tag: 'On Demand' },
     ]
   },
   { icon: MessageSquare, label: 'Feedback', path: '/feedback', roles: ['EMPLOYEE', 'HR_ADMIN'] },
@@ -201,7 +199,7 @@ export default function Sidebar({
           {!isMobile && (
             <button
               onClick={onToggle}
-              className={`flex items-center justify-center text-white/40 hover:text-white/80 transition-base group ${collapsed ? '' : 'ml-auto'
+              className={`flex items-center justify-center text-white/80 hover:text-white/80 transition-base group ${collapsed ? '' : 'ml-auto'
                 }`}
               aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             >
@@ -276,8 +274,8 @@ export default function Sidebar({
                               : 'border-transparent text-white/60 hover:bg-white/10 hover:text-white font-medium'
                               }`}
                           >
-                            <CIcon className="w-4 h-4" strokeWidth={cActive ? 2.5 : 2} />
-                            <span className="text-[13px]">{child.label}</span>
+                            {/* <CIcon className="w-4 h-4" strokeWidth={cActive ? 2.5 : 2} /> */}
+                            <span className="flex-1 text-left text-[13px]">{child.label}</span>
                           </button>
                         );
                       })}

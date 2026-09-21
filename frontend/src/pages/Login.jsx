@@ -163,18 +163,7 @@ export default function Login() {
                     }`}
                   />
                 </div>
-
-                {/* Forgot password link */}
-                <div className="flex justify-end -mt-2">
-                  <button
-                    type="button"
-                    onClick={() => { setShowForgot(true); setLoginError(''); }}
-                    className="text-brand-red text-sm font-semibold hover:underline"
-                  >
-                    Forgot password?
-                  </button>
-                </div>
-
+        
                 {/* Submit */}
                 <button
                   type="submit"

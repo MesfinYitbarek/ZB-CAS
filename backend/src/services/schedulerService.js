@@ -41,6 +41,7 @@ import {
   autoCompleteExpiredAssessments,
   processPendingReminders,
 } from '../controllers/assessmentController.js';
+import { autoScoreOnCompletion } from './scoringService.js';
 
 // ─── Timer registry ───────────────────────────────────────────────────────────
 const activeTimers = new Map();
@@ -106,6 +107,8 @@ export const scheduleAssessmentTimers = (assessment) => {
           } catch (err) {
             logger.error({ event: 'timer_complete_error', assessmentId: id, err: err.message });
           }
+          // Score Combined assessments automatically once completed
+          void autoScoreOnCompletion(assessment.id);
           activeTimers.delete(id);
         }, remainingMs);
         activeTimers.set(id, endEntry);
@@ -125,6 +128,8 @@ export const scheduleAssessmentTimers = (assessment) => {
       } catch (err) {
         logger.error({ event: 'timer_complete_error', assessmentId: id, err: err.message });
       }
+      // Score Combined assessments automatically once completed
+      void autoScoreOnCompletion(assessment.id);
       activeTimers.delete(id);
     }, endMs);
   }

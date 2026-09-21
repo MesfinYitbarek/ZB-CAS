@@ -6,7 +6,6 @@ export default function StatusBadge({ status, type = 'assessment' }) {
         SCHEDULED: { bg: 'bg-gray-200', text: 'text-gray-700', label: 'Scheduled' },
         ACTIVE: { bg: 'bg-brand-black', text: 'text-white', label: 'Active' },
         COMPLETED: { bg: 'bg-brand-red-muted', text: 'text-brand-red', label: 'Completed' },
-        ARCHIVED: { bg: 'bg-gray-200', text: 'text-gray-500', label: 'Archived' },
       };
       return configs[status] || configs.DRAFT;
     }

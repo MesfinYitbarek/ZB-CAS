@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Users, AlertCircle, RefreshCw, Award,
@@ -8,6 +8,8 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import api from '../utils/api';
+import { useQuery } from '@tanstack/react-query';
+import { queryKeys } from '../hooks/queries';
 
 const PERIOD_OPTIONS = [
   { key: 'monthly', label: '1M', full: 'Last Month' },
@@ -21,28 +23,23 @@ const PERIOD_OPTIONS = [
 export default function SupervisorDashboard() {
   const nav = useNavigate();
   const { user } = useAuth();
-  const { showToast } = useToast();
+  const { show } = useToast();
   const [period, setPeriod] = useState('quarterly');
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
 
-  const load = useCallback(async (p, silent = false) => {
-    if (!silent) setLoading(true);
-    else setRefreshing(true);
-    try {
-      const res = await api.get(`/dashboard/supervisor?period=${p}`);
-      setData(res.data.data);
-    } catch (err) {
-      console.error(err);
-      showToast('Failed to load dashboard', 'error');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [showToast]);
-
-  useEffect(() => { load(period); }, [period, load]);
+  const { data, isLoading: loading, isFetching, refetch } = useQuery({
+    queryKey: queryKeys.dashboard.supervisor(period),
+    queryFn: async () => {
+      try {
+        const res = await api.get(`/dashboard/supervisor?period=${period}`);
+        return res.data.data;
+      } catch (err) {
+        console.error(err);
+        show('Failed to load dashboard', 'error');
+        throw err;
+      }
+    },
+  });
+  const refreshing = isFetching && !loading;
 
   if (loading) {
     return (
@@ -92,7 +89,7 @@ export default function SupervisorDashboard() {
                 {PERIOD_OPTIONS.map(({ key, label }) => (
                   <button
                     key={key}
-                    onClick={() => { setPeriod(key); load(key); }}
+                    onClick={() => setPeriod(key)}
                     className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all duration-150
                       ${period === key ? 'bg-brand-red text-white shadow-sm' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}
                   >
@@ -101,7 +98,7 @@ export default function SupervisorDashboard() {
                 ))}
               </div>
               <button
-                onClick={() => load(period, true)}
+                onClick={() => refetch()}
                 className="w-9 h-9 bg-white border border-gray-200 rounded-xl flex items-center justify-center text-gray-400 hover:text-gray-600 shadow-sm"
               >
                 <RefreshCw className="w-3.5 h-3.5" />

@@ -1,8 +1,11 @@
 /* components/SupportWidget.jsx — Real-time Telegram/Instagram-quality chat */
 /* Socket.IO WebSocket | Optimistic sends | Typing indicators | Presence | Read receipts */
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useQuery, useQueries, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../hooks/useSocket';
+import { queryKeys } from '../hooks/queryKeys';
+import { usePublicFaqs, useFaqCategories } from '../hooks/queries';
 import api from '../utils/api';
 import {
   HelpCircle, X, MessageCircle, Search, Send,
@@ -94,21 +97,28 @@ function ChatView({ partner, onBack, socket, connected, currentUserId, onlineUse
   const [sending, setSending] = useState(false);
   const [partnerTyping, setPartnerTyping] = useState(false);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
-  const [loading, setLoading] = useState(true);
   const endRef = useRef(null);
   const containerRef = useRef(null);
   const taRef = useRef(null);
   const typingTimer = useRef(null);
   const isOnline = onlineUsers.has(partner._id);
 
+  const conversationQuery = useQuery({
+    queryKey: queryKeys.chat.conversation(partner._id),
+    queryFn: async () => {
+      const { data } = await api.get(`/chat/conversation/${partner._id}`);
+      return data.data || [];
+    },
+    enabled: !!partner._id,
+  });
+  const loading = conversationQuery.isLoading;
+
   useEffect(() => {
-    let live = true;
-    api.get(`/chat/conversation/${partner._id}`)
-      .then(({ data }) => { if (live) setMessages(data.data || []); })
-      .catch(console.error)
-      .finally(() => { if (live) setLoading(false); });
+    if (conversationQuery.data !== undefined) setMessages(conversationQuery.data);
+  }, [conversationQuery.data]);
+
+  useEffect(() => {
     socket?.emit('message:read', { senderId: partner._id });
-    return () => { live = false; };
   }, [partner._id, socket]);
 
   useEffect(() => {
@@ -290,24 +300,34 @@ function ChatView({ partner, onBack, socket, connected, currentUserId, onlineUse
 function ContactList({ onSelect, socket, onlineUsers }) {
   const { user } = useAuth();
   const [contacts, setContacts] = useState([]);
-  const [loading, setLoading] = useState(true);
 
-  const load = useCallback(async () => {
-    try {
-      const [a, c] = await Promise.all([api.get('/chat/admins'), api.get('/chat/conversations')]);
-      const map = new Map();
-      (a.data.data || []).forEach(adm => { if (adm._id !== user?._id) map.set(adm._id, { partner: adm, lastMessage: null, unreadCount: 0 }); });
-      (c.data.data || []).forEach(conv => map.set(conv.partner._id, conv));
-      const sorted = Array.from(map.values()).sort((a, b) => {
-        if (a.lastMessage && b.lastMessage) return new Date(b.lastMessage.createdAt) - new Date(a.lastMessage.createdAt);
-        return a.lastMessage ? -1 : b.lastMessage ? 1 : 0;
-      });
-      setContacts(sorted);
-    } catch (e) { console.error(e); }
-    finally { setLoading(false); }
-  }, [user?._id]);
+  const [adminsQuery, convsQuery] = useQueries({
+    queries: [
+      {
+        queryKey: queryKeys.chat.admins,
+        queryFn: async () => { const { data } = await api.get('/chat/admins'); return data.data || []; },
+      },
+      {
+        queryKey: queryKeys.chat.conversations,
+        queryFn: async () => { const { data } = await api.get('/chat/conversations'); return data.data || []; },
+      },
+    ],
+  });
+  const loading = adminsQuery.isLoading || convsQuery.isLoading;
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const a = adminsQuery.data;
+    const c = convsQuery.data;
+    if (!a) return;
+    const map = new Map();
+    (a || []).forEach(adm => { if (adm._id !== user?._id) map.set(adm._id, { partner: adm, lastMessage: null, unreadCount: 0 }); });
+    (c || []).forEach(conv => map.set(conv.partner._id, conv));
+    const sorted = Array.from(map.values()).sort((a, b) => {
+      if (a.lastMessage && b.lastMessage) return new Date(b.lastMessage.createdAt) - new Date(a.lastMessage.createdAt);
+      return a.lastMessage ? -1 : b.lastMessage ? 1 : 0;
+    });
+    setContacts(sorted);
+  }, [adminsQuery.data, convsQuery.data, user?._id]);
 
   useEffect(() => {
     if (!socket) return;
@@ -403,27 +423,22 @@ function FAQItem({ faq }) {
 }
 
 function FAQTab() {
-  const [faqs, setFaqs] = useState([]);
-  const [cats, setCats] = useState([]);
   const [selCat, setSelCat] = useState('ALL');
   const [q, setQ] = useState('');
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    Promise.all([api.get('/faq/public'), api.get('/faq/categories')])
-      .then(([fr, cr]) => {
-        setFaqs(fr.data.data || []);
-        setCats([{ value: 'ALL', label: 'All' }, ...(cr.data.data || [])]);
-      })
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, []);
+  const { data: faqs, isLoading: faqsLoading } = usePublicFaqs();
+  const { data: cats, isLoading: catsLoading } = useFaqCategories();
+  const loading = faqsLoading || catsLoading;
+  const catsData = [{ value: 'ALL', label: 'All' }, ...(cats || [])];
 
-  const filtered = useMemo(() => faqs.filter(f => {
-    const mc = selCat === 'ALL' || f.category === selCat;
-    const ms = !q || f.question.toLowerCase().includes(q.toLowerCase()) || f.answer.toLowerCase().includes(q.toLowerCase());
-    return mc && ms;
-  }), [faqs, selCat, q]);
+  const filtered = useMemo(() => {
+    const list = faqs || [];
+    return list.filter(f => {
+      const mc = selCat === 'ALL' || f.category === selCat;
+      const ms = !q || f.question.toLowerCase().includes(q.toLowerCase()) || f.answer.toLowerCase().includes(q.toLowerCase());
+      return mc && ms;
+    });
+  }, [faqs, selCat, q]);
 
   if (loading) return (
     <div className="flex-1 flex items-center justify-center">
@@ -445,7 +460,7 @@ function FAQTab() {
           />
         </div>
         <div className="flex gap-1.5 overflow-x-auto pb-0.5 scrollbar-none">
-          {cats.map(c => (
+          {catsData.map(c => (
             <button
               key={c.value}
               onClick={() => setSelCat(c.value)}
@@ -492,8 +507,18 @@ export default function SupportWidget() {
   const { isAdmin, isSupervisor, isEmployee, user, getAccessToken } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('faq');
-  const [unread, setUnread] = useState(0);
   const [token, setToken] = useState(null);
+  const queryClient = useQueryClient();
+
+  const unreadQuery = useQuery({
+    queryKey: queryKeys.chat.unread,
+    queryFn: async () => {
+      const { data } = await api.get('/chat/unread');
+      return data.data;
+    },
+    refetchInterval: 30_000,
+  });
+  const unread = unreadQuery.data?.count ?? 0;
 
   // ── Draggable floating button (position persisted per browser) ─────────────
   const [pos, setPos] = useState(() => {
@@ -557,21 +582,21 @@ export default function SupportWidget() {
   const { socket, connected } = useSocket(token);
 
   useEffect(() => {
-    api.get('/chat/unread').then(({ data }) => setUnread(data.data?.count || 0)).catch(() => {});
-    const iv = setInterval(() => api.get('/chat/unread').then(({ data }) => setUnread(data.data?.count || 0)).catch(() => {}), 30000);
-    return () => clearInterval(iv);
-  }, []);
-
-  useEffect(() => {
     if (!socket) return;
     const onNew = (msg) => {
-      if ((msg.receiver?._id || msg.receiver) === user?._id && (!isOpen || activeTab !== 'chat')) setUnread(p => p + 1);
+      if ((msg.receiver?._id || msg.receiver) === user?._id && (!isOpen || activeTab !== 'chat')) {
+        queryClient.setQueryData(queryKeys.chat.unread, (old) => ({ count: (Number(old?.count ?? 0) + 1) }));
+      }
     };
     socket.on('message:new', onNew);
     return () => socket.off('message:new', onNew);
-  }, [socket, user?._id, isOpen, activeTab]);
+  }, [socket, user?._id, isOpen, activeTab, queryClient]);
 
-  useEffect(() => { if (isOpen && activeTab === 'chat') setUnread(0); }, [isOpen, activeTab]);
+  useEffect(() => {
+    if (isOpen && activeTab === 'chat') {
+      queryClient.setQueryData(queryKeys.chat.unread, { count: 0 });
+    }
+  }, [isOpen, activeTab, queryClient]);
 
   if (!(isEmployee || isSupervisor || isAdmin)) return null;
 

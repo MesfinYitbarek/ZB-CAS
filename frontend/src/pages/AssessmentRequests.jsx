@@ -1,7 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import { Inbox, Link2, Check, Clock, RefreshCw, AlertCircle, CheckCircle2, ChevronDown, ChevronUp, X } from 'lucide-react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../utils/api';
 import { useToast } from '../context/ToastContext';
+import { queryKeys } from '../hooks/queryKeys';
 
 const STATUS_OPTIONS = ['PENDING', 'IN_PROGRESS', 'COMPLETED', 'SYNCED'];
 
@@ -21,75 +23,68 @@ const STATUS_ICON = {
 
 export default function AssessmentRequests() {
   const { show } = useToast();
-  const [requests, setRequests] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [filter, setFilter] = useState('');
   const [expandedId, setExpandedId] = useState(null);
-  const [expandedResults, setExpandedResults] = useState({});
-  const [loadingResults, setLoadingResults] = useState({});
   const [markingComplete, setMarkingComplete] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
+
+  const { data: requests = [], isLoading: loading, refetch } = useQuery({
+    queryKey: queryKeys.externalRequests.list({ status: filter || undefined }),
+    queryFn: async () => {
+      const res = await api.get('/external/assessment-requests', { params: filter ? { status: filter } : {} });
+      return res.data?.data?.requests || [];
+    },
+    onError: () => show('Failed to load requests.', 'error'),
+  });
+
+  const resultsQuery = useQuery({
+    queryKey: queryKeys.externalRequests.userResults(expandedId),
+    queryFn: async () => {
+      const res = await api.get(`/external/assessment-requests/${expandedId}/user-results`);
+      return res.data?.data?.assessments || [];
+    },
+    enabled: !!expandedId,
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (reqId) => api.delete(`/external/assessment-requests/${reqId}`),
+    onSuccess: () => {
+      show('Assessment request deleted successfully.', 'success');
+      queryClient.invalidateQueries({ queryKey: queryKeys.externalRequests.all });
+    },
+    onError: (err) => show(err.response?.data?.message || 'Failed to delete request.', 'error'),
+  });
 
   const handleDelete = async (reqId) => {
     if (!window.confirm('Are you sure you want to delete this assessment request?')) return;
     setDeletingId(reqId);
     try {
-      await api.delete(`/external/assessment-requests/${reqId}`);
-      show('Assessment request deleted successfully.', 'success');
-      loadRequests();
-    } catch (err) {
-      show(err.response?.data?.message || 'Failed to delete request.', 'error');
+      await deleteMutation.mutateAsync(reqId);
     } finally {
       setDeletingId(null);
     }
   };
 
-  const loadRequests = useCallback(async () => {
-    setLoading(true);
-    try {
-      const params = filter ? `?status=${filter}` : '';
-      const res = await api.get(`/external/assessment-requests${params}`);
-      setRequests(res.data?.data?.requests || []);
-    } catch (err) {
-      show('Failed to load requests.', 'error');
-    } finally {
-      setLoading(false);
-    }
-  }, [filter, show]);
-
-  useEffect(() => { loadRequests(); }, [loadRequests]);
-
-  const toggleExpand = async (reqId) => {
-    if (expandedId === reqId) {
-      setExpandedId(null);
-      return;
-    }
-    setExpandedId(reqId);
-
-    // Fetch read-only results for this request if not already loaded
-    if (!expandedResults[reqId]) {
-      setLoadingResults(prev => ({ ...prev, [reqId]: true }));
-      try {
-        const res = await api.get(`/external/assessment-requests/${reqId}/user-results`);
-        setExpandedResults(prev => ({ ...prev, [reqId]: res.data?.data?.assessments || [] }));
-      } catch {
-        setExpandedResults(prev => ({ ...prev, [reqId]: [] }));
-      } finally {
-        setLoadingResults(prev => ({ ...prev, [reqId]: false }));
-      }
-    }
+  const toggleExpand = (reqId) => {
+    setExpandedId(prev => prev === reqId ? null : reqId);
   };
+
+  const markCompleteMutation = useMutation({
+    mutationFn: (reqId) => api.patch(`/external/assessment-requests/${reqId}/mark-complete`),
+    onSuccess: (res, reqId) => {
+      show(res?.data?.data?.message || 'Request marked as completed!', 'success');
+      setExpandedId(null);
+      queryClient.invalidateQueries({ queryKey: queryKeys.externalRequests.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.externalRequests.userResults(reqId) });
+    },
+    onError: (err) => show(err.response?.data?.message || 'Failed to mark as completed.', 'error'),
+  });
 
   const handleMarkComplete = async (reqId) => {
     setMarkingComplete(reqId);
     try {
-      const { data } = await api.patch(`/external/assessment-requests/${reqId}/mark-complete`);
-      show(data?.data?.message || 'Request marked as completed!', 'success');
-      setExpandedId(null);
-      setExpandedResults(prev => { const n = { ...prev }; delete n[reqId]; return n; });
-      loadRequests();
-    } catch (err) {
-      show(err.response?.data?.message || 'Failed to mark as completed.', 'error');
+      await markCompleteMutation.mutateAsync(reqId);
     } finally {
       setMarkingComplete(null);
     }
@@ -97,14 +92,19 @@ export default function AssessmentRequests() {
 
   const [linkingUser, setLinkingUser] = useState(null);
 
+  const linkUserMutation = useMutation({
+    mutationFn: (reqId) => api.post(`/external/assessment-requests/${reqId}/link-user`),
+    onSuccess: (res) => {
+      show(res?.data?.message || 'User linked successfully!', 'success');
+      queryClient.invalidateQueries({ queryKey: queryKeys.externalRequests.all });
+    },
+    onError: (err) => show(err.response?.data?.message || 'Failed to link user.', 'error'),
+  });
+
   const handleLinkUser = async (reqId) => {
     setLinkingUser(reqId);
     try {
-      const { data } = await api.post(`/external/assessment-requests/${reqId}/link-user`);
-      show(data.message || 'User linked successfully!', 'success');
-      loadRequests();
-    } catch (err) {
-      show(err.response?.data?.message || 'Failed to link user.', 'error');
+      await linkUserMutation.mutateAsync(reqId);
     } finally {
       setLinkingUser(null);
     }
@@ -127,7 +127,7 @@ export default function AssessmentRequests() {
           </div>
         </div>
         <button
-          onClick={loadRequests}
+          onClick={() => refetch()}
           className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 rounded-lg font-medium text-sm text-gray-600 hover:bg-gray-50 transition-colors shadow-sm"
         >
           <RefreshCw className="w-3.5 h-3.5" /> Refresh
@@ -169,8 +169,8 @@ export default function AssessmentRequests() {
           requests.map(req => {
             const SIcon = STATUS_ICON[req.status] || Clock;
             const isExpanded = expandedId === req._id;
-            const results = expandedResults[req._id] || [];
-            const isLoadingRes = loadingResults[req._id];
+            const results = isExpanded ? (resultsQuery.data || []) : [];
+            const isLoadingRes = isExpanded && resultsQuery.isLoading;
             const canMarkComplete = req.status !== 'SYNCED' && req.status !== 'COMPLETED';
 
             return (
@@ -330,7 +330,7 @@ export default function AssessmentRequests() {
                                 <span className="text-xs px-2 py-0.5 rounded-full bg-gray-200 text-gray-800 font-medium">{a.level}</span>
                               )}
                               <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                                a.status === 'COMPLETED' || a.status === 'ARCHIVED'
+                                a.status === 'COMPLETED'
                                   ? 'bg-brand-black text-white'
                                   : 'bg-gray-200 text-gray-700'
                               }`}>

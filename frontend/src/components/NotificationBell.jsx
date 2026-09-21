@@ -10,13 +10,15 @@
  *  - Socket.IO: receives 'notification:new' and increments count live
  *  - Falls back gracefully when socket is not connected (polling every 60s)
  */
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
   Bell, X, CheckCheck, Trash2, ClipboardList,
   Award, Clock, UserCheck, Sparkles, Info,
 } from 'lucide-react';
 import api from '../utils/api';
+import { queryKeys } from '../hooks/queryKeys';
 
 // ─── Type metadata ────────────────────────────────────────────────────────────
 const TYPE_META = {
@@ -113,49 +115,57 @@ function NotifRow({ notif, onRead, onDelete }) {
 export default function NotificationBell({ socket }) {
   const [open, setOpen] = useState(false);
   const [notifs, setNotifs] = useState([]);
-  const [unread, setUnread] = useState(0);
-  const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [page, setPage] = useState(1);
   const panelRef = useRef(null);
+  const queryClient = useQueryClient();
 
-  // ── Load notifications ──────────────────────────────────────────────────
-  const load = useCallback(async (p = 1, append = false) => {
-    setLoading(true);
-    try {
-      const { data } = await api.get('/notifications', { params: { page: p, limit: 20 } });
-      const { notifications, total, unreadCount } = data.data;
-      setNotifs(prev => append ? [...prev, ...notifications] : notifications);
-      setUnread(unreadCount);
-      setHasMore(p * 20 < total);
-      setPage(p);
-    } catch { /* silent */ }
-    finally { setLoading(false); }
-  }, []);
+  // ── Notifications list (fetches when the panel opens) ──────────────────
+  const listQuery = useQuery({
+    queryKey: queryKeys.notifications.list({ page, limit: 20 }),
+    queryFn: async () => {
+      const { data } = await api.get('/notifications', { params: { page, limit: 20 } });
+      return data.data;
+    },
+    enabled: open,
+  });
 
-  // ── Initial load + unread polling ──────────────────────────────────────
+  // ── Unread count (60s poll replaces the old setInterval) ───────────────
+  const unreadQuery = useQuery({
+    queryKey: queryKeys.notifications.unreadCount,
+    queryFn: async () => {
+      const { data } = await api.get('/notifications/unread-count');
+      return data.data;
+    },
+    refetchInterval: 60_000,
+  });
+
+  const unread = unreadQuery.data?.count ?? 0;
+  const loading = listQuery.isFetching;
+
+  // ── Merge paginated pages into the displayed list ──────────────────────
   useEffect(() => {
-    load(1);
-    // Lightweight unread poll every 60s as socket fallback
-    const iv = setInterval(async () => {
-      try {
-        const { data } = await api.get('/notifications/unread-count');
-        setUnread(data.data.count);
-      } catch { /* silent */ }
-    }, 60000);
-    return () => clearInterval(iv);
-  }, [load]);
+    const d = listQuery.data;
+    if (!d) return;
+    setNotifs(prev => {
+      const ids = new Set(prev.map(n => n._id));
+      const fresh = d.notifications.filter(n => !ids.has(n._id));
+      return d.page === 1 ? d.notifications : [...prev, ...fresh];
+    });
+    setHasMore(d.page * d.limit < d.total);
+    queryClient.setQueryData(queryKeys.notifications.unreadCount, { count: d.unreadCount });
+  }, [listQuery.data, queryClient]);
 
   // ── Socket.IO real-time ─────────────────────────────────────────────────
   useEffect(() => {
     if (!socket) return;
     const handleNew = (notif) => {
       setNotifs(prev => [notif, ...prev]);
-      setUnread(prev => prev + 1);
+      queryClient.setQueryData(queryKeys.notifications.unreadCount, (old) => ({ count: (Number(old?.count ?? 0) + 1) }));
     };
     socket.on('notification:new', handleNew);
     return () => socket.off('notification:new', handleNew);
-  }, [socket]);
+  }, [socket, queryClient]);
 
   // ── Close on outside click ──────────────────────────────────────────────
   useEffect(() => {
@@ -169,42 +179,53 @@ export default function NotificationBell({ socket }) {
 
   // ── Reload full list when panel opens ──────────────────────────────────
   const handleToggle = () => {
-    if (!open) load(1);
+    if (!open) setPage(1);
     setOpen(v => !v);
   };
 
   // ── Actions ─────────────────────────────────────────────────────────────
-  const handleRead = async (id) => {
-    try {
-      await api.patch(`/notifications/${id}/read`);
+  const readMutation = useMutation({
+    mutationFn: (id) => api.patch(`/notifications/${id}/read`),
+    onMutate: (id) => {
       setNotifs(prev => prev.map(n => n._id === id ? { ...n, read: true } : n));
-      setUnread(prev => Math.max(0, prev - 1));
-    } catch { /* silent */ }
-  };
+      queryClient.setQueryData(queryKeys.notifications.unreadCount, (old) => ({ count: Math.max(0, (Number(old?.count ?? 0) - 1)) }));
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.notifications.all }),
+  });
 
-  const handleMarkAllRead = async () => {
-    try {
-      await api.patch('/notifications/read-all');
+  const markAllReadMutation = useMutation({
+    mutationFn: () => api.patch('/notifications/read-all'),
+    onMutate: () => {
       setNotifs(prev => prev.map(n => ({ ...n, read: true })));
-      setUnread(0);
-    } catch { /* silent */ }
-  };
+      queryClient.setQueryData(queryKeys.notifications.unreadCount, { count: 0 });
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.notifications.all }),
+  });
 
-  const handleDelete = async (id) => {
-    const notif = notifs.find(n => n._id === id);
-    try {
-      await api.delete(`/notifications/${id}`);
+  const deleteMutation = useMutation({
+    mutationFn: (id) => api.delete(`/notifications/${id}`),
+    onMutate: (id) => {
+      const notif = notifs.find(n => n._id === id);
       setNotifs(prev => prev.filter(n => n._id !== id));
-      if (notif && !notif.read) setUnread(prev => Math.max(0, prev - 1));
-    } catch { /* silent */ }
-  };
+      if (notif && !notif.read) {
+        queryClient.setQueryData(queryKeys.notifications.unreadCount, (old) => ({ count: Math.max(0, (Number(old?.count ?? 0) - 1)) }));
+      }
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.notifications.all }),
+  });
 
-  const handleClearRead = async () => {
-    try {
-      await api.delete('/notifications/clear-read');
+  const clearReadMutation = useMutation({
+    mutationFn: () => api.delete('/notifications/clear-read'),
+    onMutate: () => {
       setNotifs(prev => prev.filter(n => !n.read));
-    } catch { /* silent */ }
-  };
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.notifications.all }),
+  });
+
+  const handleRead = (id) => { readMutation.mutate(id); };
+  const handleMarkAllRead = () => { markAllReadMutation.mutate(); };
+  const handleDelete = (id) => { deleteMutation.mutate(id); };
+  const handleClearRead = () => { clearReadMutation.mutate(); };
 
   const hasRead = notifs.some(n => n.read);
 
@@ -228,7 +249,7 @@ export default function NotificationBell({ socket }) {
       {/* ── Dropdown panel ─────────────────────────────────────────────── */}
       {open && (
         <div
-          className="absolute top-12 right-0 w-[calc(100vw-2rem)] sm:w-[280px] lg:w-[280px] bg-white rounded-2xl shadow-2xl border border-gray-100 z-50 flex flex-col overflow-hidden"
+          className="absolute top-12 right-0 w-[calc(100vw-2rem)] sm:w-[280px] lg:w-[280px] max-h-[min(70vh,480px)] bg-white rounded-2xl shadow-2xl border border-gray-100 z-50 flex flex-col overflow-hidden"
         >
 
           {/* Header */}
@@ -267,7 +288,7 @@ export default function NotificationBell({ socket }) {
           </div>
 
           {/* List */}
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 min-h-0 overflow-y-auto scrollbar-none">
             {loading && notifs.length === 0 ? (
               <div className="flex items-center justify-center h-24">
                 <div className="w-5 h-5 border-2 border-brand-red border-t-transparent rounded-full animate-spin" />
@@ -294,7 +315,7 @@ export default function NotificationBell({ socket }) {
                 </div>
                 {hasMore && (
                   <button
-                    onClick={() => load(page + 1, true)}
+                    onClick={() => setPage(p => p + 1)}
                     disabled={loading}
                     className="w-full py-2.5 text-xs font-medium text-gray-500 hover:text-brand-red hover:bg-gray-50 transition-colors border-t border-gray-100"
                   >

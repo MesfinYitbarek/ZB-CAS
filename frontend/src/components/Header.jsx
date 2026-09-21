@@ -38,20 +38,7 @@ const BREADCRUMB_MAP = {
 //   { label: 'View Reports', icon: TrendingUp, path: '/reports', shortcut: 'P' },
 // ];
 
-// Searchable items - matching actual sidebar navigation
-const SEARCH_ITEMS = [
-  { label: 'Dashboard', path: '/dashboard', icon: Home },
-  { label: 'User Management', path: '/users', icon: Users },
-  { label: 'Competencies', path: '/competencies', icon: Target },
-  { label: 'Question Bank', path: '/questions', icon: BookOpen },
-  { label: 'Recommendations', path: '/recommendations', icon: Lightbulb },
-  { label: 'Assessments', path: '/assessments', icon: ClipboardList },
-  { label: 'Results', path: '/results', icon: FileText },
-  { label: 'Reports', path: '/reports', icon: BarChart3 },
-  { label: 'Feedback', path: '/feedback', icon: MessageSquare },
-  { label: 'Activity Log', path: '/activity-log', icon: Activity },
-  { label: 'My Profile', path: '/profile', icon: User },
-];
+
 
 export default function Header({ onMobileToggle }) {
   const { user, activeRole, logout, getAccessToken } = useAuth();

@@ -7,10 +7,9 @@
 import prisma from '../config/prisma.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import AppError from '../utils/AppError.js';
-import { scoreFullAssessment, scoreIndividual } from '../services/scoringService.js';
+import { scoreFullAssessment, scoreIndividual, hasSubmittedBothSides } from '../services/scoringService.js';
 import { sendResultsEmail } from '../services/emailService.js';
 import { notifyResultReady } from '../services/notificationService.js';
-import { logActivity } from '../services/activityService.js';
 import { normalizeTargetGroup, denormalizeTargetGroup } from '../utils/targetGroup.js';
 import logger from '../utils/logger.js';
 
@@ -53,6 +52,7 @@ const processResultRow = (r) => ({
   level: r.level,
   recommendation: r.recommendation,
   status: r.status || 'FINAL',
+  notTaken: r.status === 'PENDING' || !!r.scoreDetails?.notTaken,
   weightUsed: r.scoreDetails?.weightUsed || null,
   calculation: r.scoreDetails?.calculation || null,
   hasQuestionDetails: !!(r.scoreDetails?.questionDetails?.length > 0 || r.scoreDetails),
@@ -71,7 +71,7 @@ const getSubordinateIds = async (supervisorId) => {
 
 // ─── ADMIN SCORE ──────────────────────────────────────────────────────────────
 export const scoreAssessment = asyncHandler(async (req, res, next) => {
-  const results = await scoreFullAssessment(req.params.assessmentId);
+  const { results, skipped } = await scoreFullAssessment(req.params.assessmentId);
 
   results.forEach(async (r) => {
     const employee = await prisma.user.findUnique({ where: { id: r.userId } });
@@ -86,15 +86,13 @@ export const scoreAssessment = asyncHandler(async (req, res, next) => {
     }
   });
 
-  await logActivity({
-    req,
-    action: 'scored',
-    entity: 'Result',
-    description: `Scored ${results.length} result(s) for assessment scoring`,
-    metadata: { assessmentId: req.params.assessmentId, count: results.length },
+  res.status(200).json({
+    status: 'success',
+    message: skipped.length > 0
+      ? `Processed ${results.length} results. ${skipped.length} skipped (waiting for both self and supervisor submissions).`
+      : `Processed ${results.length} results.`,
+    data: { results, skipped },
   });
-
-  res.status(200).json({ status: 'success', message: `Processed ${results.length} results.`, data: { results } });
 });
 
 // ─── AUTO-SCORE ───────────────────────────────────────────────────────────────
@@ -113,21 +111,14 @@ export const autoScoreEmployee = asyncHandler(async (req, res, next) => {
   const assessment = await prisma.assessment.findUnique({ where: { id: assessmentId } });
   if (!assessment) return next(new AppError('Assessment not found.', 404));
 
-  if (assessment.type === 'Combined') {
-    return next(new AppError('Combined assessments must be scored by Admin.', 400));
+  // A Combined result is only meaningful once BOTH sides exist — scoring
+  // earlier would store a single-side row instead of one combined result.
+  if (assessment.type === 'Combined' && !(await hasSubmittedBothSides(assessmentId, employeeId))) {
+    return next(new AppError('Combined result will be calculated once both the self-assessment and the supervisor evaluation are submitted.', 400));
   }
 
   const result = await scoreIndividual(assessmentId, employeeId);
   logger.info({ event: 'auto_score', assessmentId, employeeId, triggeredBy: req.user.id });
-
-  await logActivity({
-    req,
-    action: 'auto_scored',
-    entity: 'Result',
-    entityId: result?.id,
-    description: `Auto-scored result for employee`,
-    metadata: { assessmentId, employeeId, finalScore: result?.finalScore },
-  });
 
   res.status(200).json({ status: 'success', data: { result: result && { ...result, _id: result.id } } });
 });
@@ -137,12 +128,12 @@ export const getAvailableAssessments = asyncHandler(async (req, res) => {
   let assessmentIds = [];
 
   if (req.user.role === 'EMPLOYEE') {
-    assessmentIds = (await prisma.result.findMany({ where: { userId: req.user.id }, select: { assessmentId: true }, distinct: ['assessmentId'] })).map(r => r.assessmentId);
+    assessmentIds = (await prisma.result.findMany({ where: { userId: req.user.id, status: 'FINAL' }, select: { assessmentId: true }, distinct: ['assessmentId'] })).map(r => r.assessmentId);
   }
 
   if (req.user.role === 'SUPERVISOR') {
     const subordinateIds = await getSubordinateIds(req.user.id);
-    assessmentIds = (await prisma.result.findMany({ where: { userId: { in: subordinateIds } }, select: { assessmentId: true }, distinct: ['assessmentId'] })).map(r => r.assessmentId);
+    assessmentIds = (await prisma.result.findMany({ where: { userId: { in: subordinateIds }, status: 'FINAL' }, select: { assessmentId: true }, distinct: ['assessmentId'] })).map(r => r.assessmentId);
   }
 
   const assessments = await prisma.assessment.findMany({
@@ -253,18 +244,32 @@ const processResults = (results) => {
 };
 
 // ─── GET RESULTS (paginated list) ─────────────────────────────────────────────
-export const getResults = asyncHandler(async (req, res) => {
-  const { userId, competencyId, assessmentId, status, page = 1, limit = 20 } = req.query;
+export const getResults = asyncHandler(async (req, res, next) => {
+  const { competencyId, assessmentId, status, page = 1, limit = 20 } = req.query;
+  const requestedUserId = req.params.userId || req.query.userId;
   const where = {};
-  if (userId) where.userId = userId;
+
+  // GET /user/:userId — honour the path param and enforce who can view whom
+  if (requestedUserId) {
+    if (req.user.role === 'EMPLOYEE' && requestedUserId !== req.user.id) {
+      return next(new AppError('Not authorized to view these results.', 403));
+    }
+    if (req.user.role === 'SUPERVISOR') {
+      const subs = await getSubordinateIds(req.user.id);
+      if (!subs.includes(requestedUserId)) {
+        return next(new AppError('Not authorized to view these results.', 403));
+      }
+    }
+    where.userId = requestedUserId;
+  } else if (req.user.role === 'EMPLOYEE') {
+    where.userId = req.user.id;
+  } else if (req.user.role === 'SUPERVISOR') {
+    where.userId = { in: await getSubordinateIds(req.user.id) };
+  }
+
   if (competencyId) where.competencyId = competencyId;
   if (assessmentId) where.assessmentId = assessmentId;
   if (status) where.status = status;
-
-  if (req.user.role === 'EMPLOYEE') where.userId = req.user.id;
-  if (req.user.role === 'SUPERVISOR') {
-    where.userId = { in: await getSubordinateIds(req.user.id) };
-  }
 
   const skip = (parseInt(page) - 1) * parseInt(limit);
   const [results, total] = await Promise.all([
@@ -347,15 +352,9 @@ export const getResult = asyncHandler(async (req, res, next) => {
 export const finaliseResult = asyncHandler(async (req, res, next) => {
   const result = await prisma.result.findUnique({ where: { id: req.params.id } });
   if (!result) return next(new AppError('Result not found.', 404));
-
-  await logActivity({
-    req,
-    action: 'finalized',
-    entity: 'Result',
-    entityId: result.id,
-    description: `Result finalized (score ${result.finalScore}%, level ${result.level})`,
-    metadata: { assessmentId: result.assessmentId, finalScore: result.finalScore, level: result.level },
-  });
+  if (result.status === 'PENDING') {
+    return next(new AppError('Cannot finalise a "not taken" result. It becomes final automatically once the assessment is submitted and scored.', 400));
+  }
 
   const updated = await prisma.result.update({ where: { id: result.id }, data: { status: 'FINAL' } });
   res.status(200).json({ status: 'success', data: { result: updated } });
@@ -399,8 +398,20 @@ export const getPDP = asyncHandler(async (req, res, next) => {
   res.status(200).json({ status: 'success', data: { pdp: populated } });
 });
 
-export const getSupervisorEvaluationScores = asyncHandler(async (req, res) => {
+export const getSupervisorEvaluationScores = asyncHandler(async (req, res, next) => {
   const { assessmentId, employeeId } = req.params;
+
+  // SUPERVISOR: must be the direct-report's supervisor
+  if (req.user.role === 'SUPERVISOR') {
+    const employee = await prisma.user.findUnique({
+      where: { id: employeeId },
+      select: { id: true, supervisorId: true },
+    });
+    if (!employee || employee.supervisorId !== req.user.id) {
+      return next(new AppError('You can only view scores for your direct reports.', 403));
+    }
+  }
+
   const resp = await prisma.response.findFirst({
     where: { assessmentId, employeeId, respondentType: 'supervisor' },
   });
@@ -429,6 +440,33 @@ export const getFilteredResults = asyncHandler(async (req, res) => {
     if (dateTo) { const end = new Date(dateTo); end.setHours(23, 59, 59, 999); where.createdAt.lte = end; }
   }
 
+  // P2: all filters are pushed into the SQL `where` (relation filters) so
+  // pagination and totals reflect the query before `take` — no post-pagination
+  // filtering in JS.
+  const userFilters = {};
+  if (department) userFilters.department = department;
+  if (position) userFilters.position = { contains: position, mode: 'insensitive' };
+  if (gender) userFilters.gender = gender;
+  if (Object.keys(userFilters).length) where.user = userFilters;
+
+  const assessmentFilters = {};
+  if (normalizeTargetGroup(targetGroup)) assessmentFilters.targetGroup = normalizeTargetGroup(targetGroup);
+  if (purpose) assessmentFilters.purpose = purpose;
+  if (assessmentType) assessmentFilters.type = assessmentType;
+  if (Object.keys(assessmentFilters).length) where.assessment = assessmentFilters;
+
+  const competencyFilters = {};
+  if (search) {
+    const s = search.toLowerCase();
+    where.OR = [
+      { user: { name: { contains: s, mode: 'insensitive' } } },
+      { user: { email: { contains: s, mode: 'insensitive' } } },
+      { user: { employeeId: { contains: s, mode: 'insensitive' } } },
+      { competency: { name: { contains: s, mode: 'insensitive' } } },
+      { assessment: { description: { contains: s, mode: 'insensitive' } } },
+    ];
+  }
+
   if (req.user.role === 'EMPLOYEE') {
     where.userId = req.user.id;
   } else if (req.user.role === 'SUPERVISOR') {
@@ -454,40 +492,25 @@ export const getFilteredResults = asyncHandler(async (req, res) => {
     prisma.result.count({ where }),
   ]);
 
-  let filtered = results;
-  if (department)     filtered = filtered.filter(r => r.user?.department === department);
-  if (position)       filtered = filtered.filter(r => r.user?.position?.toLowerCase().includes(position.toLowerCase()));
-  if (gender)         filtered = filtered.filter(r => r.user?.gender === gender);
-  if (targetGroup)    filtered = filtered.filter(r => normalizeTargetGroup(r.assessment?.targetGroup) === normalizeTargetGroup(targetGroup));
-  if (purpose)        filtered = filtered.filter(r => r.assessment?.purpose === purpose);
-  if (assessmentType) filtered = filtered.filter(r => r.assessment?.type === assessmentType);
-  if (search) {
-    const s = search.toLowerCase();
-    filtered = filtered.filter(r =>
-      r.user?.name?.toLowerCase().includes(s) ||
-      r.user?.email?.toLowerCase().includes(s) ||
-      r.user?.employeeId?.toLowerCase().includes(s) ||
-      r.competency?.name?.toLowerCase().includes(s) ||
-      r.assessment?.description?.toLowerCase().includes(s)
-    );
-  }
+  const mapped = results.map(r => processResultRow(r));
 
-  const mapped = filtered.map(r => processResultRow(r));
-
+  // "Not taken" (PENDING) rows are listed but excluded from performance
+  // stats so their 0 scores don't drag down averages and distributions.
+  const scored = mapped.filter(r => !r.notTaken);
   const stats = {
     total: mapped.length,
-    avgScore: mapped.length ? parseFloat((mapped.reduce((s, r) => s + r.finalScore, 0) / mapped.length).toFixed(1)) : 0,
+    avgScore: scored.length ? parseFloat((scored.reduce((s, r) => s + r.finalScore, 0) / scored.length).toFixed(1)) : 0,
     levelDist: { Basic: 0, Intermediate: 0, Advanced: 0, Expert: 0 },
     byDept: {},
   };
-  mapped.forEach(r => {
+  scored.forEach(r => {
     if (stats.levelDist[r.level] !== undefined) stats.levelDist[r.level]++;
     if (r.userDepartment) { if (!stats.byDept[r.userDepartment]) stats.byDept[r.userDepartment] = 0; stats.byDept[r.userDepartment]++; }
   });
 
   res.status(200).json({
     status: 'success',
-    data: { results: mapped, stats, pagination: { total, filteredTotal: filtered.length, page: parseInt(page), limit: parseInt(limit), totalPages: Math.ceil(total / parseInt(limit)) } },
+    data: { results: mapped, stats, pagination: { total, filteredTotal: total, page: parseInt(page), limit: parseInt(limit), totalPages: Math.ceil(total / parseInt(limit)) } },
   });
 });
 

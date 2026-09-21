@@ -1,14 +1,18 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import {
   ArrowLeft, Edit2, Trash2, Users, FileText,
   Target, Bell, Check, Search, Tag,
-  CalendarDays, Timer, ChevronDown, Building2, Award, CircleDot, Repeat
+  CalendarDays, Timer, ChevronDown, Building2, Award, CircleDot, Repeat,
+  CalendarClock, Loader2
 } from 'lucide-react';
 import Modal from '../components/Modal';
 import api from '../utils/api';
+import { useAssessmentDetail, useAllCompetencies, useDepartmentList, useQuestions, useEmployeeSearch } from '../hooks/queries';
+import { queryKeys } from '../hooks/queryKeys';
 
 const PURPOSES = [
   'Career Development', 'Succession Planning', 'Performance Improvement',
@@ -20,7 +24,6 @@ const STATUS_COLORS = {
   SCHEDULED: 'bg-gray-200 text-gray-700 border-gray-300',
   ACTIVE: 'bg-gray-200 text-gray-700 border-gray-300',
   COMPLETED: 'bg-red-100 text-red-700 border-red-200',
-  ARCHIVED: 'bg-gray-100 text-gray-500 border-gray-200',
 };
 
 const TYPE_COLORS = {
@@ -105,7 +108,6 @@ function statusNote(status) {
     case 'SCHEDULED': return 'Scheduled and waiting to go live on the start date.';
     case 'ACTIVE': return 'Currently live — employees can take the assessment.';
     case 'COMPLETED': return 'Assessment period has ended.';
-    case 'ARCHIVED': return 'Archived and no longer in use.';
     default: return '';
   }
 }
@@ -115,16 +117,14 @@ export default function AssessmentDetail() {
   const nav = useNavigate();
   const { isAdmin } = useAuth();
   const { show } = useToast();
-  const [assessment, setAssessment] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [editModal, setEditModal] = useState(false);
-  const [competencies, setCompetencies] = useState([]);
-  const [questions, setQuestions] = useState([]);
-  const [departments, setDepartments] = useState([]);
   const [targetGroups, setTargetGroups] = useState([]);
-  const [searchResults, setSearchResults] = useState([]);
   const [employeeSearch, setEmployeeSearch] = useState({ name: '', department: '', position: '' });
   const [expandedIdx, setExpandedIdx] = useState(null);
+  const [deadlineModal, setDeadlineModal] = useState(false);
+  const [deadlineForm, setDeadlineForm] = useState({ endDate: '', endTime: '17:00', startDate: '', startTime: '09:00' });
+  const [extending, setExtending] = useState(false);
 
   const [form, setForm] = useState({    competencyId: '',
     targetGroup: '',
@@ -141,39 +141,45 @@ export default function AssessmentDetail() {
     weight: { selfAssessment: 20, supervisor: 80 },
   });
 
-  const load = async () => {
-    try {
-      const { data } = await api.get(`/assessments/${id}`);
-      const a = data.data.assessment;
-      setAssessment(a);
-      setForm({
-        competencyId: a.competencyId?._id || '',
-        targetGroup: a.targetGroup || '',
-        purpose: a.purpose || '',
-        reminderDaysBefore: a.reminderDaysBefore || '',
-        description: a.description || '',
-        targetAudience: a.targetAudience || { type: 'ALL_DEPARTMENTS', departments: [], employeeIds: [] },
-        questionIds: a.questionIds?.map((q) => q._id) || [],
-        startDate: a.startDate?.split('T')[0] || '',
-        endDate: a.endDate?.split('T')[0] || '',
-        timeLimit: a.timeLimit || '',
-        maxAttempts: a.maxAttempts ?? '',
-        type: a.type,
-        weight: a.weight || { selfAssessment: 20, supervisor: 80 },
-      });
-    } catch (err) {
+  const { data: assessmentData, isLoading: loading } = useAssessmentDetail(id, {
+    onError: () => {
       show('Failed to load assessment.', 'error');
       nav('/assessments');
-    }
-    setLoading(false);
-  };
+    },
+  });
+  const assessment = assessmentData?.assessment || null;
 
-  useEffect(() => { load(); }, [id]);
+  const { data: competencies = [] } = useAllCompetencies();
+  const { data: departments = [] } = useDepartmentList();
+
+  const { data: questionsData } = useQuestions(
+    { competencyId: form.competencyId, targetGroup: form.targetGroup },
+    { enabled: !!(form.competencyId && form.targetGroup) }
+  );
+  const questions = questionsData?.questions || [];
+
+  const { data: searchData, refetch: refetchSearch } = useEmployeeSearch(employeeSearch, { enabled: false });
+  const searchResults = searchData?.employees || [];
 
   useEffect(() => {
-    api.get('/competencies').then(({ data }) => setCompetencies(data.data.competencies)).catch(() => {});
-    api.get('/assessments/employees/departments').then(({ data }) => setDepartments(data.data.departments)).catch(() => {});
-  }, []);
+    if (!assessment) return;
+    const a = assessment;
+    setForm({
+      competencyId: a.competencyId?.id || a.competencyId?._id || '',
+      targetGroup: a.targetGroup || '',
+      purpose: a.purpose || '',
+      reminderDaysBefore: a.reminderDaysBefore || '',
+      description: a.description || '',
+      targetAudience: a.targetAudience || { type: 'ALL_DEPARTMENTS', departments: [], employeeIds: [] },
+      questionIds: a.questionIds?.map((q) => q._id) || [],
+      startDate: a.startDate?.split('T')[0] || '',
+      endDate: a.endDate?.split('T')[0] || '',
+      timeLimit: a.timeLimit || '',
+      maxAttempts: a.maxAttempts ?? '',
+      type: a.type,
+      weight: a.weight || { selfAssessment: 20, supervisor: 80 },
+    });
+  }, [assessment]);
 
   // Derive target groups from selected competency in edit form
   useEffect(() => {
@@ -183,23 +189,26 @@ export default function AssessmentDetail() {
     }
   }, [form.competencyId, competencies]);
 
-  // Fetch questions when competencyId + targetGroup both set
-  useEffect(() => {
-    if (form.competencyId && form.targetGroup) {
-      api.get('/questions', { params: { competencyId: form.competencyId, targetGroup: form.targetGroup } })
-        .then(({ data }) => setQuestions(data.data.questions))
-        .catch(() => {});
-    } else {
-      setQuestions([]);
-    }
-  }, [form.competencyId, form.targetGroup]);
+  const openEditModal = () => {
+    queryClient.removeQueries({ queryKey: queryKeys.assessments.employeesSearch });
+    setEditModal(true);
+  };
 
   const handleEmployeeSearch = async () => {
     try {
-      const { data } = await api.get('/assessments/employees/search', { params: employeeSearch });
-      setSearchResults(data.data.employees);
+      await refetchSearch();
     } catch { show('Employee search failed.', 'error'); }
   };
+
+  const updateMutation = useMutation({
+    mutationFn: (payload) => api.put(`/assessments/${id}`, payload),
+    onSuccess: () => {
+      show('Assessment updated.', 'success');
+      setEditModal(false);
+      queryClient.invalidateQueries({ queryKey: queryKeys.assessments.all });
+    },
+    onError: (err) => show(err.response?.data?.message || 'Update failed.', 'error'),
+  });
 
   const handleUpdate = async () => {
     try {
@@ -209,24 +218,24 @@ export default function AssessmentDetail() {
         timeLimit: form.timeLimit ? Number(form.timeLimit) : null,
         maxAttempts: form.maxAttempts ? Number(form.maxAttempts) : null,
       };
-      await api.put(`/assessments/${id}`, payload);
-      show('Assessment updated.', 'success');
-      setEditModal(false);
-      load();
-    } catch (err) {
-      show(err.response?.data?.message || 'Update failed.', 'error');
-    }
+      await updateMutation.mutateAsync(payload);
+    } catch {}
   };
+
+  const deleteMutation = useMutation({
+    mutationFn: () => api.delete(`/assessments/${id}`),
+    onSuccess: () => {
+      show('Assessment deleted.', 'success');
+      nav('/assessments');
+    },
+    onError: (err) => show(err.response?.data?.message || 'Delete failed.', 'error'),
+  });
 
   const handleDelete = async () => {
     if (!window.confirm('Delete this assessment? This cannot be undone.')) return;
     try {
-      await api.delete(`/assessments/${id}`);
-      show('Assessment deleted.', 'success');
-      nav('/assessments');
-    } catch (err) {
-      show(err.response?.data?.message || 'Delete failed.', 'error');
-    }
+      await deleteMutation.mutateAsync();
+    } catch {}
   };
 
   const toggleQuestion = (qId) => {
@@ -236,6 +245,64 @@ export default function AssessmentDetail() {
         ? prev.questionIds.filter((id) => id !== qId)
         : [...prev.questionIds, qId],
     }));
+  };
+
+  const openDeadlineModal = () => {
+    if (!assessment?.endDate) return;
+    const end = new Date(assessment.endDate);
+    const base = {
+      endDate: end.toISOString().split('T')[0],
+      endTime: end.toISOString().slice(11, 16),
+    };
+    if (assessment?.status === 'SCHEDULED' && assessment?.startDate) {
+      const start = new Date(assessment.startDate);
+      setDeadlineForm({
+        ...base,
+        startDate: start.toISOString().split('T')[0],
+        startTime: start.toISOString().slice(11, 16),
+      });
+    } else {
+      setDeadlineForm(base);
+    }
+    setDeadlineModal(true);
+  };
+
+  const extendMutation = useMutation({
+    mutationFn: (payload) => api.patch(`/assessments/${id}/deadline`, payload),
+    onSuccess: () => {
+      show('Assessment dates extended successfully.', 'success');
+      setDeadlineModal(false);
+      queryClient.invalidateQueries({ queryKey: queryKeys.assessments.all });
+    },
+    onError: (err) => show(err.response?.data?.message || 'Failed to extend deadline.', 'error'),
+  });
+
+  const handleExtendDeadline = async () => {
+    if (!deadlineForm.endDate) { show('Please select a new end date.', 'error'); return; }
+    const newEnd = new Date(`${deadlineForm.endDate}T${deadlineForm.endTime}`);
+    if (isNaN(newEnd.getTime()) || newEnd <= new Date()) {
+      show('The new deadline must be in the future.', 'error');
+      return;
+    }
+    let payload = { endDate: newEnd.toISOString() };
+    if (assessment?.status === 'SCHEDULED') {
+      if (!deadlineForm.startDate) { show('Please select a new start date.', 'error'); return; }
+      const newStart = new Date(`${deadlineForm.startDate}T${deadlineForm.startTime}`);
+      if (isNaN(newStart.getTime()) || newStart <= new Date()) {
+        show('The start date must be in the future.', 'error');
+        return;
+      }
+      if (newEnd <= newStart) {
+        show('The end date must be after the start date.', 'error');
+        return;
+      }
+      payload.startDate = newStart.toISOString();
+    }
+    setExtending(true);
+    try {
+      await extendMutation.mutateAsync(payload);
+    } catch {}
+    setExtending(false);
   };
 
   if (loading) {
@@ -263,7 +330,6 @@ export default function AssessmentDetail() {
     SCHEDULED: 'from-gray-600 to-gray-900',
     ACTIVE:    'from-gray-600 to-gray-900',
     COMPLETED: 'from-red-500 to-red-600',
-    ARCHIVED:  'from-gray-500 to-gray-600',
   }[assessment.status] || 'from-gray-400 to-gray-500';
 
   const TYPE_ICON = {
@@ -298,19 +364,27 @@ export default function AssessmentDetail() {
           </div>
 
           <div className="flex items-center gap-2 flex-shrink-0 ml-4">
+            {isAdmin && (assessment.status === 'ACTIVE' || assessment.status === 'SCHEDULED') && (
+              <button
+                onClick={openDeadlineModal}
+                className="flex items-center gap-1.5 px-2 py-1 border border-gray-300 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                <CalendarClock className="w-3 h-3" /> Extend Deadline
+              </button>
+            )}
             {isAdmin && assessment.status === 'DRAFT' && (
               <>
                 <button
-                  onClick={() => { setSearchResults([]); setEditModal(true); }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-300 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+                  onClick={openEditModal}
+                  className="flex items-center gap-1.5 px-2 py-1 border border-gray-300 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
                 >
-                  <Edit2 className="w-3.5 h-3.5" /> Edit
+                  <Edit2 className="w-3 h-3" /> Edit
                 </button>
                 <button
                   onClick={handleDelete}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 transition-colors"
+                  className="flex items-center gap-1.5 px-2 py-1 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 transition-colors"
                 >
-                  <Trash2 className="w-3.5 h-3.5" /> Delete
+                  <Trash2 className="w-3 h-3" /> Delete
                 </button>
               </>
             )}
@@ -620,6 +694,15 @@ export default function AssessmentDetail() {
                 onChange={(e) => setForm(prev => ({ ...prev, maxAttempts: e.target.value }))}
                 className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red text-sm" />
             </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                Time Limit <span className="text-gray-400 font-normal text-xs">(minutes, blank = none)</span>
+              </label>
+              <input type="number" min="1" placeholder="e.g., 60"
+                value={form.timeLimit}
+                onChange={(e) => setForm(prev => ({ ...prev, timeLimit: e.target.value }))}
+                className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red text-sm" />
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -754,6 +837,72 @@ export default function AssessmentDetail() {
             className="px-4 py-2 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors">
             Save Changes
           </button>
+        </div>
+      </Modal>
+
+      {/* ── Extend Deadline Modal ── */}
+      <Modal open={deadlineModal} onClose={() => setDeadlineModal(false)} title="Extend Dates">
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600">
+            Set new dates for <span className="font-semibold text-gray-900">{assessment.competencyId?.name || 'this assessment'}</span>.
+          </p>
+          {assessment?.status === 'SCHEDULED' && (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">New Start Date *</label>
+                <input type="date" value={deadlineForm.startDate}
+                  onChange={e => setDeadlineForm(prev => ({ ...prev, startDate: e.target.value }))}
+                  className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red text-sm" />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Start Time *</label>
+                <input type="time" value={deadlineForm.startTime}
+                  onChange={e => setDeadlineForm(prev => ({ ...prev, startTime: e.target.value }))}
+                  className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red text-sm" />
+              </div>
+            </div>
+          )}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">New End Date *</label>
+              <input type="date" value={deadlineForm.endDate}
+                onChange={e => setDeadlineForm(prev => ({ ...prev, endDate: e.target.value }))}
+                className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red text-sm" />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">End Time *</label>
+              <input type="time" value={deadlineForm.endTime}
+                onChange={e => setDeadlineForm(prev => ({ ...prev, endTime: e.target.value }))}
+                className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red text-sm" />
+            </div>
+          </div>
+          <div className="bg-gray-50 rounded-xl p-3 text-xs text-gray-500 space-y-1.5">
+            {assessment?.status === 'SCHEDULED' && (
+              <div className="flex items-center justify-between">
+                <span>Current start</span>
+                <span className="font-semibold text-gray-700">
+                  {new Date(assessment.startDate).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </div>
+            )}
+            <div className="flex items-center justify-between">
+              <span>Current deadline</span>
+              <span className="font-semibold text-gray-700">
+                {new Date(assessment.endDate).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+              </span>
+            </div>
+          </div>
+          <div className="flex justify-end gap-3">
+            <button onClick={() => setDeadlineModal(false)}
+              className="px-2 py-1 border border-gray-300 rounded-lg font-semibold text-gray-700 hover:bg-gray-50 transition-colors">
+              Cancel
+            </button>
+            <button onClick={handleExtendDeadline} disabled={extending}
+              className="px-2 py-1 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5">
+              {extending && <Loader2 className="w-2 h-2 animate-spin" />}
+              Extend Deadline
+            </button>
+          </div>
         </div>
       </Modal>
     </div>

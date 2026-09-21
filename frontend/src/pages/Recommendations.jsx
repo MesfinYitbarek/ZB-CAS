@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Plus, Edit2, Trash2, Lightbulb,
   ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Search, Copy,
@@ -7,6 +7,8 @@ import {
 import { useToast } from '../context/ToastContext';
 import Modal from '../components/Modal';
 import api from '../utils/api';
+import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useAllCompetencies, queryKeys } from '../hooks/queries';
 
 const LEVELS = ['Basic', 'Intermediate', 'Advanced', 'Expert'];
 
@@ -25,21 +27,58 @@ const LEVEL_DOT = {
 };
 
 export default function Recommendations() {
-  const [items,          setItems]          = useState([]);
-  const [loading,        setLoading]        = useState(true);
-  const [competencies,   setCompetencies]   = useState([]);
   const [filterComp,     setFilterComp]     = useState('');
   const [modal,          setModal]          = useState(null);
   const [selected,       setSelected]       = useState(null);
   const [expandedGroups, setExpandedGroups] = useState({});
   const [deleteConfirm,  setDeleteConfirm]  = useState(null);
   const { show } = useToast();
+  const queryClient = useQueryClient();
 
-  // Suggestions panel: existing recs with same targetGroup+level across competencies
-  const [suggestions,        setSuggestions]        = useState({});   // { 'Basic': [...], ... }
-  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const { data: competenciesData } = useAllCompetencies();
+  const competencies = competenciesData || [];
 
-  const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 0 });
+  const [pagination, setPagination] = useState({ page: 1, limit: 20 });
+
+  const listParams = useMemo(() => {
+    const params = { page: pagination.page, limit: pagination.limit };
+    if (filterComp) params.competencyId = filterComp;
+    return params;
+  }, [pagination.page, pagination.limit, filterComp]);
+
+  const { data, isLoading } = useQuery({
+    queryKey: queryKeys.recommendations.list(listParams),
+    queryFn: async () => {
+      const { data } = await api.get('/recommendations', { params: listParams });
+      return data.data;
+    },
+  });
+
+  const items = data?.recommendations || [];
+  const total = data?.pagination?.total || 0;
+  const totalPages = data?.pagination?.totalPages || Math.ceil(total / pagination.limit);
+
+  const createRecommendations = useMutation({
+    mutationFn: (bulk) => api.post('/recommendations', { bulk }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.recommendations.all }),
+  });
+
+  const updateRecommendation = useMutation({
+    mutationFn: ({ id, payload }) => api.put(`/recommendations/${id}`, payload),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.recommendations.all }),
+  });
+
+  const deleteRecommendation = useMutation({
+    mutationFn: (id) => api.delete(`/recommendations/${id}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.recommendations.all }),
+  });
+
+  const importRecommendations = useMutation({
+    mutationFn: (fd) => api.post('/recommendations/import', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.recommendations.all }),
+  });
 
   // ── Bulk import ────────────────────────────────────────────────────────────
   const [showImport, setShowImport] = useState(false);
@@ -99,13 +138,10 @@ export default function Recommendations() {
     try {
       const fd = new FormData();
       fd.append('file', selectedFile);
-      const { data } = await api.post('/recommendations/import', fd, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
+      const { data } = await importRecommendations.mutateAsync(fd);
       setImportResult(data.data);
       show(`Import complete: ${data.data.summary.imported} imported, ${data.data.summary.failed} failed.`,
         data.data.summary.failed > 0 ? 'info' : 'success');
-      if (data.data.summary.imported > 0) fetchItems();
     } catch (err) {
       show(err.response?.data?.message || 'Import failed.', 'error');
     } finally {
@@ -127,12 +163,6 @@ export default function Recommendations() {
   const [form, setForm] = useState(initForm());
   const [availableTargetGroups, setAvailableTargetGroups] = useState([]);
 
-  useEffect(() => {
-    api.get('/competencies')
-      .then(({ data }) => setCompetencies(data.data.competencies || []))
-      .catch(() => show('Failed to load competencies.', 'error'));
-  }, [show]);
-
   // Resolve target groups whenever competency changes
   useEffect(() => {
     if (!form.competencyId) {
@@ -151,62 +181,38 @@ export default function Recommendations() {
     }
   }, [form.competencyId, competencies]);
 
-  // Fetch suggestions when targetGroup is set (cross-competency lookup)
-  useEffect(() => {
-    if (!form.targetGroup || modal !== 'create') {
-      setSuggestions({});
-      return;
-    }
-    setSuggestionsLoading(true);
-    const fetchSuggestions = async () => {
-      const byLevel = {};
-      await Promise.all(
-        LEVELS.map(async (lvl) => {
-          try {
-            const { data } = await api.get('/recommendations/by-group-level', {
-              params: { targetGroup: form.targetGroup, level: lvl },
-            });
-            const recs = data.data.recommendations || [];
-            // Exclude recs that already belong to the current competency
-            byLevel[lvl] = recs.filter(
-              (r) => String(r.competencyId?._id) !== String(form.competencyId)
-            );
-          } catch {
-            byLevel[lvl] = [];
-          }
-        })
-      );
-      setSuggestions(byLevel);
-      setSuggestionsLoading(false);
-    };
-    fetchSuggestions();
-  }, [form.targetGroup, form.competencyId, modal]);
+  // Suggestions panel: existing recs with same targetGroup+level across competencies
+  const suggestionsEnabled = modal === 'create' && !!form.targetGroup && !!form.competencyId;
+  const suggestionQueries = useQueries({
+    queries: LEVELS.map((lvl) => ({
+      queryKey: queryKeys.recommendations.byGroupLevel({
+        targetGroup: form.targetGroup,
+        level: lvl,
+        competencyId: form.competencyId,
+      }),
+      queryFn: async () => {
+        const { data } = await api.get('/recommendations/by-group-level', {
+          params: { targetGroup: form.targetGroup, level: lvl },
+        });
+        const recs = data.data.recommendations || [];
+        // Exclude recs that already belong to the current competency
+        return recs.filter(
+          (r) => String(r.competencyId?._id) !== String(form.competencyId)
+        );
+      },
+      enabled: suggestionsEnabled,
+    })),
+  });
 
-  const fetchItems = useCallback(async () => {
-    setLoading(true);
-    try {
-      const params = { page: pagination.page, limit: pagination.limit };
-      if (filterComp) params.competencyId = filterComp;
-      const { data } = await api.get('/recommendations', { params });
-      setItems(data.data.recommendations || []);
-      if (data.data.pagination) {
-        setPagination((prev) => ({
-          ...prev,
-          total:      data.data.pagination.total,
-          totalPages: Math.ceil(data.data.pagination.total / prev.limit),
-        }));
-      }
-    } catch {
-      show('Failed to load recommendations.', 'error');
-    }
-    setLoading(false);
-  }, [filterComp, pagination.page, pagination.limit, show]);
-
-  useEffect(() => { fetchItems(); }, [fetchItems]);
+  const suggestions = {};
+  LEVELS.forEach((lvl, idx) => {
+    suggestions[lvl] = suggestionQueries[idx]?.data || [];
+  });
+  const suggestionsLoading = suggestionQueries.some((q) => q.isLoading);
 
   const toggleGroup = (key) => setExpandedGroups((prev) => ({ ...prev, [key]: !prev[key] }));
 
-  const openCreate = () => { setForm(initForm()); setSuggestions({}); setModal('create'); };
+  const openCreate = () => { setForm(initForm()); setModal('create'); };
 
   const openEdit = (r) => {
     setForm({
@@ -247,20 +253,19 @@ export default function Recommendations() {
           }
         });
         if (!bulkData.length) return show('Enter at least one recommendation.', 'error');
-        await api.post('/recommendations', { bulk: bulkData });
+        await createRecommendations.mutateAsync(bulkData);
         show('Recommendations saved.', 'success');
       } else {
         const level = Object.keys(form.levels)[0];
         const { recommendation, description } = form.levels[level];
-        await api.put(`/recommendations/${selected._id}`, {
+        await updateRecommendation.mutateAsync({ id: selected._id, payload: {
           recommendation: recommendation.trim(),
           description:    description.trim() || undefined,
           targetGroup:    form.targetGroup,
-        });
+        } });
         show('Recommendation updated.', 'success');
       }
       setModal(null);
-      fetchItems();
     } catch (err) {
       show(err.response?.data?.message || 'Save failed.', 'error');
     }
@@ -268,10 +273,9 @@ export default function Recommendations() {
 
   const handleDelete = async (id) => {
     try {
-      await api.delete(`/recommendations/${id}`);
+      await deleteRecommendation.mutateAsync(id);
       show('Deleted.', 'success');
       setDeleteConfirm(null);
-      fetchItems();
     } catch (err) {
       show(err.response?.data?.message || 'Failed.', 'error');
       setDeleteConfirm(null);
@@ -289,7 +293,7 @@ export default function Recommendations() {
   });
 
   const goToPage = (page) => {
-    if (page >= 1 && page <= pagination.totalPages) setPagination((prev) => ({ ...prev, page }));
+    if (page >= 1 && page <= totalPages) setPagination((prev) => ({ ...prev, page }));
   };
 
   const totalRecs = Object.values(grouped).reduce(
@@ -332,7 +336,7 @@ export default function Recommendations() {
           </select>
         </div>
         <div className="flex items-center gap-2">
-          {!loading && <span className="text-sm text-gray-500">{totalRecs} record{totalRecs !== 1 ? 's' : ''}</span>}
+          {isLoading && <span className="text-sm text-gray-500">{totalRecs} record{totalRecs !== 1 ? 's' : ''}</span>}
           <span className="text-sm text-gray-600">Show:</span>
           <select
             value={pagination.limit}
@@ -346,7 +350,7 @@ export default function Recommendations() {
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto scrollbar-none min-h-0">
-        {loading ? (
+        {isLoading ? (
           <div className="flex items-center justify-center p-16">
             <div className="w-10 h-10 border-4 border-brand-red border-t-transparent rounded-full animate-spin" />
           </div>
@@ -453,11 +457,11 @@ export default function Recommendations() {
               })}
             </div>
 
-            {pagination.total > pagination.limit && (
+            {total > pagination.limit && (
               <div className="flex flex-col sm:flex-row justify-between items-center gap-3 mt-4">
                 <p className="text-sm text-gray-500">
                   Showing {(pagination.page - 1) * pagination.limit + 1} to{' '}
-                  {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total}
+                  {Math.min(pagination.page * pagination.limit, total)} of {total}
                 </p>
                 <div className="flex items-center gap-1">
                   <button disabled={pagination.page === 1} onClick={() => goToPage(pagination.page - 1)} className="flex items-center gap-1 px-3 py-2 rounded-lg border border-gray-300 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50">
@@ -466,11 +470,11 @@ export default function Recommendations() {
                   {(() => {
                     const maxV = 5;
                     const pages = [];
-                    if (pagination.totalPages <= maxV) {
-                      for (let i = 1; i <= pagination.totalPages; i++) pages.push(i);
+                    if (totalPages <= maxV) {
+                      for (let i = 1; i <= totalPages; i++) pages.push(i);
                     } else {
                       let start = Math.max(1, pagination.page - Math.floor(maxV / 2));
-                      let end = Math.min(pagination.totalPages, start + maxV - 1);
+                      let end = Math.min(totalPages, start + maxV - 1);
                       if (end - start + 1 < maxV) start = Math.max(1, end - maxV + 1);
                       for (let i = start; i <= end; i++) pages.push(i);
                     }
@@ -481,7 +485,7 @@ export default function Recommendations() {
                       </button>
                     ));
                   })()}
-                  <button disabled={pagination.page === pagination.totalPages} onClick={() => goToPage(pagination.page + 1)} className="flex items-center gap-1 px-3 py-2 rounded-lg border border-gray-300 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50">
+                  <button disabled={pagination.page === totalPages} onClick={() => goToPage(pagination.page + 1)} className="flex items-center gap-1 px-3 py-2 rounded-lg border border-gray-300 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50">
                     Next <ChevronRight className="w-4 h-4" />
                   </button>
                 </div>

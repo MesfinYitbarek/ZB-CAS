@@ -14,9 +14,18 @@ const BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 // ── Token registry (avoids circular import with AuthContext) ──────────────────
 let _getToken = () => null;
+let _setToken = null;
 
 export function registerTokenGetter(fn) {
   _getToken = fn;
+}
+
+// The 401-refresh interceptor pushes each refreshed access token here so the
+// in-memory holder (AuthContext.accessTokenRef) is updated permanently —
+// otherwise every later request still carries the expired token and burns a
+// refresh+rotation cycle until the refresh limiter trips.
+export function registerTokenSetter(fn) {
+  _setToken = fn;
 }
 
 // ── Axios instance ────────────────────────────────────────────────────────────
@@ -83,10 +92,9 @@ api.interceptors.response.use(
 
         const newToken = data.data.accessToken;
 
-        if (typeof _getToken === 'function') {
-          const prev = _getToken;
-          _getToken = () => newToken;
-          setTimeout(() => { _getToken = prev; }, 0);
+        // Permanently adopt the refreshed token for all future requests.
+        if (typeof _setToken === 'function') {
+          _setToken(newToken);
         }
 
         processQueue(null, newToken);

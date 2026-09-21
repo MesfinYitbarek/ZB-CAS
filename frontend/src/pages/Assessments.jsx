@@ -1,16 +1,19 @@
-﻿import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Plus, Calendar, Clock, ChevronLeft, ChevronRight, Target, Users, Eye,
   AlertCircle, Check, X, Shuffle, Edit2, Bell, Briefcase, Search, Copy,
-  LayoutGrid, CalendarDays, ChevronDown, ChevronUp, Table2
+  LayoutGrid, CalendarDays, ChevronDown, ChevronUp, Table2, CalendarClock, Loader2
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import Modal from '../components/Modal';
 import api from '../utils/api';
+import { useAllCompetencies, useDepartmentList, useQuestions, useEmployeeSearch, useSupervisorPending, useSupervisorCompletedCount } from '../hooks/queries';
+import { queryKeys } from '../hooks/queryKeys';
 
-const STATUS_ORDER = ['DRAFT', 'SCHEDULED', 'ACTIVE', 'COMPLETED', 'ARCHIVED'];
+const STATUS_ORDER = ['DRAFT', 'SCHEDULED', 'ACTIVE', 'COMPLETED'];
 const PURPOSES = [
   'Career Development',
   'Succession Planning',
@@ -20,14 +23,21 @@ const PURPOSES = [
   'Other',
 ];
 
-// â”€â”€â”€ Status / type config â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Status / type config ─────────────────────────────────────────────────────
 const STATUS_META = {
-  DRAFT:     { dot: 'bg-gray-400',    bar: 'bg-gray-300',    badge: 'bg-gray-100 text-gray-700',     label: 'Draft'     },
-  SCHEDULED: { dot: 'bg-gray-700',    bar: 'bg-gray-500',    badge: 'bg-gray-200 text-gray-700',     label: 'Scheduled' },
-  ACTIVE:    { dot: 'bg-gray-700',   bar: 'bg-gray-500',   badge: 'bg-gray-200 text-gray-700',   label: 'Active'    },
-  COMPLETED: { dot: 'bg-brand-red',   bar: 'bg-brand-red',   badge: 'bg-red-100 text-red-800',       label: 'Completed' },
-  ARCHIVED:  { dot: 'bg-gray-500',    bar: 'bg-gray-500',    badge: 'bg-gray-100 text-gray-600',     label: 'Archived'  },
+  DRAFT:     { dot: 'bg-gray-400',    bar: 'bg-gray-400',    badge: 'bg-gray-100 text-gray-700',     label: 'Draft'     },
+  SCHEDULED: { dot: 'bg-blue-500',    bar: 'bg-blue-500',    badge: 'bg-blue-100 text-blue-800',     label: 'Scheduled' },
+  ACTIVE:    { dot: 'bg-brand-red',   bar: 'bg-brand-red',   badge: 'bg-red-100 text-red-800',       label: 'Active'    },
+  COMPLETED: { dot: 'bg-green-500',   bar: 'bg-green-500',   badge: 'bg-green-100 text-green-800',   label: 'Completed' },
 };
+
+// Employee take-state for one assessment's progress record:
+// 'start'  — never submitted · 'retake' — submitted, attempts left · 'taken' — submitted, no attempts left
+function getTakeState(progress) {
+  if (!progress?.isSubmitted) return 'start';
+  if (progress.maxAttempts != null && (progress.attemptsRemaining ?? 0) <= 0) return 'taken';
+  return 'retake';
+}
 
 const TYPE_META = {
   SelfAssessment: { badge: 'bg-gray-200 text-gray-800',   short: 'Self'  },
@@ -35,7 +45,7 @@ const TYPE_META = {
   Combined:       { badge: 'bg-brand-red text-white', short: 'Both'},
 };
 
-// â”€â”€â”€ Calendar helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Calendar helpers ─────────────────────────────────────────────────────────
 const DAY_NAMES  = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
@@ -51,7 +61,7 @@ function assessmentCoversDate(a, year, month, day) {
          cell <= new Date(end.getFullYear(), end.getMonth(), end.getDate());
 }
 
-// â”€â”€â”€ Monthly Calendar View â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Monthly Calendar View ────────────────────────────────────────────────────
 function CalendarView({ items, onAssessmentClick }) {
   const today = new Date();
   const [calYear,  setCalYear]  = useState(today.getFullYear());
@@ -74,7 +84,7 @@ function CalendarView({ items, onAssessmentClick }) {
   // Pad to full weeks
   while (cells.length % 7 !== 0) cells.push(null);
 
-  // Map day â†’ assessments
+  // Map day to assessments
   const dayMap = useMemo(() => {
     const m = {};
     items.forEach(a => {
@@ -143,7 +153,7 @@ function CalendarView({ items, onAssessmentClick }) {
                             ${sm.bar} text-white opacity-90 hover:opacity-100 transition-opacity`}
                           title={a.competencyId?.name}
                         >
-                          {isStart ? 'â–¶ ' : ''}{a.competencyId?.name}
+                          {isStart ? '▶ ' : ''}{a.competencyId?.name}
                         </div>
                       );
                     })}
@@ -163,12 +173,13 @@ function CalendarView({ items, onAssessmentClick }) {
   );
 }
 
-// â”€â”€â”€ Assessment detail side-panel (shown when clicking calendar item) â”€â”€â”€â”€â”€â”€â”€â”€â”€
-function AssessmentPanel({ assessment, isAdmin, isSupervisor, isEmployee, onClose, onNavigate, onStatusChange, onScoreResults }) {
+// ─── Assessment detail side-panel (shown when clicking calendar item) ─────────
+function AssessmentPanel({ assessment, isAdmin, isSupervisor, isEmployee, progress, onClose, onNavigate, onStatusChange }) {
   if (!assessment) return null;
   const a  = assessment;
   const sm = STATUS_META[a.status] || STATUS_META.DRAFT;
   const requiresSup = a.type === 'SupervisorOnly' || a.type === 'Combined';
+  const takeState = getTakeState(progress);
 
   return (
     <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center p-4" onClick={onClose}>
@@ -185,7 +196,7 @@ function AssessmentPanel({ assessment, isAdmin, isSupervisor, isEmployee, onClos
           <div className="flex items-start justify-between mb-3">
             <div className="flex-1 min-w-0">
               <h3 className="text-base font-bold text-brand-black leading-tight truncate pr-2">
-                {a.competencyId?.name || 'â€”'}
+                {a.competencyId?.name || '—'}
               </h3>
               {a.purpose && (
                 <span className="text-xs text-gray-700 bg-gray-100 px-2 py-0.5 rounded-full mt-1 inline-block">
@@ -254,20 +265,32 @@ function AssessmentPanel({ assessment, isAdmin, isSupervisor, isEmployee, onClos
               </button>
             )}
             {!isAdmin && a.status === 'ACTIVE' && a.type === 'SelfAssessment' && (
-              <button
-                onClick={() => onNavigate(`/assessments/${a._id}/take`)}
-                className="w-full py-2 px-4 bg-brand-red text-white rounded-xl text-sm font-semibold hover:bg-brand-red-dark transition-colors"
-              >
-                Start Assessment
-              </button>
+              takeState === 'taken' ? (
+                <span className="w-full py-2 px-4 bg-green-50 text-green-700 border border-green-200 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 cursor-default select-none">
+                  <Check className="w-4 h-4" /> Taken
+                </span>
+              ) : (
+                <button
+                  onClick={() => onNavigate(`/assessments/${a._id}/take`)}
+                  className="w-full py-2 px-4 bg-brand-red text-white rounded-xl text-sm font-semibold hover:bg-brand-red-dark transition-colors"
+                >
+                  {takeState === 'retake' ? 'Retake Assessment' : 'Start Assessment'}
+                </button>
+              )
             )}
             {isEmployee && a.status === 'ACTIVE' && a.type === 'Combined' && (
-              <button
-                onClick={() => onNavigate(`/assessments/${a._id}/take`)}
-                className="w-full py-2 px-4 bg-brand-black text-white rounded-xl text-sm font-semibold hover:bg-gray-700 transition-colors"
-              >
-                Start Self-Assessment
-              </button>
+              takeState === 'taken' ? (
+                <span className="w-full py-2 px-4 bg-green-50 text-green-700 border border-green-200 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 cursor-default select-none">
+                  <Check className="w-4 h-4" /> Taken
+                </span>
+              ) : (
+                <button
+                  onClick={() => onNavigate(`/assessments/${a._id}/take`)}
+                  className="w-full py-2 px-4 bg-brand-black text-white rounded-xl text-sm font-semibold hover:bg-gray-700 transition-colors"
+                >
+                  {takeState === 'retake' ? 'Retake Self-Assessment' : 'Start Self-Assessment'}
+                </button>
+              )
             )}
             {isSupervisor && a.status === 'ACTIVE' && requiresSup && (
               <button
@@ -275,14 +298,6 @@ function AssessmentPanel({ assessment, isAdmin, isSupervisor, isEmployee, onClos
                 className="w-full py-2 px-4 bg-brand-black text-white rounded-xl text-sm font-semibold hover:bg-gray-700 transition-colors"
               >
                 Evaluate Team
-              </button>
-            )}
-            {isAdmin && a.status === 'COMPLETED' && a.type === 'Combined' && (
-              <button
-                onClick={() => { onScoreResults(a._id); onClose(); }}
-                className="w-full py-2 px-4 bg-brand-black text-white rounded-xl text-sm font-semibold hover:bg-gray-700 transition-colors flex items-center justify-center gap-1"
-              >
-                <Target className="w-3.5 h-3.5" /> Score Combined Results
               </button>
             )}
           </div>
@@ -293,20 +308,15 @@ function AssessmentPanel({ assessment, isAdmin, isSupervisor, isEmployee, onClos
 }
 
 
-// â”€â”€â”€ Main component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Main component ───────────────────────────────────────────────────────────
 export default function Assessments() {
   const { isAdmin, isSupervisor, isEmployee, user } = useAuth();
   const nav = useNavigate();
   const { show } = useToast();
+  const queryClient = useQueryClient();
 
-  // â”€â”€ State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [competencies, setCompetencies] = useState([]);
-  const [questions, setQuestions] = useState([]);
-  const [departments, setDepartments] = useState([]);
+  // ── State ───────────────────────────────────────────────────────────────────
   const [targetGroups, setTargetGroups] = useState([]);
-  const [searchResults, setSearchResults] = useState([]);
   const [employeeSearch, setEmployeeSearch] = useState({ name: '', department: '', position: '' });
   const [filterStatus, setFilterStatus] = useState('');
   const [modal, setModal] = useState(null);
@@ -322,7 +332,6 @@ export default function Assessments() {
   });
 
   const [pagination, setPagination] = useState({ page: 1, limit: 6, total: 0, totalPages: 0 });
-  const [supervisorStats, setSupervisorStats] = useState({ pendingEvaluations: 0, completedEvaluations: 0 });
 
   const initForm = () => ({
     competencyId: '',
@@ -342,12 +351,133 @@ export default function Assessments() {
     weight: { selfAssessment: 20, supervisor: 80 },
   });
   const [form, setForm] = useState(initForm());
-  const [scoreConfirm, setScoreConfirm] = useState(null);
+
+  // ── Server state ────────────────────────────────────────────────────────────
+  const { data: competencies = [] } = useAllCompetencies();
+
+  const { data: departments = [] } = useDepartmentList();
+
+  const questionsQuery = useQuestions(
+    { competencyId: form.competencyId ?? '', targetGroup: form.targetGroup ?? '' },
+    { enabled: !!(form.competencyId && form.targetGroup) }
+  );
+  const questions = questionsQuery.data?.questions || [];
+
+  const { data: searchData, refetch: refetchSearch } = useEmployeeSearch(employeeSearch, { enabled: false });
+  const searchResults = searchData?.employees || [];
+
+  const { data: pendingPayload } = useSupervisorPending({
+    enabled: isSupervisor,
+    onError: () => console.error('Error loading supervisor stats'),
+  });
+  const { data: completedPayload } = useSupervisorCompletedCount({
+    enabled: isSupervisor,
+    onError: () => console.error('Error loading supervisor stats'),
+  });
+  const supervisorStats = {
+    pendingEvaluations: pendingPayload?.data?.pendingEvaluations?.length || 0,
+    completedEvaluations: completedPayload?.data?.count || 0,
+  };
+
+  const listEndpoint = isAdmin ? '/assessments' : '/assessments/active';
+  const scope = isSupervisor ? 'supervisor' : isEmployee ? 'employee' : 'admin';
+
+  const listQuery = useQuery({
+    queryKey: queryKeys.assessments.list({
+      page: pagination.page,
+      limit: pagination.limit,
+      status: isAdmin ? (filterStatus || undefined) : undefined,
+      scope,
+    }),
+    queryFn: async () => {
+      const params = { page: pagination.page, limit: pagination.limit };
+      if (isAdmin) {
+        if (filterStatus) params.status = filterStatus;
+      } else if (isSupervisor) {
+        params.supervisorView = true;
+      }
+      const { data } = await api.get(listEndpoint, { params });
+      return data.data;
+    },
+    enabled: isAdmin || isSupervisor || isEmployee,
+    onError: () => show('Failed to load assessments.', 'error'),
+  });
+  const items = listQuery.data?.assessments || [];
+  const loading = listQuery.isLoading;
+
+  const calendarQuery = useQuery({
+    queryKey: queryKeys.assessments.list({
+      page: 1,
+      limit: 1000,
+      status: isAdmin ? (filterStatus || undefined) : undefined,
+      scope,
+      calendar: true,
+    }),
+    queryFn: async () => {
+      const params = { page: 1, limit: 1000 };
+      if (isAdmin) {
+        if (filterStatus) params.status = filterStatus;
+      } else if (isSupervisor) {
+        params.supervisorView = true;
+      }
+      const { data } = await api.get(listEndpoint, { params });
+      return data.data.assessments || [];
+    },
+    enabled: viewMode === 'calendar',
+  });
+
+  const calendarItems = useMemo(() => {
+    const all = calendarQuery.data || [];
+    if (!filterStatus) return all;
+    return all.filter(a => a.status === filterStatus);
+  }, [calendarQuery.data, filterStatus]);
+
+  // Sync pagination totals from the live list response
+  useEffect(() => {
+    const pg = listQuery.data?.pagination;
+    if (!pg) return;
+    setPagination(prev => ({
+      ...prev,
+      total: pg.total,
+      totalPages: Math.ceil(pg.total / prev.limit),
+    }));
+  }, [listQuery.data]);
+
+  // Employee take-state: batch the per-assessment progress for visible, tappable
+  // assessments so the list shows Taken / Retake / Start correctly.
+  const progressTargets = useMemo(() => {
+    if (isAdmin) return [];
+    const pool = [...(items || []), ...(calendarItems || [])];
+    const ids = new Set();
+    pool.forEach(a => {
+      if (a?.status === 'ACTIVE' && (a.type === 'SelfAssessment' || a.type === 'Combined')) ids.add(a._id);
+    });
+    return [...ids];
+  }, [isAdmin, items, calendarItems]);
+  const progressQueries = useQueries({
+    queries: progressTargets.map(aid => ({
+      queryKey: queryKeys.responses.progress(aid),
+      queryFn: async () => {
+        const res = await api.get(`/responses/progress/${aid}`).catch(() => null);
+        return res?.data?.data || null;
+      },
+      staleTime: 30 * 1000,
+    })),
+  });
+  const progressById = useMemo(() => {
+    const map = {};
+    progressTargets.forEach((aid, i) => { map[aid] = progressQueries[i]?.data || null; });
+    return map;
+  }, [progressTargets, progressQueries]);
+
   const [duplicateSource, setDuplicateSource] = useState(null);
   const [duplicateDates, setDuplicateDates] = useState({ startDate: '', endDate: '', startTime: '09:00', endTime: '17:00' });
   const [duplicating, setDuplicating] = useState(false);
+  const [extendTarget, setExtendTarget] = useState(null);
+  const [extendForm, setExtendForm] = useState({ endDate: '', endTime: '17:00', startDate: '', startTime: '09:00' });
+  const [extending, setExtending] = useState(false);
 
-  // â”€â”€ Auto-fill description from competency targetGroup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Auto-fill description from competency targetGroup ───────────────────
   useEffect(() => {
     if (!form.competencyId || !form.targetGroup) return;
     const selectedComp = competencies.find(c => c._id === form.competencyId);
@@ -358,14 +488,7 @@ export default function Assessments() {
     }
   }, [form.competencyId, form.targetGroup, competencies]);
 
-  // â”€â”€ Load on mount â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  useEffect(() => {
-    api.get('/competencies').then(({ data }) => setCompetencies(data.data.competencies)).catch(() => {});
-    api.get('/assessments/employees/departments').then(({ data }) => setDepartments(data.data.departments)).catch(() => {});
-    if (isSupervisor) loadSupervisorStats();
-  }, [isSupervisor]);
-
-  // â”€â”€ Derive target groups â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Derive target groups ────────────────────────────────────────────────────
   useEffect(() => {
     if (form.competencyId) {
       const sel = competencies.find(c => c._id === form.competencyId);
@@ -374,109 +497,33 @@ export default function Assessments() {
       setQuestionSelectionMode('auto');
     } else {
       setTargetGroups([]);
-      setQuestions([]);
     }
   }, [form.competencyId, competencies]);
 
-  // â”€â”€ Load questions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Reset question selection whenever a new competency / target-group sets ──
+  // the questions list ─────────────────────────────────────────────────────────
   useEffect(() => {
-    if (form.competencyId && form.targetGroup) {
-      api.get('/questions', { params: { competencyId: form.competencyId, targetGroup: form.targetGroup } })
-        .then(({ data }) => {
-          setQuestions(data.data.questions);
-          setForm(prev => ({ ...prev, questionIds: [] }));
-          setQuestionSelectionMode('auto');
-        })
-        .catch(() => {});
-    } else {
-      setQuestions([]);
+    if (questionsQuery.data) {
+      setForm(prev => ({ ...prev, questionIds: [] }));
+      setQuestionSelectionMode('auto');
     }
-  }, [form.competencyId, form.targetGroup]);
+  }, [questionsQuery.data]);
 
-  const loadSupervisorStats = async () => {
-    try {
-      const res = await api.get('/supervisor/pending');
-      const pendingCount = res.data.data.pendingEvaluations?.length || 0;
-      const completedRes = await api.get('/supervisor/completed-count');
-      const completedCount = completedRes.data.data.count || 0;
-      setSupervisorStats({ pendingEvaluations: pendingCount, completedEvaluations: completedCount });
-    } catch (err) {
-      console.error('Error loading supervisor stats:', err);
-    }
-  };
-
-  // â”€â”€ For calendar/gantt we fetch ALL assessments (no pagination) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  const [allItems, setAllItems] = useState([]);
-
-  const fetchAllAssessments = useCallback(async () => {
-    try {
-      let endpoint = '/assessments';
-      let params = { page: 1, limit: 1000 };
-      if (filterStatus && isAdmin) params.status = filterStatus;
-      if (isSupervisor || isEmployee) {
-        endpoint = '/assessments/active';
-        if (isSupervisor) params.supervisorView = true;
-        delete params.status;
-      }
-      const { data } = await api.get(endpoint, { params });
-      setAllItems(data.data.assessments || []);
-    } catch {}
-  }, [isAdmin, isSupervisor, isEmployee, filterStatus]);
-
-  const fetchAssessments = useCallback(async () => {
-    setLoading(true);
-    try {
-      let endpoint = '/assessments';
-      let params = { page: pagination.page, limit: pagination.limit };
-      if (filterStatus && isAdmin) params.status = filterStatus;
-      if (isSupervisor || isEmployee) {
-        endpoint = '/assessments/active';
-        if (isSupervisor) params.supervisorView = true;
-        delete params.status;
-      }
-      const { data } = await api.get(endpoint, { params });
-      setItems(data.data.assessments || []);
-      if (data.data.pagination) {
-        setPagination(prev => ({
-          ...prev,
-          total: data.data.pagination.total,
-          totalPages: Math.ceil(data.data.pagination.total / pagination.limit)
-        }));
-      }
-    } catch (err) {
-      console.error('Fetch error:', err);
-      show('Failed to load assessments.', 'error');
-    }
-    setLoading(false);
-  }, [isAdmin, isSupervisor, isEmployee, filterStatus, pagination.page, pagination.limit, show]);
-
-  useEffect(() => { fetchAssessments(); }, [fetchAssessments]);
-  useEffect(() => {
-    if (viewMode === 'calendar') fetchAllAssessments();
-  }, [viewMode, fetchAllAssessments]);
-
-  // â”€â”€ Calendar display items (filtered by status if set) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  const calendarItems = useMemo(() => {
-    if (!filterStatus) return allItems;
-    return allItems.filter(a => a.status === filterStatus);
-  }, [allItems, filterStatus]);
-
-  // â”€â”€ Employee search â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Employee search ──────────────────────────────────────────────────────────
   const handleEmployeeSearch = async () => {
     try {
-      const { data } = await api.get('/assessments/employees/search', { params: employeeSearch });
-      setSearchResults(data.data.employees);
-      if (data.data.employees.length === 0) show('No employees found matching your criteria.', 'warning');
+      const res = await refetchSearch();
+      const emps = res?.data?.employees || [];
+      if (emps.length === 0) show('No employees found matching your criteria.', 'warning');
     } catch {
       show('Employee search failed.', 'error');
     }
   };
 
   const openCreate = () => {
+    queryClient.removeQueries({ queryKey: queryKeys.assessments.employeesSearch });
     setForm(initForm());
     setTargetGroups([]);
-    setQuestions([]);
-    setSearchResults([]);
     setEmployeeSearch({ name: '', department: '', position: '' });
     setQuestionSelectionMode('auto');
     setModal('create');
@@ -541,6 +588,53 @@ export default function Assessments() {
     return true;
   };
 
+  const invalidateListings = () => {
+    queryClient.invalidateQueries({ queryKey: queryKeys.assessments.all });
+  };
+
+  const createMutation = useMutation({
+    mutationFn: (payload) => api.post('/assessments', payload),
+    onSuccess: () => {
+      show('Assessment created successfully.', 'success');
+      setModal(null);
+      setPagination(prev => ({ ...prev, page: 1 }));
+      invalidateListings();
+    },
+    onError: (err) => show(err.response?.data?.message || 'Failed to create assessment.', 'error'),
+  });
+
+  const statusMutation = useMutation({
+    mutationFn: ({ id, status }) => api.patch(`/assessments/${id}/status`, { status }),
+    onSuccess: (_res, vars) => {
+      show(`Status changed to ${vars.status}.`, 'success');
+      invalidateListings();
+    },
+    onError: (err) => show(err.response?.data?.message || 'Failed to change status.', 'error'),
+  });
+
+  const extendMutation = useMutation({
+    mutationFn: (payload) => api.patch(`/assessments/${extendTarget?._id}/deadline`, payload),
+    onSuccess: () => {
+      show('Assessment dates extended successfully.', 'success');
+      setExtendTarget(null);
+      invalidateListings();
+    },
+    onError: (err) => show(err.response?.data?.message || 'Failed to extend deadline.', 'error'),
+  });
+
+  const duplicateMutation = useMutation({
+    mutationFn: (payload) => api.post(`/assessments/${payload.sourceId}/duplicate`, {
+      startDate: payload.startDate,
+      endDate: payload.endDate,
+    }),
+    onSuccess: (_res, payload) => {
+      setDuplicateSource(null);
+      show(`"${payload.name || 'Assessment'}" duplicated as a new draft.`, 'success');
+      invalidateListings();
+    },
+    onError: (err) => show(err.response?.data?.message || 'Failed to duplicate assessment.', 'error'),
+  });
+
   const handleSave = async () => {
     try {
       if (!validateDateTime()) return;
@@ -562,26 +656,61 @@ export default function Assessments() {
         type: form.type,
         weight: form.weight,
       };
-      await api.post('/assessments', payload);
-      show('Assessment created successfully.', 'success');
-      setModal(null);
-      setPagination(prev => ({ ...prev, page: 1 }));
-      fetchAssessments();
-      fetchAllAssessments();
-    } catch (err) {
-      show(err.response?.data?.message || 'Failed to create assessment.', 'error');
-    }
+      await createMutation.mutateAsync(payload);
+    } catch {}
   };
 
   const changeStatus = async (id, newStatus) => {
     try {
-      await api.patch(`/assessments/${id}/status`, { status: newStatus });
-      show(`Status changed to ${newStatus}.`, 'success');
-      fetchAssessments();
-      fetchAllAssessments();
-    } catch (err) {
-      show(err.response?.data?.message || 'Failed to change status.', 'error');
+      await statusMutation.mutateAsync({ id, status: newStatus });
+    } catch {}
+  };
+
+  const openExtend = (a) => {
+    const end = new Date(a.endDate);
+    const base = {
+      endDate: end.toISOString().split('T')[0],
+      endTime: end.toISOString().slice(11, 16),
+    };
+    if (a.status === 'SCHEDULED') {
+      const start = new Date(a.startDate);
+      setExtendForm({
+        ...base,
+        startDate: start.toISOString().split('T')[0],
+        startTime: start.toISOString().slice(11, 16),
+      });
+    } else {
+      setExtendForm(base);
     }
+    setExtendTarget(a);
+  };
+
+  const handleExtend = async () => {
+    if (!extendForm.endDate) { show('Please select a new end date.', 'error'); return; }
+    const newEnd = new Date(`${extendForm.endDate}T${extendForm.endTime}`);
+    if (isNaN(newEnd.getTime()) || newEnd <= new Date()) {
+      show('The new deadline must be in the future.', 'error');
+      return;
+    }
+    let payload = { endDate: newEnd.toISOString() };
+    if (extendTarget?.status === 'SCHEDULED') {
+      if (!extendForm.startDate) { show('Please select a new start date.', 'error'); return; }
+      const newStart = new Date(`${extendForm.startDate}T${extendForm.startTime}`);
+      if (isNaN(newStart.getTime()) || newStart <= new Date()) {
+        show('The start date must be in the future.', 'error');
+        return;
+      }
+      if (newEnd <= newStart) {
+        show('The end date must be after the start date.', 'error');
+        return;
+      }
+      payload.startDate = newStart.toISOString();
+    }
+    setExtending(true);
+    try {
+      await extendMutation.mutateAsync(payload);
+    } catch {}
+    setExtending(false);
   };
 
   const toggleQuestion = (qId) => {
@@ -603,18 +732,6 @@ export default function Assessments() {
   const requiresSupervisorEvaluation = (assessment) =>
     assessment.type === 'SupervisorOnly' || assessment.type === 'Combined';
 
-  const handleScoreResults  = (assessmentId) => setScoreConfirm(assessmentId);
-  const executeScoreResults = async (assessmentId) => {
-    setScoreConfirm(null);
-    try {
-      const res = await api.post(`/results/score/${assessmentId}`);
-      show(res.data.message || 'Results scored successfully.', 'success');
-      fetchAssessments();
-    } catch (err) {
-      show(err.response?.data?.message || 'Failed to score results.', 'error');
-    }
-  };
-
   const openDuplicate = (assessment) => {
     const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
     const nextWeek  = new Date(); nextWeek.setDate(nextWeek.getDate() + 8);
@@ -630,16 +747,13 @@ export default function Assessments() {
       const startDate = new Date(`${duplicateDates.startDate}T${duplicateDates.startTime}:00`);
       const endDate   = new Date(`${duplicateDates.endDate}T${duplicateDates.endTime}:00`);
       if (endDate <= startDate) { show('End date must be after start date.', 'error'); setDuplicating(false); return; }
-      await api.post(`/assessments/${duplicateSource._id}/duplicate`, {
+      await duplicateMutation.mutateAsync({
+        sourceId: duplicateSource._id,
         startDate: startDate.toISOString(),
         endDate:   endDate.toISOString(),
+        name: duplicateSource.competencyId?.name,
       });
-      setDuplicateSource(null);
-      show(`"${duplicateSource.competencyId?.name || 'Assessment'}" duplicated as a new draft.`, 'success');
-      fetchAssessments();
-      fetchAllAssessments();
-    } catch (err) {
-      show(err.response?.data?.message || 'Failed to duplicate assessment.', 'error');
+    } catch {
     } finally {
       setDuplicating(false);
     }
@@ -676,11 +790,11 @@ export default function Assessments() {
     setPagination({ page: 1, limit: newLimit, total: pagination.total, totalPages: Math.ceil(pagination.total / newLimit) });
   };
 
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─────────────────────────────────────────────────────────────────────────
   return (
     <div className="h-[calc(100vh-3rem)] flex flex-col p-7">
 
-      {/* â”€â”€ Sticky Header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── Sticky Header ──────────────────────────────────────────────────── */}
       <div className="flex justify-between items-start mb-3 flex-shrink-0">
         <div>
           <h1 className="text-xl  font-bold text-brand-black">Assessments</h1>
@@ -706,7 +820,7 @@ export default function Assessments() {
         </div>
       </div>
 
-      {/* â”€â”€ Supervisor stats â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── Supervisor stats ─────────────────────────────────────────────── */}
       {isSupervisor && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 flex-shrink-0">
           <div className="bg-white rounded-xl p-5 shadow-card border border-gray-100">
@@ -730,7 +844,7 @@ export default function Assessments() {
         </div>
       )}
 
-      {/* â”€â”€ Filters + View Toggle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── Filters + View Toggle ─────────────────────────────────────────── */}
       <div className="flex justify-between items-center mb-6 flex-shrink-0 gap-4 flex-wrap">
 {/* Status filter dropdown */}
         <div className="flex gap-2 flex-wrap">
@@ -794,7 +908,7 @@ export default function Assessments() {
         </div>
       </div>
 
-      {/* â”€â”€ Scrollable Content â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── Scrollable Content ────────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto scrollbar-none">
         {loading && viewMode === 'grid' ? (
           <div className="flex items-center justify-center p-16">
@@ -802,7 +916,7 @@ export default function Assessments() {
           </div>
         ) : (
           <>
-            {/* â”€â”€ TABLE VIEW â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+            {/* ── TABLE VIEW ─────────────────────────────────────────────── */}
             {viewMode === 'grid' && (
               <>
                 <div className="bg-white rounded-xl shadow-card border border-gray-100 overflow-hidden mb-6">
@@ -840,7 +954,7 @@ export default function Assessments() {
                                 <p className="font-semibold text-brand-black mt-1.5">{a.competencyId?.name || 'No competency'}</p>
                               </td>
                               <td className="px-4 py-3">
-                                <span className={`inline-block px-2 py-1 rounded-full text-xs font-bold`}>{sm.label}</span>
+                                <span className={`inline-block px-2 py-1 rounded-full text-xs font-bold ${sm.badge}`}>{sm.label}</span>
                               </td>
                               <td className="px-4 py-3 text-xs text-gray-600">
                                 <span className="flex items-center gap-1">
@@ -852,7 +966,7 @@ export default function Assessments() {
                                 <span className="flex items-center gap-1">
                                   <Calendar className="w-3 h-3 text-gray-400" />
                                   {new Date(a.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                                  <span className="text-gray-300">Â·</span>
+                                  <span className="text-gray-300">·</span>
                                   {a.timeLimit ? `${a.timeLimit} min` : 'No limit'}
                                 </span>
                                 {isScheduled && (
@@ -863,21 +977,39 @@ export default function Assessments() {
                                 <div className="flex items-center justify-end gap-2 flex-wrap">
                                   {isAdmin && next && a.status !== 'SCHEDULED' && (
                                     <button onClick={() => changeStatus(a._id, next)}
-                                      className="px-3 py-1.5 text-xs font-semibold text-brand-red border border-brand-red rounded-lg hover:bg-brand-red-muted transition-colors">
+                                      className="px-2 py-1 text-xs font-semibold text-brand-red border border-brand-red rounded-lg hover:bg-brand-red-muted transition-colors">
                                       Move to {STATUS_META[next]?.label || next}
                                     </button>
                                   )}
-                                  {!isAdmin && isActive && a.type === 'SelfAssessment' && (
-                                    <button onClick={() => nav(`/assessments/${a._id}/take`)}
-                                      className="px-3 py-1.5 text-xs font-semibold bg-brand-red text-white rounded-lg hover:bg-brand-red-dark transition-colors">
-                                      Start Assessment
+                                  {isAdmin && (a.status === 'ACTIVE' || a.status === 'SCHEDULED') && (
+                                    <button onClick={() => openExtend(a)}
+                                      className="px-2 py-1 text-xs font-semibold text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-1">
+                                      <CalendarClock className="w-3 h-3" /> Extend
                                     </button>
                                   )}
+                                  {!isAdmin && isActive && a.type === 'SelfAssessment' && (
+                                    getTakeState(progressById[a._id]) === 'taken' ? (
+                                      <span className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-green-50 text-green-700 border border-green-200 cursor-default select-none">
+                                        <Check className="w-3 h-3" /> Taken
+                                      </span>
+                                    ) : (
+                                      <button onClick={() => nav(`/assessments/${a._id}/take`)}
+                                        className="px-3 py-1.5 text-xs font-semibold bg-brand-red text-white rounded-lg hover:bg-brand-red-dark transition-colors">
+                                        {getTakeState(progressById[a._id]) === 'retake' ? 'Retake Assessment' : 'Start Assessment'}
+                                      </button>
+                                    )
+                                  )}
                                   {isEmployee && isActive && a.type === 'Combined' && (
-                                    <button onClick={() => nav(`/assessments/${a._id}/take`)}
-                                      className="px-3 py-1.5 text-xs font-semibold bg-brand-black text-white rounded-lg hover:bg-gray-700 transition-colors">
-                                      Start Self-Assessment
-                                    </button>
+                                    getTakeState(progressById[a._id]) === 'taken' ? (
+                                      <span className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-green-50 text-green-700 border border-green-200 cursor-default select-none">
+                                        <Check className="w-3 h-3" /> Taken
+                                      </span>
+                                    ) : (
+                                      <button onClick={() => nav(`/assessments/${a._id}/take`)}
+                                        className="px-3 py-1.5 text-xs font-semibold bg-brand-black text-white rounded-lg hover:bg-gray-700 transition-colors">
+                                        {getTakeState(progressById[a._id]) === 'retake' ? 'Retake Self-Assessment' : 'Start Self-Assessment'}
+                                      </button>
+                                    )
                                   )}
                                   {isEmployee && a.type === 'SupervisorOnly' && (
                                     <span className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-gray-100 text-gray-500 border border-gray-200 cursor-default select-none">
@@ -893,12 +1025,6 @@ export default function Assessments() {
                                     <button onClick={() => nav(`/assessments/${a._id}/evaluate`)}
                                       className="px-3 py-1.5 text-xs font-semibold bg-brand-black text-white rounded-lg hover:bg-gray-700 transition-colors">
                                       Evaluate Team
-                                    </button>
-                                  )}
-                                  {isAdmin && a.status === 'COMPLETED' && a.type === 'Combined' && (
-                                    <button onClick={() => handleScoreResults(a._id)}
-                                      className="px-3 py-1.5 text-xs font-semibold text-white bg-brand-black rounded-lg hover:bg-gray-700 transition-colors flex items-center gap-1">
-                                      <Target className="w-3 h-3" /> Score Results
                                     </button>
                                   )}
                                   {isAdmin && (
@@ -961,7 +1087,7 @@ export default function Assessments() {
               </>
             )}
 
-            {/* â”€â”€ CALENDAR VIEW â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+            {/* ── CALENDAR VIEW ──────────────────────────────────────────── */}
             {viewMode === 'calendar' && (
               <div className="bg-white rounded-2xl border border-gray-100 shadow-card p-6">
                 <div className="flex items-center justify-between mb-4">
@@ -969,6 +1095,14 @@ export default function Assessments() {
                     <CalendarDays className="w-4 h-4 text-brand-red" /> Monthly Calendar
                   </h2>
                   <span className="text-xs text-gray-400">{calendarItems.length} assessments</span>
+                </div>
+                <div className="flex items-center gap-4 flex-wrap mb-4">
+                  {['SCHEDULED', 'ACTIVE', 'COMPLETED', 'DRAFT'].map(s => (
+                    <span key={s} className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-gray-500">
+                      <span className={`w-2.5 h-2.5 rounded-sm ${STATUS_META[s].bar}`} />
+                      {STATUS_META[s].label}
+                    </span>
+                  ))}
                 </div>
                 <CalendarView
                   items={calendarItems}
@@ -981,38 +1115,23 @@ export default function Assessments() {
         )}
       </div>
 
-      {/* â”€â”€ Assessment detail panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── Assessment detail panel ────────────────────────────────────────── */}
       {selectedAssessment && (
         <AssessmentPanel
           assessment={selectedAssessment}
           isAdmin={isAdmin}
           isSupervisor={isSupervisor}
           isEmployee={isEmployee}
+          progress={progressById[selectedAssessment?._id]}
           onClose={() => setSelectedAssessment(null)}
           onNavigate={(path) => { setSelectedAssessment(null); nav(path); }}
           onStatusChange={changeStatus}
-          onScoreResults={handleScoreResults}
         />
       )}
 
-      {/* â”€â”€ Score confirm dialog â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
-      {scoreConfirm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-lg max-w-md w-full p-6">
-            <div className="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center mx-auto mb-4">
-              <Target className="w-6 h-6 text-gray-700" />
-            </div>
-            <h3 className="text-lg font-bold text-brand-black text-center mb-2">Score Combined Results?</h3>
-            <p className="text-sm text-gray-600 text-center mb-4">Missing responses will be treated as 0. This action cannot be undone.</p>
-            <div className="flex gap-3">
-              <button onClick={() => setScoreConfirm(null)} className="flex-1 py-2.5 border border-gray-300 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-50">Cancel</button>
-              <button onClick={() => executeScoreResults(scoreConfirm)} className="flex-1 py-2.5 bg-brand-black text-white rounded-lg text-sm font-semibold hover:bg-gray-700">Score Results</button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* results are auto-scored on completion */}
 
-      {/* â”€â”€ Duplicate modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── Duplicate modal ─────────────────────────────────────────────────── */}
       {duplicateSource && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6">
@@ -1064,7 +1183,75 @@ export default function Assessments() {
         </div>
       )}
 
-      {/* â”€â”€ Create Assessment Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── Create Assessment Modal ────────────────────────────────────────── */}
+      {/* ── Extend Deadline Modal ── */}
+      <Modal open={!!extendTarget} onClose={() => setExtendTarget(null)} title="Extend Dates">
+        {extendTarget && (
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600">
+              Set new dates for <span className="font-semibold text-gray-900">{extendTarget.competency?.name || extendTarget.description || 'this assessment'}</span>.
+            </p>
+            {extendTarget?.status === 'SCHEDULED' && (
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">New Start Date *</label>
+                  <input type="date" value={extendForm.startDate}
+                    onChange={e => setExtendForm(prev => ({ ...prev, startDate: e.target.value }))}
+                    className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red text-sm" />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">Start Time *</label>
+                  <input type="time" value={extendForm.startTime}
+                    onChange={e => setExtendForm(prev => ({ ...prev, startTime: e.target.value }))}
+                    className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red text-sm" />
+                </div>
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">New End Date *</label>
+                <input type="date" value={extendForm.endDate}
+                  onChange={e => setExtendForm(prev => ({ ...prev, endDate: e.target.value }))}
+                  className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red text-sm" />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">End Time *</label>
+                <input type="time" value={extendForm.endTime}
+                  onChange={e => setExtendForm(prev => ({ ...prev, endTime: e.target.value }))}
+                  className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red text-sm" />
+              </div>
+            </div>
+            <div className="bg-gray-50 rounded-xl p-3 text-xs text-gray-500 space-y-1.5">
+              {extendTarget?.status === 'SCHEDULED' && (
+                <div className="flex items-center justify-between">
+                  <span>Current start</span>
+                  <span className="font-semibold text-gray-700">
+                    {new Date(extendTarget.startDate).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </div>
+              )}
+              <div className="flex items-center justify-between">
+                <span>Current deadline</span>
+                <span className="font-semibold text-gray-700">
+                  {new Date(extendTarget.endDate).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setExtendTarget(null)}
+                className="px-2 py-1 border border-gray-300 rounded-lg font-semibold text-gray-700 hover:bg-gray-50 transition-colors">
+                Cancel
+              </button>
+              <button onClick={handleExtend} disabled={extending}
+                className="px-2 py-1 bg-brand-red text-white rounded-lg font-semibold hover:bg-brand-red-dark transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5">
+                {extending && <Loader2 className="w-2 h-2 animate-spin" />}
+                Extend Deadline
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
       <Modal open={modal === 'create'} onClose={() => setModal(null)} title="Create Assessment" large>
         <div className="space-y-5">
           {/* Basic Information */}
@@ -1077,7 +1264,7 @@ export default function Assessments() {
                 <label className="block text-sm font-semibold text-gray-700 mb-1.5">Competency *</label>
                 <select value={form.competencyId} onChange={e => setForm(prev => ({ ...prev, competencyId: e.target.value }))}
                   className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm" required>
-                  <option value="">â€” Select Competency â€”</option>
+                  <option value="">— Select Competency —</option>
                   {competencies.map(c => <option key={c._id} value={c._id}>{c.name} ({c.category})</option>)}
                 </select>
               </div>
@@ -1085,7 +1272,7 @@ export default function Assessments() {
                 <label className="block text-sm font-semibold text-gray-700 mb-1.5">Target Group *</label>
                 <select value={form.targetGroup} onChange={e => setForm(prev => ({ ...prev, targetGroup: e.target.value }))}
                   className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm disabled:bg-gray-100 disabled:cursor-not-allowed" required disabled={!form.competencyId}>
-                  <option value="">{form.competencyId ? 'â€” Select Target Group â€”' : 'â€” Select a competency first â€”'}</option>
+                  <option value="">{form.competencyId ? '— Select Target Group —' : '— Select a competency first —'}</option>
                   {targetGroups.map(tg => <option key={tg} value={tg}>{tg.charAt(0).toUpperCase() + tg.slice(1).replace('-', ' ')}</option>)}
                 </select>
               </div>
@@ -1102,7 +1289,7 @@ export default function Assessments() {
                 <label className="block text-sm font-semibold text-gray-700 mb-1.5">Purpose *</label>
                 <select value={form.purpose} onChange={e => setForm(prev => ({ ...prev, purpose: e.target.value }))}
                   className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red focus:border-transparent text-sm" required>
-                  <option value="">â€” Select Purpose â€”</option>
+                  <option value="">— Select Purpose —</option>
                   {PURPOSES.map(p => <option key={p} value={p}>{p}</option>)}
                 </select>
               </div>
@@ -1276,7 +1463,7 @@ export default function Assessments() {
                               className="w-4 h-4 accent-brand-red flex-shrink-0" />
                             <div className="flex-1 min-w-0">
                               <p className="text-xs font-semibold text-gray-800 truncate">{emp.name}</p>
-                              <p className="text-xs text-gray-400">{emp.department} Â· {emp.position}</p>
+                              <p className="text-xs text-gray-400">{emp.department} · {emp.position}</p>
                             </div>
                             {selected && <Check className="w-3 h-3 text-brand-red flex-shrink-0" />}
                           </label>

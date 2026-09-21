@@ -31,12 +31,20 @@ export const getQuestions = asyncHandler(async (req, res) => {
   res.status(200).json({
     status: 'success',
     data: {
-      questions: questions.map((q) => ({
-        ...q,
-        _id: q.id,
-        targetGroup: denormalizeTargetGroup(q.targetGroup),
-        competencyId: q.competency,
-      })),
+      questions: questions.map((q) => {
+        // Strip answer-key material unless HR_ADMIN (mirrors getQuestion)
+        let data = { ...q };
+        if (req.user.role !== 'HR_ADMIN') {
+          const { correctAnswer, correctAnswers, matchingPairs, correctOrder, categories, ...safe } = data;
+          data = safe;
+        }
+        return {
+          ...data,
+          _id: q.id,
+          targetGroup: denormalizeTargetGroup(q.targetGroup),
+          competencyId: q.competency,
+        };
+      }),
       pagination: { total, page: +page, limit: +limit },
     },
   });

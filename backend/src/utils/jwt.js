@@ -24,9 +24,11 @@ export const signAccessToken = (userId, activeRole) => {
 
 /**
  * Sign a refresh token (longer expiry, separate secret).
+ * @param {string} userId
+ * @param {string} activeRole – the role the user is currently acting as
  */
-export const signRefreshToken = (userId) => {
-  return jwt.sign({ id: userId }, REFRESH_SECRET, { expiresIn: REFRESH_EXP });
+export const signRefreshToken = (userId, activeRole) => {
+  return jwt.sign({ id: userId, role: activeRole }, REFRESH_SECRET, { expiresIn: REFRESH_EXP });
 };
 
 /** Verify an access token.  Throws on failure. */
@@ -42,7 +44,7 @@ export const verifyRefreshToken = (token) => jwt.verify(token, REFRESH_SECRET);
  */
 export const buildTokenPair = (userId, activeRole) => ({
   accessToken:  signAccessToken(userId, activeRole),
-  refreshToken: signRefreshToken(userId),
+  refreshToken: signRefreshToken(userId, activeRole),
 });
 
 /**

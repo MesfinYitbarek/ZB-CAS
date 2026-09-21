@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import {
@@ -8,6 +9,8 @@ import {
   MessageSquare, Award, TrendingUp, X,
 } from 'lucide-react';
 import api from '../utils/api';
+import { useAssessmentDetail } from '../hooks/queries';
+import { queryKeys } from '../hooks/queryKeys';
 
 // ── Score helpers ─────────────────────────────────────────────────────────────
 const scoreLabel = (s) => {
@@ -104,48 +107,62 @@ export default function SupervisorEvaluation() {
   const { user, isSupervisor, isAdmin } = useAuth();
   const navigate = useNavigate();
   const { show } = useToast();
+  const queryClient = useQueryClient();
 
-  const [loading, setLoading]             = useState(true);
   const [saving, setSaving]               = useState(false);
   const [submitting, setSubmitting]       = useState(false);
   const [showConfirm, setShowConfirm]     = useState(false);
-  const [assessment, setAssessment]       = useState(null);
-  const [employee, setEmployee]           = useState(null);
   const [score, setScore]                 = useState(50);
   const [comments, setComments]           = useState('');
   const [hasExisting, setHasExisting]     = useState(false);
   const [permissionError, setPermError]   = useState(false);
 
-  useEffect(() => {
-    if (!isSupervisor && !isAdmin) { setPermError(true); return; }
-    load();
-  }, [assessmentId, employeeId, isSupervisor, isAdmin]);
+  const canAccess = isSupervisor || isAdmin;
 
-  const load = async () => {
-    try {
-      setLoading(true);
-      const [assessRes, empRes, respRes] = await Promise.all([
-        api.get(`/assessments/${assessmentId}`),
-        api.get(`/users/${employeeId}`),
-        api.get(`/responses/supervisor/${assessmentId}/${employeeId}`).catch(() => null),
-      ]);
-      setAssessment(assessRes.data.data.assessment);
-      setEmployee(empRes.data.data.user);
-      if (respRes?.data?.data?.evaluation) {
-        const e = respRes.data.data.evaluation;
-        setScore(e.score ?? 50);
-        setComments(e.comments ?? '');
-        setHasExisting(true);
-      }
-    } catch (err) {
-      if (err.response?.status === 403) { setPermError(true); return; }
-      show('Failed to load evaluation data.', 'error');
-    } finally {
-      setLoading(false);
-    }
-  };
+  const assessmentQuery = useAssessmentDetail(assessmentId, {
+    enabled: canAccess && !!assessmentId && !!employeeId,
+    onError: (err) => {
+      if (err.response?.status === 403) setPermError(true);
+    },
+  });
+  const assessment = assessmentQuery.data?.assessment || null;
+
+  const employeeQuery = useQuery({
+    queryKey: queryKeys.users.detail(employeeId),
+    queryFn: async () => {
+      const res = await api.get(`/users/${employeeId}`);
+      return res.data.data.user;
+    },
+    enabled: canAccess && !!employeeId,
+    onError: (err) => {
+      if (err.response?.status === 403) setPermError(true);
+    },
+  });
+  const employee = employeeQuery.data || null;
+  const loading = assessmentQuery.isLoading || employeeQuery.isLoading;
+
+  const { data: evaluationData } = useQuery({
+    queryKey: queryKeys.responses.supervisor(assessmentId, employeeId),
+    queryFn: async () => {
+      const res = await api.get(`/responses/supervisor/${assessmentId}/${employeeId}`).catch(() => null);
+      return res?.data?.data?.evaluation || null;
+    },
+    enabled: canAccess && !!assessmentId && !!employeeId,
+  });
+
+  useEffect(() => {
+    if (!canAccess) { setPermError(true); return; }
+  }, [isSupervisor, isAdmin]);
 
   const clamp = (v) => Math.min(100, Math.max(0, Math.round(v)));
+
+  useEffect(() => {
+    if (evaluationData) {
+      setScore(evaluationData.score ?? 50);
+      setComments(evaluationData.comments ?? '');
+      setHasExisting(true);
+    }
+  }, [evaluationData]);
 
   const saveDraft = async () => {
     try {
@@ -166,6 +183,7 @@ export default function SupervisorEvaluation() {
       await api.post('/responses/supervisor/submit', { assessmentId, employeeId, score, comments });
       show('Evaluation submitted!', 'success');
       setShowConfirm(false);
+      queryClient.invalidateQueries({ queryKey: queryKeys.assessments.pending });
       setTimeout(() => navigate('/evaluations'), 1200);
     } catch (err) {
       show(err.response?.data?.message || 'Submission failed.', 'error');

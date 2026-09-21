@@ -1,33 +1,35 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
-import { Users, Mail, Briefcase, Search, X, ChevronRight } from 'lucide-react';
+import { Users, Search, X, ChevronRight } from 'lucide-react';
+import Pagination from '../components/Pagination';
 import api from '../utils/api';
+import { queryKeys } from '../hooks/queryKeys';
+
+const PAGE_SIZE = 10;
 
 const avatar = (name = '') =>
   name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
-
-const DEPT_COLORS = [
-  'from-red-500 to-red-700',
-];
 
 export default function MyTeam() {
   const { user } = useAuth();
   const nav = useNavigate();
   const { show } = useToast();
 
-  const [members, setMembers] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
 
-  useEffect(() => {
-    if (!user?._id) return;
-    api.get(`/users/supervisor/${user._id}/employees`)
-      .then(r => setMembers(Array.isArray(r?.data?.data?.employees) ? r.data.data.employees : []))
-      .catch(() => show('Failed to load team.', 'error'))
-      .finally(() => setLoading(false));
-  }, [user]);
+  const { data: members = [], isLoading: loading } = useQuery({
+    queryKey: queryKeys.users.team(user?._id),
+    queryFn: async () => {
+      const r = await api.get(`/users/supervisor/${user._id}/employees`);
+      return Array.isArray(r?.data?.data?.employees) ? r.data.data.employees : [];
+    },
+    enabled: !!user?._id,
+    onError: () => show('Failed to load team.', 'error'),
+  });
 
   const filtered = members.filter(m =>
     !search ||
@@ -37,8 +39,9 @@ export default function MyTeam() {
     m.employeeId?.toLowerCase().includes(search.toLowerCase())
   );
 
-  // Stable colour per member based on index
-  const colorFor = (idx) => DEPT_COLORS[idx % DEPT_COLORS.length];
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const paged = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
   if (loading) return (
     <div className="h-[calc(100vh-4rem)] flex items-center justify-center">
@@ -61,12 +64,12 @@ export default function MyTeam() {
           <input
             type="text"
             value={search}
-            onChange={e => setSearch(e.target.value)}
+            onChange={e => { setSearch(e.target.value); setPage(1); }}
             placeholder="Search name, position…"
             className="w-full h-9 pl-9 pr-8 rounded-lg border border-gray-200 text-sm text-gray-700 placeholder:text-gray-400 focus:outline-none focus:border-red-400 focus:ring-1 focus:ring-red-100 transition"
           />
           {search && (
-            <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+            <button onClick={() => { setSearch(''); setPage(1); }} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
               <X className="w-3.5 h-3.5" />
             </button>
           )}
@@ -82,60 +85,64 @@ export default function MyTeam() {
               {members.length === 0 ? 'No team members yet' : 'No results for that search'}
             </p>
             {search && (
-              <button onClick={() => setSearch('')} className="mt-3 text-sm text-brand-red font-semibold hover:underline">
+              <button onClick={() => { setSearch(''); setPage(1); }} className="mt-3 text-sm text-brand-red font-semibold hover:underline">
                 Clear search
               </button>
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {filtered.map((m, idx) => (
-              <button
-                key={m._id}
-                onClick={() => nav(`/users/${m._id}`)}
-                className="group bg-white rounded-xl border border-gray-100 hover:border-red-200 hover:shadow-md transition-all text-left overflow-hidden"
-              >
-                {/* Colour bar */}
-                <div className={`h-1.5 bg-gradient-to-r ${colorFor(idx)}`} />
-
-                <div className="p-4">
-                  {/* Avatar + name */}
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${colorFor(idx)} flex items-center justify-center text-white text-sm font-bold flex-shrink-0`}>
-                      {avatar(m.name)}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-gray-900 truncate group-hover:text-brand-red transition-colors">
-                        {m.name}
-                      </p>
-                      <p className="text-xs text-gray-400 font-mono truncate">{m.employeeId}</p>
-                    </div>
-                  </div>
-
-                  {/* Details */}
-                  <div className="space-y-1.5 text-xs text-gray-500">
-                    <div className="flex items-center gap-1.5">
-                      <Briefcase className="w-3 h-3 text-gray-300 flex-shrink-0" />
-                      <span className="truncate">{m.position || '—'}</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <Mail className="w-3 h-3 text-gray-300 flex-shrink-0" />
-                      <span className="truncate">{m.email}</span>
-                    </div>
-                  </div>
-
-                  {/* Footer */}
-                  <div className="mt-3 pt-3 border-t border-gray-50 flex items-center justify-between">
-                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${m.status === 'ACTIVE' ? 'bg-gray-100 text-gray-700' : 'bg-gray-100 text-gray-500'}`}>
-                      {m.status}
-                    </span>
-                    <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-brand-red transition-colors" />
-                  </div>
-                </div>
-              </button>
-            ))}
+          <div className="bg-white rounded-xl border border-gray-100 shadow-card overflow-hidden">
+            <div className="overflow-x-auto scrollbar-none">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 border-b border-gray-100">
+                  <tr>
+                    <th className="text-left px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">Employee</th>
+                    <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">Position</th>
+                    <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">Department</th>
+                    <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">Email</th>
+                    <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
+                    <th className="text-right px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {paged.map(m => (
+                    <tr key={m._id} onClick={() => nav(`/users/${m._id}`)} className="hover:bg-gray-50 transition-colors cursor-pointer">
+                      <td className="px-4 py-2.5">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-brand-red to-red-700 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                            {avatar(m.name)}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-[13px] font-semibold text-gray-900 truncate">{m.name}</p>
+                            <p className="text-[11px] text-gray-400 font-mono truncate">{m.employeeId}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-3 py-2.5 whitespace-nowrap text-[13px] text-gray-600">{m.position || '—'}</td>
+                      <td className="px-3 py-2.5 whitespace-nowrap text-[13px] text-gray-600">{m.department || '—'}</td>
+                      <td className="px-3 py-2.5 whitespace-nowrap text-[13px] text-gray-600">{m.email}</td>
+                      <td className="px-3 py-2.5 whitespace-nowrap">
+                        <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${m.status === 'ACTIVE' ? 'bg-gray-100 text-gray-700' : 'bg-gray-100 text-gray-500'}`}>
+                          {m.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <div className="flex items-center justify-end">
+                          <button type="button" onClick={() => nav(`/users/${m._id}`)} title="View profile"
+                            className="flex items-center gap-0.5 text-[11px] font-semibold text-brand-red hover:underline transition-colors">
+                            View <ChevronRight className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
+
+        <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={setPage} />
       </div>
     </div>
   );

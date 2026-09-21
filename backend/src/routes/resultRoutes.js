@@ -35,7 +35,7 @@ router.get('/', resCtrl.getResults);
 router.get('/user/:userId', resCtrl.getResults);
 // FIX A01: /pdp/:userId — ownership enforced in getPDP controller
 router.get('/pdp/:userId', resCtrl.getPDP);
-router.get('/supervisor-score/:assessmentId/:employeeId', resCtrl.getSupervisorEvaluationScores);
+router.get('/supervisor-score/:assessmentId/:employeeId', authorize('SUPERVISOR', 'HR_ADMIN'), resCtrl.getSupervisorEvaluationScores);
 // FIX A01: /:id — ownership enforced in getResult controller
 router.get('/:id/question-details', resCtrl.getResultQuestionDetails);
 router.get('/:id', resCtrl.getResult);

@@ -47,12 +47,10 @@ const SupervisorEvaluation = lazy(() => import('./pages/SupervisorEvaluation'));
 const Results    = lazy(() => import('./pages/Results'));
 const ResultDetail = lazy(() => import('./pages/ResultDetail'));
 const ReportsLayout   = lazy(() => import('./pages/ReportsLayout'));
-const ReportsOverview  = lazy(() => import('./pages/reports/OverviewPage'));
-const ReportsDepartment = lazy(() => import('./pages/reports/DepartmentPage'));
-const ReportsCompetency = lazy(() => import('./pages/reports/CompetencyPage'));
-const ReportsIndividual = lazy(() => import('./pages/reports/IndividualPage'));
-const ReportsAll        = lazy(() => import('./pages/reports/AllReportsPage'));
-const ReportsBuilder    = lazy(() => import('./pages/reports/BuilderPage'));
+const ReportsOverview  = lazy(() => import('./pages/reports/analytics/OverviewPage'));
+const ReportsDepartment = lazy(() => import('./pages/reports/analytics/DepartmentPage'));
+const ReportsCompetency = lazy(() => import('./pages/reports/analytics/CompetencyPage'));
+const ReportsGenerated = lazy(() => import('./pages/reports/generated/GeneratedPage'));
 const Feedback   = lazy(() => import('./pages/Feedback'));
 const ActivityLog = lazy(() => import('./pages/ActivityLog'));
 const FAQs = lazy(() => import('./pages/FAQs'));
@@ -319,9 +317,7 @@ export default function App() {
           <Route path="overview" element={<PageSuspense><ReportsOverview /></PageSuspense>} />
           <Route path="department" element={<PageSuspense><ReportsDepartment /></PageSuspense>} />
           <Route path="competency" element={<PageSuspense><ReportsCompetency /></PageSuspense>} />
-          <Route path="individual" element={<PageSuspense><ReportsIndividual /></PageSuspense>} />
-          <Route path="all" element={<PageSuspense><ReportsAll /></PageSuspense>} />
-          <Route path="builder" element={<PageSuspense><ReportsBuilder /></PageSuspense>} />
+          <Route path="generated" element={<PageSuspense><ReportsGenerated /></PageSuspense>} />
         </Route>
         <Route
           path="/feedback"

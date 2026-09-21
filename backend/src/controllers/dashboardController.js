@@ -67,7 +67,7 @@ export const getAdminDashboardStats = asyncHandler(async (req, res) => {
       by: ['level'],
       _count: { _all: true },
       _avg: { finalScore: true },
-      ...(dateRange ? { where: { createdAt: dateRange } } : {}),
+      where: { status: 'FINAL', ...(dateRange ? { createdAt: dateRange } : {}) },
     }),
     prisma.result.findMany({
       where: {
@@ -417,6 +417,7 @@ const buildRecentActivity = async () => {
       include: { creator: { select: { name: true } } },
     }),
     prisma.result.findMany({
+      where: { status: 'FINAL' },
       orderBy: { createdAt: 'desc' },
       take: 4,
       include: { user: { select: { name: true } }, competency: { select: { name: true } } },

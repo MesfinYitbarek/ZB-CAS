@@ -38,7 +38,6 @@ enum AssessmentStatus {
   SCHEDULED
   ACTIVE
   COMPLETED
-  ARCHIVED
 }
 
 enum TargetGroup {
@@ -135,6 +134,19 @@ enum EvaluationStatus {
   COMPLETED
 }
 
+enum GeneratedReportType {
+  INDIVIDUAL
+  ORGANIZATION
+  CUSTOM_PIVOT
+}
+
+enum GeneratedReportStatus {
+  PENDING
+  PROCESSING
+  READY
+  FAILED
+}
+
 // ─── Models ───────────────────────────────────────────────────────────────────
 
 model User {
@@ -168,6 +180,7 @@ model User {
   responses               Response[]
   results                 Result[]
   reports                 Report[]
+  generatedReports      GeneratedReport[] @relation("GeneratedReports")
   feedbacks               Feedback[]
   notifications           Notification[]
   chatMessagesSent        ChatMessage[]           @relation("MessageSender")
@@ -183,6 +196,8 @@ model User {
   @@index([supervisorId])
   @@index([department, status])
   @@index([roles])
+  @@index([position])
+  @@index([gender])
 }
 
 model Competency {
@@ -288,6 +303,7 @@ model Assessment {
   @@index([audienceType])
   @@index([targetGroup])
   @@index([legacyDepartment])
+  @@index([status, endDate])
 }
 
 model AssessTargetAudience {
@@ -313,6 +329,7 @@ model AssessmentTargetAudienceEmployee {
   employee     User       @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@index([assessmentId])
+  @@index([employeeId])
 }
 
 model AssessmentQuestion {
@@ -325,6 +342,7 @@ model AssessmentQuestion {
 
   @@unique([assessmentId, questionId])
   @@index([assessmentId])
+  @@index([questionId])
 }
 
 model SupervisorEvaluation {
@@ -393,6 +411,10 @@ model Result {
   @@unique([userId, assessmentId, competencyId])
   @@index([userId, competencyId])
   @@index([assessmentId])
+  @@index([status, assessmentId])
+  @@index([status, userId, createdAt])
+  @@index([status, createdAt])
+  @@index([status, level])
 }
 
 model ResultQuestionDetail {
@@ -470,6 +492,28 @@ model ReportCompetency {
 
   @@index([reportId])
   @@index([competencyId])
+}
+
+// ─── Tier 2 — named on-demand report artifacts (Excel only) ───────────────────
+model GeneratedReport {
+  id          String                @id @default(cuid())
+  title       String
+  description String                @default("")
+  type        GeneratedReportType
+  filters     Json                  @default("{}")
+  pivot       Json?
+  fileName    String                @default("")
+  rowCount    Int                   @default(0)
+  status      GeneratedReportStatus @default(PENDING)
+  error       String?
+  generatedBy String
+  generator   User                  @relation("GeneratedReports", fields: [generatedBy], references: [id], onDelete: Cascade)
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+
+  @@index([generatedBy, createdAt])
+  @@index([type])
+  @@index([status, createdAt])
 }
 
 model Feedback {

@@ -1,9 +1,11 @@
 /* pages/Users.jsx */
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useRef, useMemo } from 'react';
 import { Plus, Search, Trash2, Edit2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, UserCheck, Upload, Download, FileSpreadsheet, Loader2, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import Modal from '../components/Modal';
 import api from '../utils/api';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { queryKeys } from '../hooks/queries';
 
 const ALL_ROLES   = ['HR_ADMIN', 'SUPERVISOR', 'EMPLOYEE'];
 const ALL_GENDERS = ['Male', 'Female'];
@@ -20,19 +22,47 @@ const GENDER_LABELS = {
 };
 
 export default function Users() {
-  const [users,       setUsers]       = useState([]);
-  const [loading,     setLoading]     = useState(true);
   const [search,      setSearch]      = useState('');
   const [filterRole,  setFilterRole]  = useState('');
   const [filterStatus,setFilterStatus]= useState('');
   const [modal,       setModal]       = useState(null);    // 'create' | 'edit' | null
   const [selected,    setSelected]    = useState(null);
-  const [supervisors, setSupervisors] = useState([]);
   const { show } = useToast();
+  const queryClient = useQueryClient();
 
-  const [pagination, setPagination] = useState({
-    page: 1, limit: 10, total: 0, totalPages: 0,
+  const [pagination, setPagination] = useState({ page: 1, limit: 10 });
+
+  const listParams = useMemo(() => {
+    const params = { page: pagination.page, limit: pagination.limit };
+    if (filterRole)   params.role   = filterRole;
+    if (filterStatus) params.status = filterStatus;
+    if (search)       params.search = search;
+    return params;
+  }, [pagination.page, pagination.limit, filterRole, filterStatus, search]);
+
+  const { data, isLoading } = useQuery({
+    queryKey: queryKeys.users.list(listParams),
+    queryFn: async () => {
+      const { data } = await api.get('/users', { params: listParams });
+      return data.data;
+    },
   });
+
+  const users = data?.users || [];
+  const total = data?.pagination?.total || 0;
+  const totalPages = data?.pagination?.totalPages || Math.ceil(total / pagination.limit);
+
+  const { data: supervisorsData } = useQuery({
+    queryKey: queryKeys.users.list({ role: 'SUPERVISOR', status: 'ACTIVE', limit: 1000 }),
+    queryFn: async () => {
+      const { data } = await api.get('/users', {
+        params: { role: 'SUPERVISOR', status: 'ACTIVE', limit: 1000 },
+      });
+      return data.data;
+    },
+  });
+
+  const supervisors = supervisorsData?.users || [];
 
   const [expandedUser, setExpandedUser] = useState(null);
 
@@ -79,13 +109,10 @@ export default function Users() {
     try {
       const fd = new FormData();
       fd.append('file', selectedFile);
-      const { data } = await api.post('/users/import', fd, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
+      const { data } = await importUsers.mutateAsync(fd);
       setImportResult(data.data);
       show(`Import complete: ${data.data.summary.imported} imported, ${data.data.summary.failed} failed.`, 
         data.data.summary.failed > 0 ? 'info' : 'success');
-      if (data.data.summary.imported > 0) fetchUsers();
     } catch (err) {
       show(err.response?.data?.message || 'Import failed.', 'error');
     } finally {
@@ -122,43 +149,28 @@ export default function Users() {
 
   const [form, setForm] = useState(initForm());
 
-  // ─── Fetch ────────────────────────────────────────────────────────────────
-  const fetchUsers = useCallback(async () => {
-    setLoading(true);
-    try {
-      const params = { page: pagination.page, limit: pagination.limit };
-      if (filterRole)   params.role   = filterRole;
-      if (filterStatus) params.status = filterStatus;
-      if (search)       params.search = search;
+  // ─── Mutations ───────────────────────────────────────────────────────────
+  const createUser = useMutation({
+    mutationFn: (payload) => api.post('/auth/register', payload),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.users.all }),
+  });
 
-      const { data } = await api.get('/users', { params });
-      setUsers(data.data.users);
+  const updateUser = useMutation({
+    mutationFn: ({ id, payload }) => api.put(`/users/${id}`, payload),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.users.all }),
+  });
 
-      if (data.data.pagination) {
-        setPagination((prev) => ({
-          ...prev,
-          total:      data.data.pagination.total,
-          totalPages: Math.ceil(data.data.pagination.total / pagination.limit),
-        }));
-      }
-    } catch {
-      show('Failed to load users.', 'error');
-    }
-    setLoading(false);
-  }, [filterRole, filterStatus, search, pagination.page, pagination.limit]);
+  const deactivateUser = useMutation({
+    mutationFn: (id) => api.delete(`/users/${id}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.users.all }),
+  });
 
-  const fetchSupervisors = async () => {
-    try {
-      const { data } = await api.get('/users', {
-        params: { role: 'SUPERVISOR', status: 'ACTIVE', limit: 1000 },
-      });
-      setSupervisors(data.data.users || []);
-    } catch {
-      show('Failed to load supervisors.', 'error');
-    }
-  };
-
-  useEffect(() => { fetchUsers(); fetchSupervisors(); }, [fetchUsers]);
+  const importUsers = useMutation({
+    mutationFn: (fd) => api.post('/users/import', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.users.all }),
+  });
 
   // ─── Modal helpers ────────────────────────────────────────────────────────
   const openCreate = () => { setForm(initForm()); setModal('create'); };
@@ -197,14 +209,13 @@ export default function Users() {
     try {
       if (modal === 'create') {
         if (!form.username) { show('Username is required.', 'error'); return; }
-        await api.post('/auth/register', { ...form, role: undefined });
+        await createUser.mutateAsync({ ...form, role: undefined });
         show('User created successfully.', 'success');
       } else {
-        await api.put(`/users/${selected._id}`, form);
+        await updateUser.mutateAsync({ id: selected._id, payload: form });
         show('User updated.', 'success');
       }
       setModal(null);
-      fetchUsers();
     } catch (err) {
       show(err.response?.data?.message || 'Save failed.', 'error');
     }
@@ -213,9 +224,8 @@ export default function Users() {
   const handleDeactivate = async (id) => {
     if (!window.confirm('Deactivate this user?')) return;
     try {
-      await api.delete(`/users/${id}`);
+      await deactivateUser.mutateAsync(id);
       show('User deactivated.', 'success');
-      fetchUsers();
     } catch (err) {
       show(err.response?.data?.message || 'Failed.', 'error');
     }
@@ -224,9 +234,8 @@ export default function Users() {
   const handleActivate = async (id) => {
     if (!window.confirm('Activate this user?')) return;
     try {
-      await api.put(`/users/${id}`, { status: 'ACTIVE' });
+      await updateUser.mutateAsync({ id, payload: { status: 'ACTIVE' } });
       show('User activated.', 'success');
-      fetchUsers();
     } catch (err) {
       show(err.response?.data?.message || 'Failed.', 'error');
     }
@@ -234,14 +243,13 @@ export default function Users() {
 
   // ─── Pagination ───────────────────────────────────────────────────────────
   const goToPage = (page) => {
-    if (page >= 1 && page <= pagination.totalPages)
+    if (page >= 1 && page <= totalPages)
       setPagination((prev) => ({ ...prev, page }));
   };
 
   const handlePageSizeChange = (e) => {
     const newLimit = parseInt(e.target.value, 10);
-    setPagination({ page: 1, limit: newLimit, total: pagination.total,
-      totalPages: Math.ceil(pagination.total / newLimit) });
+    setPagination({ page: 1, limit: newLimit });
   };
 
   const handleSearch = (value) => {
@@ -326,7 +334,7 @@ export default function Users() {
 
       {/* Table Container - Scrollable */}
       <div className="bg-white rounded-xl shadow-card border  border-gray-100 overflow-hidden flex flex-col flex-1 min-h-0">
-        {loading ? (
+        {isLoading ? (
           <div className="flex items-center justify-center p-16 flex-1">
             <div className="w-10 h-10 border-4 border-brand-red border-t-transparent rounded-full animate-spin" />
           </div>
@@ -448,12 +456,12 @@ export default function Users() {
       </div>
 
       {/* Pagination */}
-      {pagination.total > pagination.limit && (
+      {total > pagination.limit && (
         <div className="flex flex-col sm:flex-row justify-between items-center gap-4 pt-4 border-t border-gray-200 flex-shrink-0 bg-white">
           <div className="text-sm text-gray-600">
             Showing {(pagination.page - 1) * pagination.limit + 1} to{' '}
-            {Math.min(pagination.page * pagination.limit, pagination.total)} of{' '}
-            {pagination.total} users
+            {Math.min(pagination.page * pagination.limit, total)} of{' '}
+            {total} users
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -468,11 +476,11 @@ export default function Users() {
               {(() => {
                 const pages = [];
                 const maxV  = 5;
-                if (pagination.totalPages <= maxV) {
-                  for (let i = 1; i <= pagination.totalPages; i++) pages.push(i);
+                if (totalPages <= maxV) {
+                  for (let i = 1; i <= totalPages; i++) pages.push(i);
                 } else {
                   let start = Math.max(1, pagination.page - Math.floor(maxV / 2));
-                  let end   = Math.min(pagination.totalPages, start + maxV - 1);
+                  let end   = Math.min(totalPages, start + maxV - 1);
                   if (end - start + 1 < maxV) start = Math.max(1, end - maxV + 1);
                   for (let i = start; i <= end; i++) pages.push(i);
                 }
@@ -494,7 +502,7 @@ export default function Users() {
 
             <button
               onClick={() => goToPage(pagination.page + 1)}
-              disabled={pagination.page === pagination.totalPages}
+              disabled={pagination.page === totalPages}
               className="flex items-center gap-1 px-3 py-2 rounded-lg border border-gray-300 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
             >
               Next <ChevronRight className="w-4 h-4" />

@@ -1,13 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { useToast } from '../context/ToastContext';
 import { Outlet, useLocation } from 'react-router-dom';
-import {
-  FileText, FileSpreadsheet, SlidersHorizontal, Loader2,
-} from 'lucide-react';
-import api from '../utils/api';
+import { SlidersHorizontal } from 'lucide-react';
 import FilterDrawer, { ActiveFilterPills } from './reports/FilterDrawer';
 import ReportsContext from './reports/ReportsContext';
+import { useReportFilterOptions } from '../hooks/queries';
 
 const PERIOD_OPTIONS = [
   { id: '1m', label: '1 Month' },
@@ -42,37 +39,27 @@ const EMPTY_FILTERS = {
 };
 
 const SECTION_META = {
-  overview:   { title: 'Overview',       subtitle: 'High-level summary and level distribution' },
-  department: { title: 'By Department',  subtitle: 'Department performance and deep-dive' },
-  competency: { title: 'By Competency',  subtitle: 'Competency averages and heatmap' },
-  individual: { title: 'Individual',     subtitle: 'Reports for a specific employee' },
-  all:        { title: 'All Reports',    subtitle: 'Every generated report across the organization' },
-  builder:    { title: 'Custom Builder', subtitle: 'Build cross-tabulated reports' },
+  overview:   { title: 'Overview', tier: 'live' },
+  department: { title: 'By Department', tier: 'live' },
+  competency: { title: 'By Competency', tier: 'live' },
+  generated:  { title: 'Generated Reports', tier: 'generated' },
 };
 
 export default function ReportsLayout() {
-  const { user, isAdmin } = useAuth();
-  const { show } = useToast();
+  const { isAdmin } = useAuth();
   const loc = useLocation();
 
   const section = (loc.pathname.split('/')[2] || 'overview').replace(/-/g, '');
   const meta = SECTION_META[section] || SECTION_META.overview;
+  const isLive = meta.tier === 'live';
 
   // ── Filter state ──────────────────────────────────────────────────────────
-  const [filterOptions, setFilterOptions] = useState({
-    departments: [], positions: [], genders: [],
-    competencies: [], competencyCategories: [],
-    assessments: [], assessmentTypes: [], purposes: [], targetGroups: [],
-    scoreRange: { min: 0, max: 100 },
-  });
-
   const [filters, setFilters] = useState(() => {
     const { dateFrom, dateTo } = getPeriodDates('1m');
     return { ...EMPTY_FILTERS, dateFrom, dateTo };
   });
   const [activePeriod, setActivePeriod] = useState('1m');
   const [showFilters, setShowFilters] = useState(false);
-  const [exporting, setExporting] = useState(null);
 
   const setF = useCallback((key, val) => setFilters(p => ({ ...p, [key]: val })), []);
   const setDepartment      = useCallback(v => setF('department', v), [setF]);
@@ -111,44 +98,19 @@ export default function ReportsLayout() {
   }, []);
 
   // ── Shared data ───────────────────────────────────────────────────────────
-  useEffect(() => {
-    if (isAdmin) {
-      api.get('/reports/filter-options').then(({ data }) => setFilterOptions(p => ({ ...p, ...data.data }))).catch(() => {});
-    }
-  }, [isAdmin]);
+  const { data: filterOptionsData } = useReportFilterOptions({ enabled: isAdmin });
+  const filterOptions = filterOptionsData || {
+    departments: [], positions: [], genders: [],
+    competencies: [], competencyCategories: [],
+    assessments: [], assessmentTypes: [], purposes: [], targetGroups: [],
+    scoreRange: { min: 0, max: 100 },
+  };
 
   const filterParams = useCallback(() => {
     const p = {};
     Object.entries(filters).forEach(([k, v]) => { if (v !== '' && v !== null) p[k] = v; });
     return p;
   }, [filters]);
-
-  // ── Export (individual section may pass selected employee) ─────────────────
-  const [exportTarget, setExportTarget] = useState(null);
-
-  const doExport = async (format, type = 'filtered', emp) => {
-    setExporting(format);
-    try {
-      const params = filterParams();
-      let url, filename;
-      if (type === 'individual') {
-        const targetId = emp?._id || exportTarget?._id || user._id;
-        filename = `report_${(emp?.name || exportTarget?.name || user.name || 'employee').replace(/\s+/g, '_')}.${format === 'pdf' ? 'pdf' : 'xlsx'}`;
-        url = `/reports/export/individual/${targetId}/${format}`;
-      } else {
-        url = `/reports/export/${format}`;
-        filename = `reports_${new Date().toISOString().split('T')[0]}.${format === 'pdf' ? 'pdf' : 'xlsx'}`;
-      }
-      const res = await api.get(url, { params, responseType: 'blob' });
-      const blobUrl = URL.createObjectURL(res.data);
-      const a = document.createElement('a'); a.href = blobUrl; a.download = filename; a.click();
-      URL.revokeObjectURL(blobUrl);
-      show(`Exported as ${format.toUpperCase()} successfully.`, 'success');
-    } catch (err) {
-      show(err.response?.status === 404 ? 'No data found for export.' : 'Export failed.', 'error');
-    }
-    setExporting(null);
-  };
 
   const drawerProps = {
     filters, filterOptions, isAdmin,
@@ -166,9 +128,7 @@ export default function ReportsLayout() {
   const contextValue = {
     filters, filterOptions, filterParams,
     activeFilterCount, clearFilters, removeFilter,
-    setFilters, setShowFilters,
-    doExport, section,
-    setExportTarget,
+    setFilters, setShowFilters, section,
   };
 
   return (
@@ -177,18 +137,20 @@ export default function ReportsLayout() {
 
         {/* ── STICKY HEADER ────────────────────────────────────────────── */}
         <div className="sticky top-0 z-20 bg-gray-50 border-b border-gray-200/70 flex-shrink-0">
-          <div className="px-7 py-3">
-            <div className="flex justify-between items-center gap-4 flex-wrap">
+          <div className="px-5 py-2">
+            <div className="flex justify-between items-center gap-3 flex-wrap">
               <div className="flex items-center gap-4 flex-wrap">
                 <div>
-                  <h1 className="text-xl font-bold text-brand-black">{meta.title}</h1>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h1 className="text-lg font-bold text-brand-black">{meta.title}</h1>
+                  </div>
                 </div>
 
                 {isAdmin && (
-                  <div className="flex items-center gap-1 mt-1">
+                  <div className="flex items-center gap-1 mt-0.5">
                     {PERIOD_OPTIONS.map(p => (
                       <button key={p.id} type="button" onClick={() => handlePeriodChange(p.id)}
-                        className={`px-2.5 py-1 rounded-md text-[11px] font-semibold border transition-all
+                        className={`px-2 py-0.5 rounded text-[10px] font-semibold border transition-all
                           ${activePeriod === p.id ? 'bg-brand-red text-white border-brand-red' : 'bg-white text-gray-600 border-gray-200 hover:border-brand-red/40 hover:text-brand-red'}`}>
                         {p.label}
                       </button>
@@ -200,30 +162,20 @@ export default function ReportsLayout() {
               <div className="flex items-center gap-2 flex-wrap">
                 {isAdmin && (
                   <button type="button" onClick={() => setShowFilters(v => !v)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 border rounded-lg font-semibold text-sm transition-colors
+                    className={`flex items-center gap-1.5 px-2 py-0.5 border rounded-lg font-semibold text-[13px] transition-colors
                       ${showFilters || activeFilterCount > 0 ? 'border-brand-red bg-brand-red/10 text-brand-red' : 'border-gray-300 bg-white text-brand-black hover:bg-gray-50'}`}>
-                    <SlidersHorizontal className="w-3.5 h-3.5" />
+                    <SlidersHorizontal className="w-3 h-3" />
                     Filters
                     {activeFilterCount > 0 && (
                       <span className="w-5 h-5 rounded-full bg-brand-red text-white text-xs flex items-center justify-center">{activeFilterCount}</span>
                     )}
                   </button>
                 )}
-                <div className="flex items-center gap-1">
-                  <button type="button" onClick={() => doExport('pdf', section === 'individual' ? 'individual' : 'filtered')} disabled={!!exporting}
-                    className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-300 bg-white rounded-l-lg text-sm font-semibold text-brand-black hover:bg-gray-50 transition-colors disabled:opacity-50">
-                    {exporting === 'pdf' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5 text-red-500" />}PDF
-                  </button>
-                  <button type="button" onClick={() => doExport('excel', section === 'individual' ? 'individual' : 'filtered')} disabled={!!exporting}
-                    className="flex items-center gap-1.5 px-3 py-1.5 border border-l-0 border-gray-300 bg-white rounded-r-lg text-sm font-semibold text-brand-black hover:bg-gray-50 transition-colors disabled:opacity-50">
-                    {exporting === 'excel' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileSpreadsheet className="w-3.5 h-3.5 text-gray-700" />}Excel
-                  </button>
                 </div>
               </div>
-            </div>
 
             {activeFilterCount > 0 && !showFilters && (
-              <div className="flex items-center gap-3 flex-wrap mt-2">
+              <div className="flex items-center gap-3 flex-wrap mt-1.5">
                 <ActiveFilterPills filters={filters} filterOptions={filterOptions} onRemove={removeFilter} />
                 <button type="button" onClick={clearFilters} className="text-xs text-gray-400 hover:text-brand-red font-medium">Clear all</button>
               </div>
@@ -233,7 +185,7 @@ export default function ReportsLayout() {
 
         {/* ── SCROLLABLE BODY ──────────────────────────────────────────── */}
         <div className="flex-1 overflow-y-auto scrollbar-none">
-          <div className="p-7 space-y-5">
+          <div className="p-4 space-y-3">
             {showFilters && isAdmin && <FilterDrawer {...drawerProps} />}
             <Outlet />
           </div>

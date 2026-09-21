@@ -1,7 +1,8 @@
-﻿import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { useToast } from '../context/ToastContext';
+import { useQuery } from '@tanstack/react-query';
+import { queryKeys } from '../hooks/queries';
 import {
   TrendingUp, CheckCircle2, Download, ChevronLeft, ChevronRight,
   Award, User, Users, Scale, Calendar, Filter, X, FileText,
@@ -12,9 +13,9 @@ import {
 } from 'lucide-react';
 import api from '../utils/api';
 
-// â”€â”€â”€ helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── helpers ─────────────────────────────────────────────────────────────────
 const formatAnswer = (answer, questionType) => {
-  if (answer === null || answer === undefined) return 'â€”';
+  if (answer === null || answer === undefined) return '—';
   const type = (questionType || '').toLowerCase();
   if (typeof answer === 'string' || typeof answer === 'number') {
     if (type === 'rating') return `${answer} / 5`;
@@ -28,7 +29,7 @@ const formatAnswer = (answer, questionType) => {
   }
   if (typeof answer === 'object') {
     const entries = Object.entries(answer);
-    if (entries.length === 0) return 'â€”';
+    if (entries.length === 0) return '—';
     return entries.map(([k, v]) => `${k} â†’ ${v}`).join('; ');
   }
   return String(answer);
@@ -51,7 +52,7 @@ const PURPOSE_COLORS = [
   'bg-gray-100 text-gray-700', 'bg-gray-100 text-gray-700',
 ];
 
-// â”€â”€â”€ small components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── small components ─────────────────────────────────────────────────────────
 const LevelBadge = ({ level }) => (
   <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border ${LEVEL_COLORS[level] || 'bg-gray-100 text-gray-600'}`}>
     {level}
@@ -75,7 +76,7 @@ const ScoreBar = ({ score, type }) => {
   );
 };
 
-// â”€â”€â”€ pagination â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── pagination ────────────────────────────────────────────────────────────────
 const Paginator = ({ pagination, goToPage }) => {
   if (!pagination.total || pagination.total <= pagination.limit) return null;
   const tp = pagination.totalPages;
@@ -104,26 +105,27 @@ const Paginator = ({ pagination, goToPage }) => {
 // MAIN COMPONENT
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 export default function Results() {
-  const { user, isAdmin } = useAuth();
-  const { show } = useToast();
+const { user, isAdmin } = useAuth();
   const nav = useNavigate();
 
-  // â”€â”€ filter options loaded from API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  const [filterOptions, setFilterOptions] = useState({
+  // ── filter options loaded from API ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  const { data: filterOptionsData } = useQuery({
+    queryKey: queryKeys.results.filterOptions,
+    queryFn: async () => {
+      const { data } = await api.get('/results/filter-options');
+      return data.data;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+  const filterOptions = filterOptionsData || {
     departments: [], positions: [], competencies: [], assessments: [],
     levels: ['Basic', 'Intermediate', 'Advanced', 'Expert'],
     assessmentTypes: ['SelfAssessment', 'SupervisorOnly', 'Combined'],
     targetGroups: ['managerial', 'non-managerial', 'common'],
     purposes: ['Career Development', 'Succession Planning', 'Performance Improvement', 'Training Needs Analysis', 'Promotion Readiness', 'Other'],
-  });
+  };
 
-  // â”€â”€ results state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  const [results, setResults] = useState([]);
-  const [stats, setStats] = useState(null);
-  const [loading, setLoading] = useState(false);
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 0 });
-
-  // â”€â”€ filters â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState({
     search: '', assessmentId: '', competencyId: '', department: '',
@@ -132,59 +134,47 @@ export default function Results() {
     sortBy: 'createdAt', sortDir: 'desc',
   });
   const [pendingFilters, setPendingFilters] = useState({ ...filters });
-
-  // â”€â”€ finalise state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  const [finalisingId, setFinalisingId] = useState(null);
-
-  // â”€â”€ load filter options â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  useEffect(() => {
-    api.get('/results/filter-options')
-      .then(({ data }) => setFilterOptions(prev => ({ ...prev, ...data.data })))
-      .catch(() => {});
-  }, []);
-
-  // â”€â”€ load results â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  const loadResults = useCallback(async (page = 1) => {
-    setLoading(true);
-    try {
-      const params = { page, limit: pagination.limit };
+  const { data, isLoading: loading, refetch } = useQuery({
+    queryKey: queryKeys.results.list({ page: pagination.page, limit: pagination.limit, ...filters }),
+    queryFn: async () => {
+      const params = { page: pagination.page, limit: pagination.limit };
       Object.entries(filters).forEach(([k, v]) => { if (v) params[k] = v; });
       const { data } = await api.get('/results/filtered', { params });
-      setResults(data.data.results || []);
-      setStats(data.data.stats || null);
-      setPagination(prev => ({
-        ...prev, page,
-        total: data.data.pagination.total,
-        totalPages: data.data.pagination.totalPages,
-      }));
-    } catch {
-      show('Failed to load results.', 'error');
-    }
-    setLoading(false);
-  }, [filters, pagination.limit]);
+      return data.data;
+    },
+  });
+  const results = data?.results || [];
+  const stats = data?.stats || null;
+  const total = data?.pagination?.total ?? pagination.total;
+  const totalPages = data?.pagination?.totalPages ?? pagination.totalPages;
 
-  useEffect(() => { loadResults(1); }, [filters]);
+  // ── filters ───────────────────────────────────────────────────────────────
+  // ── finalise state ────────────────────────────────────────────────────────
+  const [finalisingId, setFinalisingId] = useState(null);
 
-  // â”€â”€ apply pending filters â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  const applyFilters = () => { setFilters({ ...pendingFilters }); };
+  
+
+  // ── apply pending filters ─────────────────────────────────────────────────
+  const applyFilters = () => { setFilters({ ...pendingFilters }); setPagination(prev => ({ ...prev, page: 1 })); };
   const clearFilters = () => {
     const empty = { search: '', assessmentId: '', competencyId: '', department: '', position: '', level: '', status: '', assessmentType: '', targetGroup: '', purpose: '', dateFrom: '', dateTo: '', sortBy: 'createdAt', sortDir: 'desc' };
     setPendingFilters(empty);
     setFilters(empty);
+    setPagination(prev => ({ ...prev, page: 1 }));
   };
   const activeFilterCount = Object.entries(filters).filter(([k, v]) => v && !['sortBy', 'sortDir'].includes(k)).length;
 
-  // â”€â”€ open result detail page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── open result detail page ─────────────────────────────────────────────
   const openDetail = (result) => {
     nav(`/results/${result._id}`);
   };
 
-  // â”€â”€ Ref for the table header to handle sticky positioning â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Ref for the table header to handle sticky positioning ─────────────────
   const tableContainerRef = useRef(null);
 
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  // RENDER â€” fixed outer shell, scrollable rows only
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─────────────────────────────────────────────────────────────────────────
+  // RENDER — fixed outer shell, scrollable rows only
+  // ─────────────────────────────────────────────────────────────────────────
   return (
     <div className="p-7 h-[calc(100vh-3rem)] flex flex-col">
 
@@ -204,7 +194,7 @@ export default function Results() {
             Filters
             {activeFilterCount > 0 && <span className="w-5 h-5 rounded-full bg-brand-red text-white text-xs flex items-center justify-center">{activeFilterCount}</span>}
           </button>
-          <button onClick={() => loadResults(pagination.page)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 bg-white text-brand-black hover:bg-gray-50 text-sm font-semibold transition-colors">
+          <button onClick={() => refetch()} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 bg-white text-brand-black hover:bg-gray-50 text-sm font-semibold transition-colors">
             <RefreshCw className="w-3.5 h-3.5" />
           </button>
         </div>
@@ -213,7 +203,7 @@ export default function Results() {
         {/* ── Sticky Filters row ── */}
         <div className="flex justify-between items-center gap-3 mb-5 flex-wrap flex-shrink-0">
           <p className="text-sm text-gray-500">
-            {loading ? 'Loading...' : <><strong className="text-gray-900">{pagination.total}</strong> result{pagination.total !== 1 ? 's' : ''}{activeFilterCount > 0 ? ' (filtered)' : ''}</>}
+            {loading ? 'Loading...' : <><strong className="text-gray-900">{total}</strong> result{total !== 1 ? 's' : ''}{activeFilterCount > 0 ? ' (filtered)' : ''}</>}
           </p>
           <div className="flex items-center gap-2">
             <span className="text-sm text-gray-600">Show:</span>
@@ -290,6 +280,15 @@ export default function Results() {
                   <option value="Combined">Combined</option>
                 </select>
               </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5">Result Status</label>
+                <select value={pendingFilters.status} onChange={e => setPendingFilters(p => ({ ...p, status: e.target.value }))}
+                  className="w-full h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm">
+                  <option value="">All Statuses</option>
+                  <option value="FINAL">Taken</option>
+                  <option value="PENDING">Not Taken</option>
+                </select>
+              </div>
               {isAdmin && (
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 mb-1.5">Target Group</label>
@@ -348,7 +347,7 @@ export default function Results() {
                 {Object.entries(filters).filter(([k, v]) => v && !['sortBy', 'sortDir'].includes(k)).map(([key, val]) => (
                   <span key={key} className="inline-flex items-center gap-1 px-2.5 py-1 bg-brand-red/10 text-brand-red text-xs rounded-full font-medium">
                     {key === 'assessmentId' ? 'Assessment' : key === 'competencyId' ? 'Competency' : key.charAt(0).toUpperCase() + key.slice(1)}: {key === 'assessmentId' ? (filterOptions.assessments.find(a => a._id === val)?.description || val) : key === 'competencyId' ? (filterOptions.competencies.find(c => c._id === val)?.name || val) : val}
-                    <button onClick={() => { const u = { ...filters, [key]: '' }; setFilters(u); setPendingFilters(u); }}><X className="w-3 h-3" /></button>
+                    <button onClick={() => { const u = { ...filters, [key]: '' }; setFilters(u); setPendingFilters(u); setPagination(prev => ({ ...prev, page: 1 })); }}><X className="w-3 h-3" /></button>
                   </span>
                 ))}
               </div>
@@ -422,9 +421,13 @@ export default function Results() {
                         </div>
                       </td>
                       <td className="px-4 py-2">
-                        <div className="font-medium text-sm text-gray-900 whitespace-nowrap">{result.finalScore}%</div>
+                        {result.notTaken ? (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-500 border border-gray-200 whitespace-nowrap">Not Taken</span>
+                        ) : (
+                          <div className="font-medium text-sm text-gray-900 whitespace-nowrap">{result.finalScore}%</div>
+                        )}
                       </td>
-                      <td className="px-4 py-2">{result.level}</td>
+                      <td className="px-4 py-2">{result.notTaken ? '—' : result.level}</td>
                       <td className="px-4 py-2">
                         <div className="flex items-center gap-1.5 text-xs text-gray-500 whitespace-nowrap">
                           <Calendar className="w-3.5 h-3.5" />
@@ -433,10 +436,12 @@ export default function Results() {
                       </td>
                       <td className="px-4 py-2">
                         <div className="flex items-center justify-end gap-2 whitespace-nowrap">
-                          <button onClick={() => openDetail(result)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors">
-                            <Eye className="w-3.5 h-3.5" /> View Detail
-                          </button>
+                          {!result.notTaken && (
+                            <button onClick={() => openDetail(result)}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors">
+                              <Eye className="w-3.5 h-3.5" /> View Detail
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -445,9 +450,9 @@ export default function Results() {
               </table>
             </div>
 
-            {/* Pagination â€” fixed at bottom of the card */}
+            {/* Pagination — fixed at bottom of the card */}
             <div className="flex-shrink-0 px-4 py-3 border-t border-gray-100 bg-white">
-              <Paginator pagination={pagination} goToPage={p => loadResults(p)} />
+              <Paginator pagination={{ ...pagination, total, totalPages }} goToPage={p => setPagination(prev => ({ ...prev, page: p }))} />
             </div>
           </>
         )}

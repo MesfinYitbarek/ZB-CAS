@@ -1,13 +1,13 @@
-/* routes/externalRoutes.js
+﻿/* routes/externalRoutes.js
  * Endpoints for external system integration (ZB_SP Succession Planning).
  * Secured via shared API key in the x-api-key header, no JWT auth required.
  *
- * POST /api/external/assessment-requests        — receive request, auto-create competency + assessment
- * GET  /api/external/assessment-requests        — list all requests (for ZB CAS dashboard)
- * PATCH /api/external/assessment-requests/:id/mark-complete — one-click complete & auto-link results
- * GET  /api/external/assessment-requests/:id/user-results   — show only assessments user has results for
- * GET  /api/external/assessment-results/:id     — return results for ZB_SP sync
- * PATCH /api/external/assessment-requests/:id   — update request status/linking (legacy)
+ * POST /api/external/assessment-requests        â€” receive request, auto-create competency + assessment
+ * GET  /api/external/assessment-requests        â€” list all requests (for ZB CAS dashboard)
+ * PATCH /api/external/assessment-requests/:id/mark-complete â€” one-click complete & auto-link results
+ * GET  /api/external/assessment-requests/:id/user-results   â€” show only assessments user has results for
+ * GET  /api/external/assessment-results/:id     â€” return results for ZB_SP sync
+ * PATCH /api/external/assessment-requests/:id   â€” update request status/linking (legacy)
  */
 import express from 'express';
 import prisma from '../config/prisma.js';
@@ -15,7 +15,7 @@ import logger from '../utils/logger.js';
 
 const router = express.Router();
 
-// ── Type → Category mapping ─────────────────────────────────────────────────────
+// â”€â”€ Type â†’ Category mapping â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const TYPE_TO_CATEGORY = {
   'TECHNICAL': 'Technical',
   'LEADERSHIP': 'Leadership',
@@ -25,28 +25,27 @@ const TYPE_TO_CATEGORY = {
   'PERSONAL': 'Core_Personal_effectiveness',
 };
 
-// ── Map display category strings to CompetencyCategory enum values ──────────────
+// â”€â”€ Map display category strings to CompetencyCategory enum values â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const CATEGORY_TO_ENUM = {
   'Technical': 'Technical',
   'Leadership': 'Leadership',
   'Managerial': 'Managerial',
   'Core-Behavioral': 'Core_Behavioral',
-  'Core-Behavioral': 'Core_Behavioral',
   'Core-Personal effectiveness': 'Core_Personal_effectiveness',
 };
 
-// ── Helper: strip level bracket from competency name for matching ───────────────
-// e.g. "leadership_SP (Expert)" → "leadership_sp"
+// â”€â”€ Helper: strip level bracket from competency name for matching â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// e.g. "leadership_SP (Expert)" â†’ "leadership_sp"
 const stripLevel = (name) => (name || '').replace(/\s*\([^)]*\)\s*$/, '').toLowerCase().trim();
 
-// ── Helper: map ExternalTargetGroup enum → TargetGroup enum ─────────────────────
+// â”€â”€ Helper: map ExternalTargetGroup enum â†’ TargetGroup enum â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const extTgToTg = (tg) => {
   if (tg === 'MANAGERIAL') return 'managerial';
   if (tg === 'NON_MANAGERIAL') return 'non_managerial';
   return 'common';
 };
 
-// ── Helper: map legacy lowercase/hyphenated targetGroup to ExternalTargetGroup enum
+// â”€â”€ Helper: map legacy lowercase/hyphenated targetGroup to ExternalTargetGroup enum
 const toExtTargetGroup = (tg) => {
   const upper = (tg || 'COMMON').toUpperCase().replace(/-/g, '_');
   if (upper === 'NON_MANAGERIAL') return 'NON_MANAGERIAL';
@@ -54,7 +53,7 @@ const toExtTargetGroup = (tg) => {
   return 'COMMON';
 };
 
-// ── Helper: load junction extras onto a request object ──────────────────────────
+// â”€â”€ Helper: load junction extras onto a request object â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function loadRequestExtras(request) {
   const comps = await prisma.externalRequestCompetency.findMany({
     where: { externalRequestId: request.id },
@@ -73,19 +72,24 @@ async function loadRequestExtras(request) {
   return request;
 }
 
-// ── API Key middleware ──────────────────────────────────────────────────────────
+// â”€â”€ API Key middleware â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const validateApiKey = (req, res, next) => {
   const apiKey = req.headers['x-api-key'];
-  const expectedKey = process.env.ZB_SP_API_KEY || 'zb-integration-key-2026';
+  const expectedKey = process.env.ZB_SP_API_KEY;
 
-  if (!apiKey || apiKey !== expectedKey) {
+  if (!expectedKey || !apiKey || apiKey !== expectedKey) {
     return res.status(401).json({ status: 'fail', message: 'Invalid or missing API key.' });
   }
   next();
 };
 
-// ── POST /api/external/assessment-requests ──────────────────────────────────────
-router.post('/assessment-requests', validateApiKey, async (req, res) => {
+// Every external integration endpoint requires the shared API key.
+// No hardcoded fallback: the key MUST come from the environment, otherwise
+// external access is denied entirely.
+router.use(validateApiKey);
+
+// â”€â”€ POST /api/external/assessment-requests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+router.post('/assessment-requests', async (req, res) => {
   try {
     const { employeeName, employeeEmail, positionTitle, competencies, sourceAssessmentId } = req.body;
 
@@ -119,7 +123,7 @@ router.post('/assessment-requests', validateApiKey, async (req, res) => {
       });
     }
 
-    // ── Auto-process: try to find user, create competencies + assessments ──────
+    // â”€â”€ Auto-process: try to find user, create competencies + assessments â”€â”€â”€â”€â”€â”€
     let autoCreated = { competencies: [], assessments: [], linkedUserId: null };
 
     try {
@@ -151,7 +155,7 @@ router.post('/assessment-requests', validateApiKey, async (req, res) => {
           const targetGroupEnum = toExtTargetGroup(comp.targetGroup);
           const tgForCompetency = extTgToTg(targetGroupEnum);
           const displayGroup = (comp.targetGroup || 'COMMON').replace(/_/g, ' ');
-          const userEntry = `• ${employeeName} — ${positionTitle} | Target Group: ${displayGroup} (${now})`;
+          const userEntry = `â€¢ ${employeeName} â€” ${positionTitle} | Target Group: ${displayGroup} (${now})`;
 
           const existing = await prisma.competency.findFirst({
             where: { name: { equals: compName, mode: 'insensitive' } },
@@ -162,7 +166,7 @@ router.post('/assessment-requests', validateApiKey, async (req, res) => {
             const tgRow = existing.targetGroups.find(t => t.targetGroup === tgForCompetency);
             if (tgRow) {
               const currentDesc = tgRow.description || '';
-              if (!currentDesc.includes(`${employeeName} — ${positionTitle}`) || !currentDesc.includes(String(d.getDate()).padStart(2, '0'))) {
+              if (!currentDesc.includes(`${employeeName} â€” ${positionTitle}`) || !currentDesc.includes(String(d.getDate()).padStart(2, '0'))) {
                 await prisma.competencyTargetGroup.update({
                   where: { id: tgRow.id },
                   data: {
@@ -198,7 +202,7 @@ router.post('/assessment-requests', validateApiKey, async (req, res) => {
               });
               autoCreated.competencies.push(compName);
             } catch (e) {
-              // Duplicate key race condition — already exists
+              // Duplicate key race condition â€” already exists
             }
           }
         }
@@ -242,7 +246,7 @@ router.post('/assessment-requests', validateApiKey, async (req, res) => {
   }
 });
 
-// ── GET /api/external/assessment-requests ───────────────────────────────────────
+// â”€â”€ GET /api/external/assessment-requests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.get('/assessment-requests', async (req, res) => {
   try {
     const { status } = req.query;
@@ -298,7 +302,7 @@ router.get('/assessment-requests', async (req, res) => {
   }
 });
 
-// ── PATCH /api/external/assessment-requests/:id/mark-complete ───────────────────
+// â”€â”€ PATCH /api/external/assessment-requests/:id/mark-complete â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.patch('/assessment-requests/:id/mark-complete', async (req, res) => {
   try {
     const request = await prisma.externalRequest.findUnique({ where: { id: req.params.id } });
@@ -381,6 +385,7 @@ router.patch('/assessment-requests/:id/mark-complete', async (req, res) => {
       where: {
         userId: request.linkedUserId,
         assessmentId: { in: matchingIds },
+        status: 'FINAL',
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -475,7 +480,7 @@ router.patch('/assessment-requests/:id/mark-complete', async (req, res) => {
 });
 
 
-// ── PATCH /api/external/assessment-requests/:id ─────────────────────────────────
+// â”€â”€ PATCH /api/external/assessment-requests/:id â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.patch('/assessment-requests/:id', async (req, res) => {
   try {
     const request = await prisma.externalRequest.findUnique({ where: { id: req.params.id } });
@@ -545,7 +550,7 @@ router.patch('/assessment-requests/:id', async (req, res) => {
   }
 });
 
-// ── GET /api/external/assessment-requests/:id/user-results ──────────────────────
+// â”€â”€ GET /api/external/assessment-requests/:id/user-results â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.get('/assessment-requests/:id/user-results', async (req, res) => {
   try {
     const request = await prisma.externalRequest.findUnique({ where: { id: req.params.id } });
@@ -616,6 +621,7 @@ router.get('/assessment-requests/:id/user-results', async (req, res) => {
       where: {
         userId: request.linkedUserId,
         assessmentId: { in: matchingIds },
+        status: 'FINAL',
       },
       include: {
         assessment: {
@@ -669,8 +675,8 @@ router.get('/assessment-requests/:id/user-results', async (req, res) => {
   }
 });
 
-// ── GET /api/external/assessment-results/:id ────────────────────────────────────
-router.get('/assessment-results/:id', validateApiKey, async (req, res) => {
+// â”€â”€ GET /api/external/assessment-results/:id â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+router.get('/assessment-results/:id', async (req, res) => {
   try {
     const rawRequest = await prisma.externalRequest.findUnique({
       where: { id: req.params.id },
@@ -719,7 +725,7 @@ router.get('/assessment-results/:id', validateApiKey, async (req, res) => {
     }
 
     const allResults = await prisma.result.findMany({
-      where: resultWhere,
+      where: { ...resultWhere, status: 'FINAL' },
       orderBy: { createdAt: 'desc' },
       include: {
         competency: { select: { id: true, name: true, category: true } },
@@ -791,7 +797,7 @@ router.get('/assessment-results/:id', validateApiKey, async (req, res) => {
   }
 });
 
-// ── POST /api/external/assessment-requests/:id/link-user ────────────────────────
+// â”€â”€ POST /api/external/assessment-requests/:id/link-user â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.post('/assessment-requests/:id/link-user', async (req, res) => {
   try {
     const request = await prisma.externalRequest.findUnique({ where: { id: req.params.id } });
@@ -826,7 +832,7 @@ router.post('/assessment-requests/:id/link-user', async (req, res) => {
   }
 });
 
-// ── POST /api/external/assessment-requests/:id/create-competencies ──────────────
+// â”€â”€ POST /api/external/assessment-requests/:id/create-competencies â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.post('/assessment-requests/:id/create-competencies', async (req, res) => {
   try {
     const request = await prisma.externalRequest.findUnique({ where: { id: req.params.id } });
@@ -889,7 +895,7 @@ router.post('/assessment-requests/:id/create-competencies', async (req, res) => 
   }
 });
 
-// ── DELETE /api/external/assessment-requests/:id ────────────────────────────────
+// â”€â”€ DELETE /api/external/assessment-requests/:id â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.delete('/assessment-requests/:id', async (req, res) => {
   try {
     const request = await prisma.externalRequest.findUnique({ where: { id: req.params.id } });

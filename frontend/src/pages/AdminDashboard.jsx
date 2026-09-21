@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip,
@@ -10,6 +10,8 @@ import {
   BarChart2, Clock, Zap, ChevronRight, BookOpen
 } from 'lucide-react';
 import api from '../utils/api';
+import { useQuery } from '@tanstack/react-query';
+import { queryKeys } from '../hooks/queries';
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const PERIOD_OPTIONS = [
@@ -20,7 +22,7 @@ const PERIOD_OPTIONS = [
   { key: 'all', label: 'All', full: 'All Time' },
 ];
 
-const STATUS_COLORS = { ACTIVE: '#059669', COMPLETED: '#C8102E', DRAFT: '#94a3b8', SCHEDULED: '#D97706', ARCHIVED: '#dad2c8ff' };
+const STATUS_COLORS = { ACTIVE: '#059669', COMPLETED: '#C8102E', DRAFT: '#94a3b8', SCHEDULED: '#D97706' };
 const CHART_COLORS = ['#C8102E', '#2563EB', '#059669', '#D97706', '#7C3AED', '#64748B'];
 
 const ChartTooltip = ({ active, payload, label }) => {
@@ -180,35 +182,34 @@ function QuestionBankInsight({ data = [] }) {
 export default function AdminDashboard() {
   const nav = useNavigate();
   const [period, setPeriod] = useState('semi');
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [extRequests, setExtRequests] = useState([]);
 
-  const load = useCallback(async (p, silent = false) => {
-    if (!silent) setLoading(true);
-    else setRefreshing(true);
-    try {
-      const res = await api.get(`/dashboard/admin?period=${p}`);
-      setData(res.data.data);
-    } catch (err) {
-      console.error('Failed to load admin dashboard:', err);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
+  const { data, isLoading: loading, isFetching, refetch } = useQuery({
+    queryKey: queryKeys.dashboard.admin(period),
+    queryFn: async () => {
+      try {
+        const res = await api.get(`/dashboard/admin?period=${period}`);
+        return res.data.data;
+      } catch (err) {
+        console.error('Failed to load admin dashboard:', err);
+        throw err;
+      }
+    },
+  });
+  const refreshing = isFetching && !loading;
 
-  const loadExtRequests = useCallback(async () => {
-    try {
-      const res = await api.get('/external/assessment-requests');
-      setExtRequests(res.data?.data?.requests || []);
-    } catch (err) {
-      console.error('Failed to load external requests:', err);
-    }
-  }, []);
-
-  useEffect(() => { load(period); loadExtRequests(); }, [period, load, loadExtRequests]);
+  const { data: extRequestsData, refetch: refetchExtRequests } = useQuery({
+    queryKey: queryKeys.externalRequests.all,
+    queryFn: async () => {
+      try {
+        const res = await api.get('/external/assessment-requests');
+        return res.data?.data?.requests || [];
+      } catch (err) {
+        console.error('Failed to load external requests:', err);
+        throw err;
+      }
+    },
+  });
+  const extRequests = extRequestsData || [];
 
   if (loading) {
     return (
@@ -252,7 +253,7 @@ export default function AdminDashboard() {
                 {PERIOD_OPTIONS.map(({ key, label }) => (
                   <button
                     key={key}
-                    onClick={() => { setPeriod(key); load(key); }}
+                    onClick={() => setPeriod(key)}
                     className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all duration-150
                       ${period === key ? 'bg-brand-red text-white shadow-sm' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}
                   >
@@ -261,7 +262,7 @@ export default function AdminDashboard() {
                 ))}
               </div>
               <button
-                onClick={() => { load(period, true); loadExtRequests(); }}
+                onClick={() => { refetch(); refetchExtRequests(); }}
                 className="w-9 h-9 bg-white border border-gray-200 rounded-xl flex items-center justify-center text-gray-400 hover:text-gray-600 transition-all shadow-sm"
               >
                 <RefreshCw className="w-3.5 h-3.5" />

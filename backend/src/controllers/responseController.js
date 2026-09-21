@@ -3,10 +3,9 @@ import logger from '../utils/logger.js';
 import prisma from '../config/prisma.js';
 import AppError from '../utils/AppError.js';
 import asyncHandler from '../utils/asyncHandler.js';
-import { scoreIndividual } from '../services/scoringService.js';
+import { scoreIndividual, hasSubmittedBothSides } from '../services/scoringService.js';
 import { sendResultsEmail } from '../services/emailService.js';
 import { notifyResultReady } from '../services/notificationService.js';
-import { logActivity } from '../services/activityService.js';
 
 const withAssessmentQuestions = (assessment) => ({
   ...assessment,
@@ -142,17 +141,15 @@ export const submitAssessment = asyncHandler(async (req, res, next) => {
     logger.error({ event: 'security_log_fail', message: secErr.message });
   }
 
-  // ─── TRIGGER AUTO-SCORING for SelfAssessment ───────────────────────────
-  await logActivity({
-    req,
-    action: 'submitted',
-    entity: 'Response',
-    entityId: employeeId,
-    description: `Assessment "${assessment.description || assessment.purpose}" submitted`,
-    metadata: { assessmentId, employeeId, type: assessment.type, self: true },
-  });
+  // ─── TRIGGER AUTO-SCORING ───────────────────────────────────────────────
+  // SelfAssessment scores on every self submit. Combined scores only once
+  // BOTH sides have submitted, so the stored row is always one combined
+  // calculation — never a self-only single result.
+  const shouldScoreSelfSubmit =
+    assessment.type === 'SelfAssessment' ||
+    (assessment.type === 'Combined' && (await hasSubmittedBothSides(assessmentId, employeeId)));
 
-  if (assessment.type === 'SelfAssessment') {
+  if (shouldScoreSelfSubmit) {
     const result = await scoreIndividual(assessmentId, employeeId);
 
     // Notify Employee
@@ -391,8 +388,7 @@ export const submitSupervisorEvaluation = asyncHandler(async (req, res, next) =>
   const { assessmentId, employeeId, score, comments } = req.body;
   const supervisorId = req.user.id;
 
-  const assessment = await prisma.assessment.findUnique({ where: { id: assessmentId } });
-  if (!assessment) return next(new AppError('Assessment not found', 404));
+  const assessment = await validateAccess(assessmentId, req.user.id, employeeId, 'supervisor');
 
   const existing = await prisma.response.findFirst({
     where: { assessmentId, employeeId, userId: supervisorId, respondentType: 'supervisor' },
@@ -418,19 +414,17 @@ export const submitSupervisorEvaluation = asyncHandler(async (req, res, next) =>
       });
 
   let result = null;
-  if (assessment.type === 'SupervisorOnly') {
-    result = await scoreIndividual(assessmentId, employeeId);
-    logger.info({ event: 'auto_score_supervisor_only', employeeId });
-  }
+  // SupervisorOnly scores on every supervisor submit. Combined scores only
+  // once BOTH sides have submitted, so the stored row is always one combined
+  // calculation — never a supervisor-only single result.
+  const shouldScoreSupervisorSubmit =
+    assessment.type === 'SupervisorOnly' ||
+    (assessment.type === 'Combined' && (await hasSubmittedBothSides(assessmentId, employeeId)));
 
-  await logActivity({
-    req,
-    action: 'evaluation_submitted',
-    entity: 'SupervisorEvaluation',
-    entityId: evaluation.id,
-    description: `Supervisor evaluation submitted for assessment "${assessment.description || assessment.purpose}"`,
-    metadata: { assessmentId, employeeId, score: Number(score) },
-  });
+  if (shouldScoreSupervisorSubmit) {
+    result = await scoreIndividual(assessmentId, employeeId);
+    logger.info({ event: 'auto_score_supervisor_submit', assessmentId, employeeId, type: assessment.type });
+  }
 
   res.status(200).json({
     status: 'success',
@@ -483,6 +477,7 @@ export const getProgress = asyncHandler(async (req, res, next) => {
     where: {
       assessmentId,
       userId: req.user.id,
+      status: 'FINAL',
     },
     select: { id: true },
   });
@@ -570,6 +565,15 @@ export const startAttempt = asyncHandler(async (req, res, next) => {
 // ─── GET SUPERVISOR EVALUATION (Draft or Submitted) ────────────────────────
 export const getSupervisorEvaluation = asyncHandler(async (req, res, next) => {
   const { assessmentId, employeeId } = req.params;
+
+  const employee = await prisma.user.findUnique({
+    where: { id: employeeId },
+    select: { id: true, supervisorId: true },
+  });
+  if (!employee || employee.supervisorId !== req.user.id) {
+    return next(new AppError('You can only view evaluations for your direct reports.', 403));
+  }
+
   const evaluation = await prisma.response.findFirst({
     where: { assessmentId, employeeId, respondentType: 'supervisor' },
   });
@@ -610,6 +614,8 @@ export const getAllResponses = asyncHandler(async (req, res, next) => {
 export const saveSupervisorEvaluation = asyncHandler(async (req, res, next) => {
   const { assessmentId, employeeId, score, comments } = req.body;
   const supervisorId = req.user.id;
+
+  await validateAccess(assessmentId, req.user.id, employeeId, 'supervisor');
 
   const existing = await prisma.response.findFirst({
     where: { assessmentId, employeeId, userId: supervisorId, respondentType: 'supervisor' },

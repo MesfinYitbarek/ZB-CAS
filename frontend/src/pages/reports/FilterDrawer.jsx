@@ -3,7 +3,7 @@ import {
   X, ChevronUp, ChevronDown, SlidersHorizontal, RotateCcw,
   User as UserIcon, Layers, Sliders, Calendar,
 } from 'lucide-react';
-import { LEVELS } from './ui';
+import { LEVELS } from './shared/ui';
 
 const FilterSection = ({ title, icon: Icon, color, children, defaultOpen = true }) => {
   const [open, setOpen] = useState(defaultOpen);
@@ -202,7 +202,7 @@ export default function FilterDrawer(props) {
       <div className="px-5 py-3 border-t border-gray-100 bg-gray-50 flex items-center justify-between">
         <p className="text-xs text-gray-400">{activeCount === 0 ? 'No filters active' : `${activeCount} filter(s) active`}</p>
         <button type="button" onClick={onClose}
-          className="px-4 py-2 bg-brand-red text-white text-sm font-semibold rounded-lg hover:bg-brand-red/90 transition-colors">
+          className="px-2 py-1 bg-brand-red text-white text-sm font-semibold rounded-lg hover:bg-brand-red/90 transition-colors">
           Apply &amp; Close
         </button>
       </div>

@@ -135,15 +135,6 @@ export const login = asyncHandler(async (req, res, next) => {
   res.cookie('refreshToken', refreshToken, refreshCookieOptions());
   logger.info({ event: 'user_login', userId: user.id, role: activeRole });
 
-  await logActivity({
-    req,
-    actor: user.id,
-    action: 'login',
-    entity: 'User',
-    entityId: user.id,
-    description: `User "${user.name}" logged in`,
-  });
-
   res.status(200).json({
     status: 'success',
     data: {
@@ -174,15 +165,6 @@ export const switchRole = asyncHandler(async (req, res, next) => {
 
   res.cookie('refreshToken', refreshToken, refreshCookieOptions());
   logger.info({ event: 'role_switch', userId: user.id, newRole: role });
-
-  await logActivity({
-    req,
-    action: 'role_switch',
-    entity: 'User',
-    entityId: user.id,
-    description: `Switched role to ${role}`,
-    metadata: { from: req.user.role, to: role },
-  });
 
   res.status(200).json({
     status: 'success',
@@ -218,7 +200,14 @@ export const refresh = asyncHandler(async (req, res, next) => {
   }
 
   // 4. Determine the active role to encode in the new access token.
-  const activeRole = defaultRole(user.roles);
+  //    Honour the role embedded in the refresh token (set on login / switchRole)
+  //    so a dual-role user who switched to a lower privilege role is NOT
+  //    re-escalated on session restore. Fall back to the default only if the
+  //    embedded role is missing (legacy tokens) or no longer assigned.
+  const activeRole =
+    decoded.role && user.roles.includes(decoded.role)
+      ? decoded.role
+      : defaultRole(user.roles);
 
   // 5. Issue a new token pair and rotate the stored refresh token
   const newPair = buildTokenPair(user.id, activeRole);
@@ -243,14 +232,6 @@ export const logout = asyncHandler(async (req, res) => {
   });
   res.clearCookie('refreshToken', { path: '/' });  // path must match refreshCookieOptions
   logger.info({ event: 'user_logout', userId: req.user.id });
-
-  await logActivity({
-    req,
-    action: 'logout',
-    entity: 'User',
-    entityId: req.user.id,
-    description: 'User logged out',
-  });
 
   res.status(200).json({ status: 'success', message: 'Logged out.' });
 });
@@ -314,15 +295,6 @@ export const resetPassword = asyncHandler(async (req, res, next) => {
     },
   });
 
-  await logActivity({
-    req,
-    actor: user.id,
-    action: 'password_reset',
-    entity: 'User',
-    entityId: user.id,
-    description: `Password reset for "${user.name}" via reset token`,
-  });
-
   res.status(200).json({ status: 'success', message: 'Password reset successful.' });
 });
 
@@ -350,14 +322,6 @@ export const changePassword = asyncHandler(async (req, res, next) => {
   });
 
   logger.info({ event: 'password_changed', userId: user.id });
-
-  await logActivity({
-    req,
-    action: 'password_changed',
-    entity: 'User',
-    entityId: user.id,
-    description: 'Password changed',
-  });
 
   res.status(200).json({ status: 'success', message: 'Password changed successfully.' });
 });

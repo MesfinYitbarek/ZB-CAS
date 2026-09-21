@@ -18,6 +18,7 @@ import {
   notifyDeadlineReminder,
 } from '../services/notificationService.js';
 import { scheduleAssessmentTimers, clearAssessmentTimers } from '../services/schedulerService.js';
+import { autoScoreOnCompletion } from '../services/scoringService.js';
 import { logActivity } from '../services/activityService.js';
 import { normalizeTargetGroup, denormalizeTargetGroup } from '../utils/targetGroup.js';
 
@@ -36,10 +37,20 @@ export const autoActivateScheduledAssessments = async () => {
 // Exported so schedulerService can call it on a cron schedule
 export const autoCompleteExpiredAssessments = async () => {
   const now = new Date();
-  const result = await prisma.assessment.updateMany({
+  const expired = await prisma.assessment.findMany({
     where: { status: 'ACTIVE', endDate: { lte: now } },
+    select: { id: true, type: true },
+  });
+  const result = await prisma.assessment.updateMany({
+    where: { id: { in: expired.map(a => a.id) }, status: 'ACTIVE', endDate: { lte: now } },
     data: { status: 'COMPLETED' },
   });
+
+  // Combined assessments are scored the moment they complete (self + supervisor)
+  expired
+    .filter(a => a.type === 'Combined')
+    .forEach(a => void autoScoreOnCompletion(a.id));
+
   return result.count || 0;
 };
 
@@ -53,7 +64,18 @@ const assessmentInclude = {
   supervisorEvaluations: { select: { id: true, employeeId: true, supervisorId: true, status: true, completedAt: true } },
 };
 
-const toLegacy = (a) => ({
+const ANSWER_KEYS = ['correctAnswer', 'correctAnswers', 'matchingPairs', 'correctOrder', 'categories'];
+
+// Strip answer-key material from a Question row unless the caller is HR_ADMIN.
+const withSafeQuestion = (question, isAdmin) => {
+  if (!question) return question;
+  if (isAdmin) return question;
+  const safe = { ...question };
+  for (const key of ANSWER_KEYS) delete safe[key];
+  return safe;
+};
+
+const toLegacy = (a, isAdmin = false) => ({
   _id:             a.id,
   id:              a.id,
   competencyId:    a.competency || a.competencyId,
@@ -65,14 +87,16 @@ const toLegacy = (a) => ({
   targetAudience: {
     type:         a.audienceType,
     departments:  a.audienceDepartments.map(d => d.department),
-    employeeIds:  a.audienceEmployees.map(e => e.employee),
+    employeeIds:  isAdmin
+      ? a.audienceEmployees.map(e => e.employee)
+      : a.audienceEmployees.map(e => ({ _id: e.employeeId, id: e.employeeId })),
   },
   target: {
     department: a.legacyDepartment,
     position:   a.legacyPosition,
   },
   questionIds: a.assessmentQuestions
-    ? a.assessmentQuestions.map(q => ({ ...q.question, _id: q.question.id, targetGroup: denormalizeTargetGroup(q.question.targetGroup) }))
+    ? a.assessmentQuestions.map(q => ({ ...withSafeQuestion(q.question, isAdmin), _id: q.question.id, targetGroup: denormalizeTargetGroup(q.question.targetGroup) }))
     : [],
   startDate:     a.startDate,
   endDate:       a.endDate,
@@ -204,7 +228,7 @@ export const createAssessment = asyncHandler(async (req, res, next) => {
     metadata: { type: assessment.type, targetGroup: assessment.targetGroup, status: assessment.status },
   });
 
-  res.status(201).json({ status: 'success', data: { assessment: toLegacy(assessment) } });
+  res.status(201).json({ status: 'success', data: { assessment: toLegacy(assessment, req.user.role === 'HR_ADMIN') } });
 });
 
 // ─── LIST ─────────────────────────────────────────────────────────────────────
@@ -245,7 +269,7 @@ export const getAssessments = asyncHandler(async (req, res) => {
   res.status(200).json({
     status: 'success',
     data: {
-      assessments: assessments.map(toLegacy),
+      assessments: assessments.map(a => toLegacy(a, req.user.role === 'HR_ADMIN')),
       pagination: { total, page: parseInt(page, 10), limit: parseInt(limit, 10) },
     },
   });
@@ -270,7 +294,7 @@ export const getAssessment = asyncHandler(async (req, res, next) => {
     });
   }
 
-  res.status(200).json({ status: 'success', data: { assessment: toLegacy(assessment) } });
+  res.status(200).json({ status: 'success', data: { assessment: toLegacy(assessment, req.user.role === 'HR_ADMIN') } });
 });
 
 // ─── UPDATE (DRAFT only) ─────────────────────────────────────────────────────
@@ -378,7 +402,7 @@ export const updateAssessment = asyncHandler(async (req, res, next) => {
     description: `Assessment "${updated.description || updated.purpose}" updated`,
   });
 
-  res.status(200).json({ status: 'success', data: { assessment: toLegacy(updated) } });
+  res.status(200).json({ status: 'success', data: { assessment: toLegacy(updated, req.user.role === 'HR_ADMIN') } });
 });
 
 // ─── TRANSITION STATUS ────────────────────────────────────────────────────────
@@ -390,7 +414,7 @@ export const updateStatus = asyncHandler(async (req, res, next) => {
   });
   if (!assessment) return next(new AppError('Assessment not found.', 404));
 
-  const transitions = { DRAFT: ['SCHEDULED'], ACTIVE: ['COMPLETED'], COMPLETED: ['ARCHIVED'] };
+  const transitions = { DRAFT: ['SCHEDULED'], ACTIVE: ['COMPLETED'] };
   const allowed = transitions[assessment.status] || [];
   if (!allowed.includes(status)) {
     return next(new AppError(`Cannot transition from ${assessment.status} to ${status}.`, 400));
@@ -423,6 +447,11 @@ export const updateStatus = asyncHandler(async (req, res, next) => {
     clearAssessmentTimers(assessment.id);
   }
 
+  // Combined assessments are scored automatically on completion
+  if (newStatus === 'COMPLETED' && saved.type === 'Combined') {
+    void autoScoreOnCompletion(saved.id);
+  }
+
   if (newStatus === 'SCHEDULED') {
     const employees = await resolveEmployees(saved);
     employees.forEach((emp) => {
@@ -452,7 +481,70 @@ export const updateStatus = asyncHandler(async (req, res, next) => {
     metadata: { from: assessment.status, to: newStatus },
   });
 
-  res.status(200).json({ status: 'success', data: { assessment: toLegacy(saved) } });
+  res.status(200).json({ status: 'success', data: { assessment: toLegacy(saved, req.user.role === 'HR_ADMIN') } });
+});
+
+// ─── EXTEND DEADLINE (ACTIVE & SCHEDULED) ─────────────────────────────────────
+export const extendDeadline = asyncHandler(async (req, res, next) => {
+  const assessment = await prisma.assessment.findUnique({
+    where: { id: req.params.id },
+    include: assessmentInclude,
+  });
+  if (!assessment) return next(new AppError('Assessment not found.', 404));
+
+  if (!['ACTIVE', 'SCHEDULED'].includes(assessment.status)) {
+    return next(new AppError('Only ACTIVE or SCHEDULED assessments can have their dates extended.', 400));
+  }
+
+  const { endDate, startDate } = req.body;
+  if (!endDate) return next(new AppError('A new end date is required.', 400));
+  const newEnd = new Date(endDate);
+  if (isNaN(newEnd.getTime())) return next(new AppError('Invalid end date.', 400));
+
+  const isScheduled = assessment.status === 'SCHEDULED';
+  let newStart = assessment.startDate;
+
+  if (isScheduled && startDate) {
+    const parsedStart = new Date(startDate);
+    if (isNaN(parsedStart.getTime())) return next(new AppError('Invalid start date.', 400));
+    if (parsedStart <= new Date()) return next(new AppError('The start date must be in the future.', 400));
+    if (newEnd <= parsedStart) return next(new AppError('The end date must be after the start date.', 400));
+    newStart = parsedStart;
+  } else if (isScheduled) {
+    if (newEnd <= new Date(assessment.startDate)) {
+      return next(new AppError('The end date must be after the assessment start date.', 400));
+    }
+  } else {
+    if (newEnd <= new Date()) return next(new AppError('The new deadline must be in the future.', 400));
+    if (newEnd <= new Date(assessment.startDate)) {
+      return next(new AppError('The new deadline must be after the assessment start date.', 400));
+    }
+  }
+
+  const data = { endDate: newEnd };
+  if (isScheduled && startDate) data.startDate = newStart;
+
+  const updated = await prisma.assessment.update({
+    where: { id: assessment.id },
+    data,
+    include: assessmentInclude,
+  });
+
+  clearAssessmentTimers(assessment.id);
+  scheduleAssessmentTimers(updated);
+
+  await logActivity({
+    req,
+    action: 'deadline_extended',
+    entity: 'Assessment',
+    entityId: updated.id,
+    description: isScheduled
+      ? `Timeline for "${updated.description || updated.purpose}" extended: ${newStart.toISOString()} to ${newEnd.toISOString()}`
+      : `Deadline for "${updated.description || updated.purpose}" extended to ${newEnd.toISOString()}`,
+    metadata: { from: assessment.endDate, to: newEnd, ...(isScheduled && startDate ? { startFrom: assessment.startDate, startTo: newStart } : {}) },
+  });
+
+  res.status(200).json({ status: 'success', data: { assessment: toLegacy(updated, req.user.role === 'HR_ADMIN') } });
 });
 
 // ─── GET ACTIVE ASSESSMENTS FOR CURRENT USER ─────────────────────────────────
@@ -482,7 +574,7 @@ export const getActiveAssessments = asyncHandler(async (req, res) => {
 
   logger.debug({ event: 'active_assessments_found', count: assessments.length, userId: me.id });
 
-  res.status(200).json({ status: 'success', results: assessments.length, data: { assessments: assessments.map(toLegacy) } });
+  res.status(200).json({ status: 'success', results: assessments.length, data: { assessments: assessments.map(a => toLegacy(a, req.user.role === 'HR_ADMIN')) } });
 });
 
 // ─── DUPLICATE / CLONE ────────────────────────────────────────────────────────
@@ -500,6 +592,19 @@ export const duplicateAssessment = asyncHandler(async (req, res, next) => {
   });
   if (!source) return next(new AppError('Assessment not found.', 404));
 
+  // assessmentInclude selects { order, question } for assessmentQuestions —
+  // the questionId scalar is NOT fetched, so resolve it from the included
+  // question relation. Skip dangling rows and de-dupe: the junction has
+  // @@unique([assessmentId, questionId]) and either would fail the clone.
+  const questionLinks = [];
+  const seenQuestionIds = new Set();
+  for (const q of source.assessmentQuestions) {
+    const questionId = q.question?.id ?? q.questionId;
+    if (!questionId || seenQuestionIds.has(questionId)) continue;
+    seenQuestionIds.add(questionId);
+    questionLinks.push({ questionId, order: q.order ?? 0 });
+  }
+
   const clone = await prisma.assessment.create({
     data: {
       competencyId:       source.competencyId,
@@ -514,9 +619,7 @@ export const duplicateAssessment = asyncHandler(async (req, res, next) => {
       targetAudience:      { create: { type: source.audienceType } },
       audienceDepartments: { create: source.audienceDepartments.map(d => ({ department: d.department })) },
       audienceEmployees:   { create: source.audienceEmployees.map(e => ({ employeeId: e.employeeId })) },
-      assessmentQuestions: {
-        create: source.assessmentQuestions.map(q => ({ questionId: q.questionId, order: q.order })),
-      },
+      assessmentQuestions: { create: questionLinks },
       timeLimit:       source.timeLimit,
       type:            source.type,
       selfWeight:      source.selfWeight,
@@ -540,7 +643,7 @@ export const duplicateAssessment = asyncHandler(async (req, res, next) => {
     metadata: { sourceId: source.id },
   });
 
-  res.status(201).json({ status: 'success', data: { assessment: toLegacy(clone) } });
+  res.status(201).json({ status: 'success', data: { assessment: toLegacy(clone, req.user.role === 'HR_ADMIN') } });
 });
 
 // ─── DELETE ───────────────────────────────────────────────────────────────────

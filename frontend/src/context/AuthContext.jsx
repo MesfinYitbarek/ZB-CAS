@@ -1,6 +1,6 @@
 /* context/AuthContext.jsx */
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import api, { registerTokenGetter } from '../utils/api';
+import api, { registerTokenGetter, registerTokenSetter } from '../utils/api';
 
 const AuthContext = createContext(null);
 
@@ -59,9 +59,10 @@ export default function AuthProvider({ children }) {
 
   const getAccessToken = useCallback(() => accessTokenRef.current, []);
 
-  // Register in-memory token getter with api.js
+  // Register in-memory token getter/setter with api.js
   useEffect(() => {
     registerTokenGetter(() => accessTokenRef.current);
+    registerTokenSetter((token) => { accessTokenRef.current = token; });
   }, []);
 
   // Restore session on mount.

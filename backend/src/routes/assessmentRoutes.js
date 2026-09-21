@@ -22,6 +22,7 @@ router.post('/send-reminders', authorize('HR_ADMIN'), aCtrl.sendReminderEmails);
 router.post('/:id/duplicate', authorize('HR_ADMIN'), aCtrl.duplicateAssessment);
 router.put('/:id', authorize('HR_ADMIN'), aCtrl.updateAssessment);
 router.patch('/:id/status', authorize('HR_ADMIN'), aCtrl.updateStatus);
+router.patch('/:id/deadline', authorize('HR_ADMIN'), aCtrl.extendDeadline);
 router.delete('/:id', authorize('HR_ADMIN'), aCtrl.deleteAssessments);
 
 export default router;

@@ -283,7 +283,7 @@ POST /api/auth/switch-role  { role: "SUPERVISOR" }
 - **Short Answer** — Free text, requires manual HR scoring
 
 ### Assessment Lifecycle
-`DRAFT → SCHEDULED → ACTIVE → COMPLETED → ARCHIVED`
+`DRAFT → SCHEDULED → ACTIVE → COMPLETED`
 
 Auto-transition: the system promotes `SCHEDULED` assessments when their `startDate` passes, and completes `ACTIVE` ones when their `endDate` passes.
 

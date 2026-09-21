@@ -42,10 +42,40 @@ const resolveActor = async ({ req, actor }) => {
 const isAdminRole = (roles) =>
   Array.isArray(roles) && (roles.includes('HR_ADMIN') || roles.includes('ADMIN'));
 
+// Only admin CRUD on these entities is worth keeping in the audit trail.
+// High-volume / non-admin entities (Response, Result, Feedback,
+// SupervisorEvaluation, …) and session noise (login/logout/role_switch,
+// password flows) are intentionally dropped so the log stays readable.
+const TRACKED_ENTITIES = new Set([
+  'User',
+  'Assessment',
+  'Competency',
+  'Question',
+  'Recommendation',
+  'FAQ',
+  'GeneratedReport',
+]);
+
+// Session/auth noise on the User entity — never stored even for admins.
+const IGNORED_USER_ACTIONS = new Set([
+  'login',
+  'logout',
+  'role_switch',
+  'password_reset',
+  'password_changed',
+  'refresh',
+]);
+
 export const logActivity = async ({ req, actor, action, entity, entityId, description, metadata, ipAddress } = {}) => {
   try {
     if (typeof action !== 'string' || !action.trim()) throw new Error('action is required');
     if (typeof entity !== 'string' || !entity.trim()) throw new Error('entity is required');
+
+    const actionKey = action.trim();
+    const entityKey = entity.trim();
+
+    if (!TRACKED_ENTITIES.has(entityKey)) return false;
+    if (entityKey === 'User' && IGNORED_USER_ACTIONS.has(actionKey)) return false;
 
     const resolved = await resolveActor({ req, actor });
 
@@ -58,8 +88,8 @@ export const logActivity = async ({ req, actor, action, entity, entityId, descri
         actorId:     resolved.actorId,
         actorName:   resolved.actorName || 'System',
         actorRole:   resolved.actorRole,
-        action,
-        entity,
+        action:      actionKey,
+        entity:      entityKey,
         entityId:    entityId || null,
         description: description || '',
         metadata:    metadata ?? undefined,

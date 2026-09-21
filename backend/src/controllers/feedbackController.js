@@ -1,7 +1,6 @@
 import prisma from '../config/prisma.js';
 import AppError from '../utils/AppError.js';
 import asyncHandler from '../utils/asyncHandler.js';
-import { logActivity } from '../services/activityService.js';
 import { denormalizeTargetGroup } from '../utils/targetGroup.js';
 
 const feedbackInclude = {
@@ -26,7 +25,7 @@ export const createFeedback = asyncHandler(async (req, res, next) => {
 
   if (req.user.role === 'EMPLOYEE') {
     const result = await prisma.result.findFirst({
-      where: { userId: req.user.id, assessmentId },
+      where: { userId: req.user.id, assessmentId, status: 'FINAL' },
       select: { id: true },
     });
 
@@ -54,15 +53,6 @@ export const createFeedback = asyncHandler(async (req, res, next) => {
     include: feedbackInclude,
   });
 
-  await logActivity({
-    req,
-    action: 'submitted',
-    entity: 'Feedback',
-    entityId: feedback.id,
-    description: 'Feedback submitted for an assessment',
-    metadata: { assessmentId, rating: rating || null },
-  });
-
   res.status(201).json({ status: 'success', data: { feedback: { ...feedback, _id: feedback.id } } });
 });
 
@@ -77,6 +67,9 @@ export const getFeedbacks = asyncHandler(async (req, res) => {
 
   if (req.user.role === 'EMPLOYEE') {
     where.userId = req.user.id;
+  } else if (req.user.role === 'SUPERVISOR') {
+    const subs = await prisma.user.findMany({ where: { supervisorId: req.user.id }, select: { id: true } });
+    where.userId = { in: subs.map(s => s.id) };
   }
 
   const pageNum = parseInt(page, 10);
@@ -202,7 +195,7 @@ export const getFeedbacksByAssessment = asyncHandler(async (req, res) => {
 // ─── GET EMPLOYEE'S ELIGIBLE ASSESSMENTS ──────────────────────────────────────
 export const getEligibleAssessmentsForFeedback = asyncHandler(async (req, res) => {
   const [results, submittedResponses, submittedSecurity] = await Promise.all([
-    prisma.result.findMany({ where: { userId: req.user.id }, select: { assessmentId: true }, distinct: ['assessmentId'] }),
+    prisma.result.findMany({ where: { userId: req.user.id, status: 'FINAL' }, select: { assessmentId: true }, distinct: ['assessmentId'] }),
     prisma.response.findMany({
       where: { userId: req.user.id, respondentType: 'self', submittedAt: { not: null } },
       select: { assessmentId: true },
@@ -233,7 +226,7 @@ export const getEligibleAssessmentsForFeedback = asyncHandler(async (req, res) =
   const assessments = await prisma.assessment.findMany({
     where: {
       id: { in: resultIds },
-      status: { in: ['COMPLETED', 'ARCHIVED', 'ACTIVE'] },
+      status: { in: ['COMPLETED', 'ACTIVE'] },
     },
     select: {
       id: true,
@@ -273,6 +266,16 @@ export const getFeedback = asyncHandler(async (req, res, next) => {
 
   if (req.user.role === 'EMPLOYEE' && feedback.userId !== req.user.id) {
     return next(new AppError('Access denied.', 403));
+  }
+
+  if (req.user.role === 'SUPERVISOR') {
+    const employee = await prisma.user.findUnique({
+      where: { id: feedback.userId },
+      select: { id: true, supervisorId: true },
+    });
+    if (!employee || employee.supervisorId !== req.user.id) {
+      return next(new AppError('Access denied.', 403));
+    }
   }
 
   res.status(200).json({ status: 'success', data: { feedback: { ...feedback, _id: feedback.id } } });

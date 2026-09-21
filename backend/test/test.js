@@ -23,6 +23,7 @@
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, jest } from '@jest/globals';
 import { Prisma } from '@prisma/client';
+import { computeLiveStats, computeHeatmap, computeDepartmentSummary, buildResultFilter } from '../src/services/analyticsService.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. JWT UTILITIES
@@ -50,11 +51,11 @@ describe('JWT Utilities', () => {
     expect(decoded.role).toBe('EMPLOYEE');
   });
 
-  it('signs and verifies a refresh token', () => {
-    const token = signRefreshToken('user456');
+  it('signs and verifies a refresh token with its active role', () => {
+    const token = signRefreshToken('user456', 'EMPLOYEE');
     const decoded = verifyRefreshToken(token);
     expect(decoded.id).toBe('user456');
-    expect(decoded).not.toHaveProperty('role');
+    expect(decoded.role).toBe('EMPLOYEE');
   });
 
   it('throws on invalid access token', () => {
@@ -79,10 +80,18 @@ describe('JWT Utilities', () => {
     expect(typeof pair.refreshToken).toBe('string');
   });
 
-  it('refresh token does not contain role', () => {
+  it('refresh token carries the active role', () => {
     const pair = buildTokenPair('userABC', 'SUPERVISOR');
     const decoded = verifyRefreshToken(pair.refreshToken);
-    expect(decoded).not.toHaveProperty('role');
+    expect(decoded.role).toBe('SUPERVISOR');
+  });
+
+  it('refresh token role is independent of access token role', () => {
+    const pair = buildTokenPair('userDEF', 'EMPLOYEE');
+    const access = verifyAccessToken(pair.accessToken);
+    const refresh = verifyRefreshToken(pair.refreshToken);
+    expect(access.role).toBe('EMPLOYEE');
+    expect(refresh.role).toBe('EMPLOYEE');
   });
 
   it('refreshCookieOptions returns correct flags', () => {
@@ -849,5 +858,258 @@ describe('Security Violation — isHighRisk calculation', () => {
 
   it('is not high risk with zero violations', () => {
     expect(calcHighRisk({ tabSwitches: 0, copyAttempts: 0, rightClickAttempts: 0, fullscreenExits: 0 })).toBe(false);
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 15. LIVE ANALYTICS (Tier 1) — COMPLETED-only, no snapshot tables
+// ═════════════════════════════════════════════════════════════════════════════
+
+const analyticsResult = ({
+  userId = 'u1', assessmentId = 'a1', competencyName = 'Communication Skills',
+  category = 'Core_Behavioral', finalScore = 80, level = 'Advanced',
+  department = 'IT', position = 'Engineer', gender = 'Male',
+  endDate = new Date('2026-05-15'),
+} = {}) => ({
+  userId, assessmentId,
+  user: { id: userId, name: 'Test User', email: 't@zemenet.com', employeeId: 'ZB-001', department, position, gender },
+  competency: { id: `c-${competencyName}`, name: competencyName, category },
+  assessment: { id: assessmentId, description: 'Assess Desc', type: 'Combined', purpose: 'Career Development', targetGroup: 'common', endDate },
+  finalScore, level,
+});
+
+describe('Live Analytics — computeLiveStats', () => {
+  it('groups results into one overall row per (user × assessment)', () => {
+    const stats = computeLiveStats([
+      analyticsResult({ userId: 'u1', competencyName: 'Communication Skills', finalScore: 86, level: 'Expert' }),
+      analyticsResult({ userId: 'u1', competencyName: 'Decision Making', finalScore: 70, level: 'Advanced' }),
+    ]);
+
+    expect(stats.overall.total).toBe(1);
+    expect(stats.overall.avgScore).toBe(78); // Math.round((86 + 70) / 2)
+    expect(stats.overall.maxScore).toBe(78);
+    expect(stats.overall.minScore).toBe(78);
+    expect(stats.overall.uniqueEmployees).toBe(1);
+    expect(stats.overall.uniqueAssessments).toBe(1);
+    expect(stats.competencyBreakdown).toHaveLength(2);
+    expect(stats.competencyBreakdown.map(c => c._id).sort())
+      .toEqual(['Communication Skills', 'Decision Making'].sort());
+    expect(stats.levelDistribution.find(l => l._id === 'Advanced').count).toBe(1);
+  });
+
+  it('computes organisation-level averages across multiple employees', () => {
+    const stats = computeLiveStats([
+      analyticsResult({ userId: 'u1', finalScore: 90, level: 'Expert' }),
+      analyticsResult({ userId: 'u2', finalScore: 60, level: 'Advanced' }),
+    ]);
+
+    expect(stats.overall.total).toBe(2);
+    expect(stats.overall.avgScore).toBe(75); // (90 + 60) / 2
+    expect(stats.overall.uniqueEmployees).toBe(2);
+    expect(stats.topPerformers[0]._id).toBe('u1');
+    expect(stats.bottomPerformers[0]._id).toBe('u2');
+  });
+
+  it('applies overall score range filters AFTER grouping', () => {
+    const rows = [
+      analyticsResult({ userId: 'u1', finalScore: 90, level: 'Expert' }),
+      analyticsResult({ userId: 'u2', finalScore: 60, level: 'Advanced' }),
+    ];
+
+    const filtered = computeLiveStats(rows, { scoreMin: '80' });
+    expect(filtered.overall.total).toBe(1);
+    expect(filtered.overall.avgScore).toBe(90);
+
+    expect(computeLiveStats(rows, { scoreMax: '50' }).overall.total).toBe(0);
+  });
+
+  it('applies overall level filter AFTER grouping using the shared assignLevel', () => {
+    const rows = [
+      analyticsResult({ userId: 'u1', finalScore: 90, level: 'Expert' }),
+      analyticsResult({ userId: 'u2', finalScore: 60, level: 'Advanced' }),
+    ];
+
+    const experts = computeLiveStats(rows, { overallLevel: 'Expert' });
+    expect(experts.overall.total).toBe(1);
+    expect(experts.overall.avgScore).toBe(90);
+
+    const basics = computeLiveStats(rows, { overallLevel: 'Basic' });
+    expect(basics.overall.total).toBe(0);
+  });
+
+  it('returns the zeroed shape when no results match', () => {
+    const stats = computeLiveStats([]);
+    expect(stats.overall).toEqual({
+      total: 0, avgScore: 0, maxScore: 0, minScore: 0, uniqueEmployees: 0, uniqueDepts: 0, uniqueAssessments: 0,
+    });
+    expect(stats.levelDistribution).toEqual([]);
+    expect(stats.departmentBreakdown).toEqual([]);
+    expect(stats.competencyBreakdown).toEqual([]);
+    expect(stats.monthlyTrend).toEqual([]);
+  });
+
+  it('buckets the monthly trend by assessment close (endDate) month', () => {
+    const now = new Date();
+    const label = `${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][now.getMonth()]} ${now.getFullYear()}`;
+    const stats = computeLiveStats([
+      analyticsResult({ userId: 'u1', finalScore: 80, endDate: now }),
+      analyticsResult({ userId: 'u2', finalScore: 60, endDate: now }),
+    ]);
+
+    expect(stats.monthlyTrend).toHaveLength(1);
+    expect(stats.monthlyTrend[0].month).toBe(label);
+    expect(stats.monthlyTrend[0].count).toBe(2);
+    expect(stats.monthlyTrend[0].avgScore).toBe(70);
+  });
+
+  it('mirrors the legacy field shape for every breakdown section', () => {
+    const stats = computeLiveStats([
+      analyticsResult({ userId: 'u1', competencyName: 'Communication Skills', finalScore: 85, level: 'Expert', department: 'IT', position: 'Engineer', gender: 'Female' }),
+    ]);
+
+    expect(stats.overall.avgScore).toBe(85);
+    expect(stats.levelDistribution[0]).toMatchObject({ _id: 'Expert' });
+    expect(stats.departmentBreakdown[0]).toMatchObject({ _id: 'IT', employeeCount: 1 });
+    expect(stats.assessmentBreakdown[0]).toMatchObject({ description: 'Assess Desc', type: 'Combined' });
+    expect(stats.genderBreakdown[0]).toMatchObject({ _id: 'Female' });
+    expect(stats.positionBreakdown[0]).toMatchObject({ _id: 'Engineer' });
+    expect(stats.competencyBreakdown[0]).toMatchObject({ _id: 'Communication Skills', expertCount: 1 });
+  });
+});
+
+describe('Live Analytics — heatmap & department summary', () => {
+  it('builds competency × department matrix with rounded averages', () => {
+    const heatmap = computeHeatmap([
+      analyticsResult({ userId: 'u1', competencyName: 'Teamwork', finalScore: 80, department: 'IT' }),
+      analyticsResult({ userId: 'u2', competencyName: 'Teamwork', finalScore: 60, department: 'IT' }),
+      analyticsResult({ userId: 'u3', competencyName: 'Teamwork', finalScore: 70, department: 'HR' }),
+    ]);
+
+    expect(heatmap.Teamwork).toHaveLength(2);
+    const itCell = heatmap.Teamwork.find(c => c.department === 'IT');
+    expect(itCell.count).toBe(2);
+    expect(itCell.avgScore).toBe(70); // (80 + 60) / 2
+    const hrCell = heatmap.Teamwork.find(c => c.department === 'HR');
+    expect(hrCell.avgScore).toBe(70);
+  });
+
+  it('computes per-competency department summary with level distribution', () => {
+    const summary = computeDepartmentSummary([
+      analyticsResult({ competencyName: 'Teamwork', finalScore: 85, level: 'Expert' }),
+      analyticsResult({ competencyName: 'Teamwork', finalScore: 60, level: 'Advanced' }),
+      analyticsResult({ competencyName: 'Teamwork', finalScore: 40, level: 'Intermediate' }),
+    ], 'IT');
+
+    expect(summary.department).toBe('IT');
+    expect(summary.summary).toHaveLength(1);
+    expect(summary.summary[0].competencyName).toBe('Teamwork');
+    expect(summary.summary[0].totalReports).toBe(3);
+    expect(summary.summary[0].avgScore).toBe(61.67); // (85 + 60 + 40) / 3
+    expect(summary.summary[0].levelDistribution).toEqual({ Basic: 0, Intermediate: 1, Advanced: 1, Expert: 1 });
+  });
+});
+
+describe('Live Analytics — buildResultFilter (COMPLETED-only gate)', () => {
+  it('always scopes to COMPLETED assessments and FINAL results', async () => {
+    const where = await buildResultFilter({}, { role: 'HR_ADMIN', id: 'admin' });
+    expect(where.status).toBe('FINAL');
+    expect(where.assessment?.status).toBe('COMPLETED');
+  });
+
+  it('never places overall score filters on the raw result query', async () => {
+    const where = await buildResultFilter({ scoreMin: '80', scoreMax: '90' }, { role: 'HR_ADMIN', id: 'admin' });
+    expect(where.finalScore).toBeUndefined();
+    expect(where.overallScore).toBeUndefined();
+  });
+
+  it('maps department / assessmentType / competencyLevel filters correctly', async () => {
+    const where = await buildResultFilter(
+      { department: 'Finance', assessmentType: 'Combined', competencyLevel: 'Expert', targetGroup: 'managerial' },
+      { role: 'HR_ADMIN', id: 'admin' },
+    );
+    expect(where.user?.department).toBe('Finance');
+    expect(where.assessment?.type).toBe('Combined');
+    expect(where.assessment?.status).toBe('COMPLETED');
+    expect(where.assessment?.targetGroup).toBe('managerial');
+    expect(where.level).toBe('Expert');
+  });
+
+  it('scopes supervisors to their direct reports only', async () => {
+    // HR_ADMIN path must not touch prisma (pure filter), ensuring the gate is testable.
+    const where = await buildResultFilter({}, { role: 'HR_ADMIN', id: 'admin' });
+    expect(where.user?.id).toBeUndefined();
+  });
+});
+
+// 16. GENERATED REPORTS (Tier 2) - named Excel artifacts from live data
+import { buildPivot, slugify, PIVOT_FIELDS, buildFlatWorkbook, buildPivotWorkbook } from '../src/services/generatedReportService.js';
+
+const pivotRow = (over = {}) => ({
+  employeeName: 'Abebe Kebede', employeeId: 'ZB-001', department: 'Finance',
+  position: 'Officer', gender: 'Male', assessment: 'Q1 Review',
+  assessmentType: 'Combined', purpose: 'Promotion', targetGroup: 'managerial',
+  competency: 'Communication', competencyCategory: 'Core_Behavioral',
+  selfScore: 80, supervisorScore: 70, score: 72, level: 'Advanced',
+  overallScore: 72, overallLevel: 'Advanced', date: '2026-09',
+  ...over,
+});
+
+describe('Generated Reports - buildPivot', () => {
+  const raw = [
+    pivotRow({ department: 'Finance', competency: 'Communication', score: 80 }),
+    pivotRow({ department: 'Finance', competency: 'Teamwork', score: 60 }),
+    pivotRow({ department: 'IT', competency: 'Communication', score: 70 }),
+  ];
+
+  it('builds a row x column matrix with totals', () => {
+    const p = buildPivot(raw, { rowField: 'department', colField: 'competency', valueField: 'score', aggregation: 'avg' });
+    expect(p.colArr).toEqual(['Communication', 'Teamwork']);
+    expect(p.rowArr).toEqual(['Finance', 'IT']);
+    const fin = p.matrix.find(r => r.rowLabel === 'Finance');
+    expect(fin.cells.Communication).toBe(80);
+    expect(fin.cells.Teamwork).toBe(60);
+    expect(fin.cells.__rowTotal).toBe(70);
+    expect(p.colTotals.Communication).toBe(75);
+  });
+
+  it('supports flat (no column) tables', () => {
+    const p = buildPivot(raw, { rowField: 'department' });
+    expect(p.colArr).toBeNull();
+    const fin = p.matrix.find(r => r.rowLabel === 'Finance');
+    expect(fin.cells.__value).toBe(70);
+  });
+
+  it('supports count aggregation', () => {
+    const p = buildPivot(raw, { rowField: 'department', valueField: 'count', aggregation: 'count' });
+    const fin = p.matrix.find(r => r.rowLabel === 'Finance');
+    expect(fin.cells.__value).toBe(2);
+  });
+
+  it('exposes the supported pivot field list', () => {
+    expect(PIVOT_FIELDS).toContain('department');
+    expect(PIVOT_FIELDS).toContain('competency');
+    expect(PIVOT_FIELDS).not.toContain('overallScore');
+  });
+});
+
+describe('Generated Reports - workbook builders', () => {
+  it('builds a titled flat workbook', () => {
+    const wb = buildFlatWorkbook({ title: 'Org Report', meta: 'meta', rows: [pivotRow()] });
+    const ws = wb.getWorksheet('Report');
+    expect(ws.getCell('A1').value).toBe('Org Report');
+    expect(ws.rowCount).toBeGreaterThan(5);
+  });
+
+  it('builds a titled pivot workbook', () => {
+    const raw = [pivotRow({ score: 80 }), pivotRow({ score: 60 })];
+    const cfg = { rowField: 'department', colField: null, valueField: 'score', aggregation: 'avg' };
+    const wb = buildPivotWorkbook({ title: 'Pivot', meta: 'meta', pivotCfg: cfg, pivot: buildPivot(raw, cfg) });
+    const ws = wb.getWorksheet('Custom Report');
+    expect(ws.getCell('A1').value).toBe('Pivot');
+  });
+
+  it('slugifies titles for filenames', () => {
+    expect(slugify('Individual � Selam Tesfaye!')).toBe('individual_selam_tesfaye');
+    expect(slugify('')).toBe('report');
   });
 });

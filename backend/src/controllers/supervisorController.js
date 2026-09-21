@@ -9,16 +9,30 @@ export const getSupervisorDashboardStats = asyncHandler(async (req, res) => {
   try {
     const supervisorId = req.user.id;
 
-    // 1. Get team members supervised by this user
+    // 1. Get team members supervised by this user (explicit safe select —
+    //    never pull passwordHash/refreshToken into supervisor payloads).
     const teamMembers = await prisma.user.findMany({
       where: { supervisorId, roles: { has: 'EMPLOYEE' } },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        employeeId: true,
+        position: true,
+        department: true,
+        roles: true,
+        gender: true,
+        status: true,
+        supervisorId: true,
+        createdAt: true,
+      },
     });
 
     const teamIds = teamMembers.map(m => m.id);
 
     // 2. Get all results for the team
     const teamResults = teamIds.length
-      ? await prisma.result.findMany({ where: { userId: { in: teamIds } } })
+      ? await prisma.result.findMany({ where: { userId: { in: teamIds }, status: 'FINAL' } })
       : [];
 
     const completedEvaluations = teamResults.filter(r => r.status === 'FINAL').length;
