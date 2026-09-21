@@ -44,6 +44,26 @@ const calculateAndSaveResult = async (assessment, employeeId) => {
   const selfResponses = responses.filter(r => r.respondentType === 'self');
   const supervisorResp = responses.find(r => r.respondentType === 'supervisor' && r.submittedAt);
 
+  // Protect an earned FINAL from an abandoned retake: starting a new attempt
+  // clears prior self answers, so if nothing was (re)submitted, recomputing
+  // from drafts/emptiness would overwrite the real score with ~0. Keep the
+  // existing FINAL instead. (SupervisorOnly has no self side — excluded.)
+  if (assessment.type !== 'SupervisorOnly' && !selfResponses.some((r) => r.submittedAt)) {
+    const existingFinal = await prisma.result.findFirst({
+      where: {
+        userId: employeeId,
+        assessmentId: assessment.id,
+        competencyId: assessment.competencyId,
+        status: 'FINAL',
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+    if (existingFinal) {
+      logger.info({ event: 'score_keep_final', reason: 'abandoned_retake', assessmentId: assessment.id, employeeId });
+      return existingFinal;
+    }
+  }
+
   // 1. Calculate Individual Components
   // expose `_id` so the scoring util (which reads q._id.toString()) works
   const scoredQuestions = questions.map(q => ({ ...q, _id: q.id }));

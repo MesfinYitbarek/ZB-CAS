@@ -520,6 +520,7 @@ export default function TakeAssessment() {
       setShowBackWarning(false);
       show('Assessment submitted successfully!', 'success');
       securityQuery.refetch();
+      queryClient.invalidateQueries({ queryKey: queryKeys.responses.progress(assessmentId) });
 
       setScoringInProgress(true);
       try {
@@ -572,8 +573,14 @@ export default function TakeAssessment() {
       setResult(null);
       queryClient.removeQueries({ queryKey: queryKeys.responses.securityViolations(assessmentId, user?._id) });
       queryClient.removeQueries({ queryKey: queryKeys.results.user(user?._id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.responses.progress(assessmentId) });
       setCurrentQuestionIndex(0);
       violationCountRef.current = 0;
+      security.resetViolations();
+      setShowViolationBanner(false);
+      setShowSeriousModal(false);
+      setSeriousModalShownAt(0);
+      setShowSecurityMonitor(true);
       setSubmitted(false);
       if (assessment?.timeLimit) security.startTimer(assessment.timeLimit);
       security.requestFullscreen();

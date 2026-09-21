@@ -211,6 +211,19 @@ export default function useAssessmentSecurity(assessmentId, onViolation) {
   // The per-type counters above are kept for display/stats only.
   const totalViolations = violations.length;
 
+  // Reset per-attempt violation state when a retake starts. Stable identity
+  // (useCallback, empty deps) so consumer effects never re-fire. Timer and
+  // fullscreen refs are intentionally untouched — the caller restarts those.
+  const resetViolations = useCallback(() => {
+    violationLog.current = [];
+    setViolations([]);
+    setIsTabActive(true);
+    setTabSwitchCount(0);
+    setCopyAttempts(0);
+    setRightClickAttempts(0);
+    setFullscreenExits(0);
+  }, []);
+
   return {
     violations,
     isTabActive,
@@ -223,6 +236,7 @@ export default function useAssessmentSecurity(assessmentId, onViolation) {
     requestFullscreen,
     exitFullscreen,
     startTimer,
+    resetViolations,
     formatTime,
     getViolationLog: () => violationLog.current,
     totalViolations,
