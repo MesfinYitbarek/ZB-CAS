@@ -161,7 +161,7 @@ const scheduleAllPendingAssessments = async () => {
 // Catches anything overdue after a server restart (timers lost from memory).
 // Under normal operation this does nothing.
 const startSafetyNetCron = () => {
-  cron.schedule('* * * * *', async () => {
+  cron.schedule('*/15 * * * * *', async () => {
     try {
       const activated = await autoActivateScheduledAssessments();
       const completed = await autoCompleteExpiredAssessments();
@@ -189,12 +189,14 @@ const startSafetyNetCron = () => {
     }
   });
 
-  logger.info({ event: 'scheduler_started', job: 'safety_net_cron', schedule: '* * * * *' });
+  logger.info({ event: 'scheduler_started', job: 'safety_net_cron', schedule: '*/15 * * * * *' });
 };
 
-// ─── Reminder emails — daily at 07:00 ────────────────────────────────────────
+// ─── Reminder emails — every 30 minutes ───────────────────────────────────────
+// Sub-day cadence so hour/minute-precision reminders fire on time. Sends are
+// one-shot per assessment (reminderSent flag), so frequent polling is cheap.
 const startReminderJob = () => {
-  cron.schedule('0 7 * * *', async () => {
+  cron.schedule('*/30 * * * *', async () => {
     try {
       const processed = await processPendingReminders();
       logger.info({ event: 'scheduler_reminders', processed });
@@ -203,7 +205,27 @@ const startReminderJob = () => {
     }
   });
 
-  logger.info({ event: 'scheduler_started', job: 'reminders', schedule: '0 7 * * *' });
+  logger.info({ event: 'scheduler_started', job: 'reminders', schedule: '*/30 * * * *' });
+};
+
+// ─── Chat Message Retention — daily ─────────────────────────────────────────────
+// Deletes chat messages older than 90 days
+const startChatRetentionJob = () => {
+  cron.schedule('0 2 * * *', async () => {
+    try {
+      const ninetyDaysAgo = new Date();
+      ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+      
+      const result = await prisma.chatMessage.deleteMany({
+        where: { createdAt: { lt: ninetyDaysAgo } }
+      });
+      logger.info({ event: 'chat_retention_cleanup', deletedCount: result.count });
+    } catch (err) {
+      logger.error({ event: 'chat_retention_error', err: err.message });
+    }
+  });
+
+  logger.info({ event: 'scheduler_started', job: 'chat_retention', schedule: '0 2 * * *' });
 };
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
@@ -220,4 +242,7 @@ export const startScheduler = async () => {
 
   // 4. Daily reminder emails
   startReminderJob();
+
+  // 5. Chat retention policy
+  startChatRetentionJob();
 };

@@ -38,6 +38,8 @@ router.get('/:id', authorize('HR_ADMIN', 'SUPERVISOR'), userCtrl.getUser);
 
 // ── Write endpoints – HR_ADMIN only ──────────────────────────────────────────
 router.post('/import', authorize('HR_ADMIN'), upload.single('file'), userCtrl.bulkImportUsers);
+router.patch('/bulk-status', authorize('HR_ADMIN'), userCtrl.bulkUpdateUserStatus);
+router.post('/bulk-delete', authorize('HR_ADMIN'), userCtrl.bulkDeleteUsers);
 router.put('/:id', authorize('HR_ADMIN'), userCtrl.updateUser);
 router.delete('/:id', authorize('HR_ADMIN'), userCtrl.deleteUser);
 

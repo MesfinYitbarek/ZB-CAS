@@ -245,10 +245,12 @@ const computeWeightedScore = (selfPerc, supPerc, weights) => {
     return Number(final.toFixed(2));
 };
 
+export const LEVEL_THRESHOLDS = { Expert: 80, Advanced: 60, Intermediate: 40 };
+
 const assignLevel = (percentage) => {
-    if (percentage >= 80) return 'Expert';
-    if (percentage >= 60) return 'Advanced';
-    if (percentage >= 40) return 'Intermediate';
+    if (percentage >= LEVEL_THRESHOLDS.Expert) return 'Expert';
+    if (percentage >= LEVEL_THRESHOLDS.Advanced) return 'Advanced';
+    if (percentage >= LEVEL_THRESHOLDS.Intermediate) return 'Intermediate';
     return 'Basic';
 };
 

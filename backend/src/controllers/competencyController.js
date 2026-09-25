@@ -30,8 +30,10 @@ const withTargetGroups = (competency) => ({
 });
 
 // ─── LIST ─────────────────────────────────────────────────────────────────────
+const COMPETENCY_SORTABLE_FIELDS = new Set(['name', 'category', 'createdAt', 'updatedAt']);
+
 export const getCompetencies = asyncHandler(async (req, res) => {
-  const { category, search, page = 1, limit = 50 } = req.query;
+  const { category, search, page = 1, limit = 50, sortBy, sortDir } = req.query;
 
   const where = {};
   // Normalize hyphenated UI spellings ('Core-Behavioral') to enum values
@@ -52,13 +54,17 @@ export const getCompetencies = asyncHandler(async (req, res) => {
 
   const skip = (parseInt(page, 10) - 1) * parseInt(limit, 10);
 
+  // Whitelisted server-side sorting (default preserves previous name-asc order)
+  const sortField = COMPETENCY_SORTABLE_FIELDS.has(sortBy) ? sortBy : 'name';
+  const sortOrder = sortDir === 'desc' ? 'desc' : 'asc';
+
   const [competencies, total] = await Promise.all([
     prisma.competency.findMany({
       where,
       include: { targetGroups: true },
       skip,
       take: parseInt(limit, 10),
-      orderBy: { name: 'asc' },
+      orderBy: { [sortField]: sortOrder },
     }),
     prisma.competency.count({ where }),
   ]);

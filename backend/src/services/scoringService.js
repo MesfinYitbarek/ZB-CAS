@@ -3,6 +3,7 @@ import prisma from '../config/prisma.js';
 import { computeRawScore, computeWeightedScore, assignLevel } from '../utils/scoring.js';
 import { sendResultsEmail } from './emailService.js';
 import { notifyResultReady } from './notificationService.js';
+import { resolveAudienceUserIds } from '../utils/audienceResolver.js';
 
 /**
  * A Combined assessment is only ready to score once BOTH sides have
@@ -26,7 +27,62 @@ export const hasSubmittedBothSides = async (assessmentId, employeeId) => {
   return !!(self && supervisor);
 };
 
-const calculateAndSaveResult = async (assessment, employeeId) => {
+/**
+ * Which question pool applies to this user right now?
+ * Attempt 1 uses MAIN; any later attempt uses REEXAM when the assessment
+ * defines one (otherwise MAIN). `attemptsUsed` is the pre-submit count.
+ */
+export const getActiveQuestionPool = async (assessmentId, userId) => {
+  const [sec, reexamCount] = await Promise.all([
+    prisma.securityViolation.findUnique({
+      where: { assessmentId_userId: { assessmentId, userId } },
+      select: { attemptCount: true, submittedAt: true },
+    }),
+    prisma.assessmentQuestion.count({ where: { assessmentId, pool: 'REEXAM' } }),
+  ]);
+  if (!reexamCount) return 'MAIN';
+  const attemptsUsed = Math.max(sec?.attemptCount || 0, sec?.submittedAt ? 1 : 0);
+  return attemptsUsed >= 1 ? 'REEXAM' : 'MAIN';
+};
+
+/**
+ * HR grant balance for one user×assessment.
+ * Entitlement model: total allowed = maxAttempts + Σ(extraAttempts).
+ * A consumed grant stays in the total (it paid for a past attempt) — only
+ * `remaining` shrinks. Adding remaining-to-base instead would strand users
+ * exactly like the reported "2 of 2 with a fresh grant" bug.
+ */
+export const getGrantBalance = async (assessmentId, userId) => {
+  const grants = await prisma.retakeGrant.findMany({
+    where: { assessmentId, userId },
+    select: { extraAttempts: true, usedAttempts: true },
+  });
+  const total = grants.reduce((sum, g) => sum + (g.extraAttempts || 0), 0);
+  const used = grants.reduce((sum, g) => sum + Math.min(g.usedAttempts || 0, g.extraAttempts || 0), 0);
+  return { total, used, remaining: Math.max(total - used, 0) };
+};
+
+/** Total consumable extra attempts from unexhausted HR retake grants. */
+export const getGrantedExtraAttempts = async (assessmentId, userId) =>
+  (await getGrantBalance(assessmentId, userId)).remaining;
+
+/** Consume one granted attempt (oldest grant with remaining balance). */
+export const consumeGrantedAttempt = async (assessmentId, userId) => {
+  // No field-to-field comparison in where — select candidates and pick in JS.
+  const grants = await prisma.retakeGrant.findMany({
+    where: { assessmentId, userId },
+    orderBy: { createdAt: 'asc' },
+  });
+  const target = grants.find((g) => (g.usedAttempts || 0) < (g.extraAttempts || 0));
+  if (!target) return false;
+  await prisma.retakeGrant.update({
+    where: { id: target.id },
+    data: { usedAttempts: (target.usedAttempts || 0) + 1 },
+  });
+  return true;
+};
+
+const calculateAndSaveResult = async (assessment, employeeId, activePool = null) => {
   const emp = await prisma.user.findUnique({ where: { id: employeeId } });
   if (!emp) return null;
 
@@ -36,19 +92,42 @@ const calculateAndSaveResult = async (assessment, employeeId) => {
     where: { assessmentId: assessment.id, employeeId },
   });
 
-  const questionIds = (assessment.assessmentQuestions || []).map(aq => aq.questionId);
+  // Scope scoring to the pool the user actually took. Background/bulk paths
+  // don't know the pre-submit attempt count, so resolve conservatively: only
+  // a user with 2+ recorded attempts could have submitted from REEXAM.
+  let pool = activePool;
+  if (!pool) {
+    const junctions = assessment.assessmentQuestions || [];
+    if (junctions.some((j) => (j.pool || 'MAIN') === 'REEXAM')) {
+      const sec = await prisma.securityViolation.findUnique({
+        where: { assessmentId_userId: { assessmentId: assessment.id, userId: employeeId } },
+        select: { attemptCount: true, submittedAt: true },
+      });
+      const used = Math.max(sec?.attemptCount || 0, sec?.submittedAt ? 1 : 0);
+      pool = used > 1 ? 'REEXAM' : 'MAIN';
+    } else {
+      pool = 'MAIN';
+    }
+  }
+  const poolJunctions = (assessment.assessmentQuestions || []).filter(
+    (j) => (j.pool || 'MAIN') === pool
+  );
+
+  const questionIds = poolJunctions.map(aq => aq.questionId);
   const questions = questionIds.length > 0
     ? await prisma.question.findMany({ where: { id: { in: questionIds } } })
     : [];
 
   const selfResponses = responses.filter(r => r.respondentType === 'self');
   const supervisorResp = responses.find(r => r.respondentType === 'supervisor' && r.submittedAt);
+  const hasSelf = selfResponses.some((r) => r.submittedAt);
+  const hasSup = !!supervisorResp;
 
   // Protect an earned FINAL from an abandoned retake: starting a new attempt
   // clears prior self answers, so if nothing was (re)submitted, recomputing
   // from drafts/emptiness would overwrite the real score with ~0. Keep the
   // existing FINAL instead. (SupervisorOnly has no self side — excluded.)
-  if (assessment.type !== 'SupervisorOnly' && !selfResponses.some((r) => r.submittedAt)) {
+  if (assessment.type !== 'SupervisorOnly' && !hasSelf) {
     const existingFinal = await prisma.result.findFirst({
       where: {
         userId: employeeId,
@@ -73,13 +152,21 @@ const calculateAndSaveResult = async (assessment, employeeId) => {
 
   const supPerc = Number(supervisorResp?.score) || 0;
 
+  // Combined rows are stored as soon as EITHER side submits (partial until
+  // both sides exist); the row is recalculated in place on every later
+  // submit and at assessment completion.
+  const partial = assessment.type === 'Combined' && !(hasSelf && hasSup);
+  const missingSide = !partial ? null : (!hasSelf ? 'self' : 'supervisor');
+
   let finalScore = 0;
   let scoreDetails = {
-    selfScore: selfPerc,
-    supervisorScore: supPerc,
+    selfScore: hasSelf || assessment.type !== 'Combined' ? selfPerc : null,
+    supervisorScore: hasSup || assessment.type !== 'Combined' ? supPerc : null,
     weightUsed: {},
     calculation: "",
     questionDetails: selfQuestionDetails,
+    partial,
+    missingSide,
   };
 
   // 2. Apply Assessment Type Logic
@@ -87,7 +174,9 @@ const calculateAndSaveResult = async (assessment, employeeId) => {
     const weights = { selfAssessment: assessment.selfWeight, supervisor: assessment.supervisorWeight };
     finalScore = computeWeightedScore(selfPerc, supPerc, weights);
     scoreDetails.weightUsed = weights;
-    scoreDetails.calculation = `Weighted: (${selfPerc}% x ${weights.selfAssessment}%) + (${supPerc}% x ${weights.supervisor}%)`;
+    scoreDetails.calculation = partial
+      ? `Partial (awaiting ${missingSide} side): (${selfPerc}% x ${weights.selfAssessment}%) + (${supPerc}% x ${weights.supervisor}%)`
+      : `Weighted: (${selfPerc}% x ${weights.selfAssessment}%) + (${supPerc}% x ${weights.supervisor}%)`;
   } else if (assessment.type === 'SelfAssessment') {
     finalScore = selfPerc;
     scoreDetails.weightUsed = { selfAssessment: 100, supervisor: 0 };
@@ -197,7 +286,7 @@ export const scoreFullAssessment = async (assessmentId, { finalCall = false } = 
   const assessment = await prisma.assessment.findUnique({
     where: { id: assessmentId },
     include: {
-      assessmentQuestions: { select: { questionId: true } },
+      assessmentQuestions: { select: { questionId: true, pool: true } },
       audienceDepartments: { select: { department: true } },
       audienceEmployees: { select: { employeeId: true } },
     },
@@ -267,10 +356,7 @@ export const scoreFullAssessment = async (assessmentId, { finalCall = false } = 
   };
 
   const outcomes = await mapConcurrent(employees, 6, async (emp) => {
-    const hasSelf = selfSet.has(emp.id);
-    const hasSup = supSet.has(emp.id);
-
-    if (!hasSelf && !hasSup) {
+    if (!selfSet.has(emp.id) && !supSet.has(emp.id)) {
       // Never took the assessment: only materialize a "not taken" row at
       // completion. Mid-flight bulk scoring leaves these employees alone.
       if (finalCall) {
@@ -280,16 +366,8 @@ export const scoreFullAssessment = async (assessmentId, { finalCall = false } = 
       return null;
     }
 
-    if (!finalCall && assessment.type === 'Combined' && !(hasSelf && hasSup)) {
-      // Combined must be calculated from BOTH sides together. Scoring an
-      // employee whose supervisor hasn't submitted (or vice versa) would
-      // persist a single-side FINAL row instead of one combined result, so
-      // those employees are skipped and reported back to the caller.
-      skipped.add(emp.id);
-      return null;
-    }
-
-    // Completion (or a ready pair): calculate with a missing side as 0.
+    // Mid-flight or completion: calculate with a missing side as 0 (stored
+    // as partial until both sides submit, then recalculated in place).
     return calculateAndSaveResult(assessment, emp.id);
   });
 
@@ -309,27 +387,7 @@ export const scoreFullAssessment = async (assessmentId, { finalCall = false } = 
  * active employees so admins don't collect "not taken" rows.
  */
 export const getAssignedUserIds = async (assessment) => {
-  const ACTIVE_EMPLOYEE = { status: 'ACTIVE', roles: { has: 'EMPLOYEE' } };
-
-  if (assessment.audienceType === 'SPECIFIC_EMPLOYEES' && assessment.audienceEmployees?.length) {
-    const ids = assessment.audienceEmployees.map(e => e.employeeId);
-    const users = await prisma.user.findMany({ where: { id: { in: ids }, ...ACTIVE_EMPLOYEE }, select: { id: true } });
-    return users.map(u => u.id);
-  }
-
-  if (assessment.audienceType === 'DEPARTMENT_ALL' && assessment.audienceDepartments?.length) {
-    const users = await prisma.user.findMany({
-      where: { ...ACTIVE_EMPLOYEE, department: { in: assessment.audienceDepartments.map(d => d.department) } },
-      select: { id: true },
-    });
-    return users.map(u => u.id);
-  }
-
-  const where = { ...ACTIVE_EMPLOYEE };
-  if (assessment.legacyDepartment) where.department = assessment.legacyDepartment;
-  if (assessment.legacyPosition) where.position = assessment.legacyPosition;
-  const users = await prisma.user.findMany({ where, select: { id: true } });
-  return users.map(u => u.id);
+  return resolveAudienceUserIds(assessment, prisma);
 };
 
 /**
@@ -367,12 +425,12 @@ export const markNotTakenResult = async (assessment, userId) => {
   }
 };
 
-export const scoreIndividual = async (assessmentId, employeeId) => {
+export const scoreIndividual = async (assessmentId, employeeId, activePool = null) => {
   const assessment = await prisma.assessment.findUnique({
     where: { id: assessmentId },
-    include: { assessmentQuestions: { select: { questionId: true } } },
+    include: { assessmentQuestions: { select: { questionId: true, pool: true } } },
   });
-  return calculateAndSaveResult(assessment, employeeId);
+  return calculateAndSaveResult(assessment, employeeId, activePool);
 };
 
 /**

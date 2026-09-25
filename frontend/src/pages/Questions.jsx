@@ -12,6 +12,9 @@ import {
   FileText,
   Check,
   Eye,
+  ArrowUp,
+  ArrowDown,
+  ChevronsUpDown,
 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import Modal from '../components/Modal';
@@ -73,6 +76,32 @@ const TYPE_BADGES = {
 
 const TARGET_GROUPS = ['managerial', 'non-managerial', 'common'];
 
+// Default (unsorted) order = newest first, matching the API default.
+const DEFAULT_SORT = { key: null, dir: 'desc' };
+
+// Clickable table header with sort-direction indicator.
+function SortableHeader({ label, sortKey, sort, onSort, className = '', right = false }) {
+  const active = sort.key === sortKey;
+  return (
+    <th className={`px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap bg-gray-50 ${className}`}>
+      <button
+        onClick={() => onSort(sortKey)}
+        title={`Sort by ${label}`}
+        className={`inline-flex items-center gap-1 uppercase tracking-wide transition-colors hover:text-brand-red ${active ? 'text-brand-red' : ''} ${right ? 'w-full justify-end' : ''}`}
+      >
+        {label}
+        {active ? (
+          sort.dir === 'asc'
+            ? <ArrowUp className="w-3.5 h-3.5" />
+            : <ArrowDown className="w-3.5 h-3.5" />
+        ) : (
+          <ChevronsUpDown className="w-3.5 h-3.5 opacity-30" />
+        )}
+      </button>
+    </th>
+  );
+}
+
 // ─── Default form state for a single question ──────────────────────────────
 const initQuestionForm = () => ({
   type: 'MCQ',
@@ -117,6 +146,7 @@ export default function Questions() {
   const [bulkDeleteModal, setBulkDeleteModal] = useState(false);
 
   const [pagination, setPagination] = useState({ page: 1, limit: 10 });
+  const [sort, setSort] = useState(DEFAULT_SORT);
 
   const { data: competenciesData } = useAllCompetencies();
   const competencies = competenciesData || [];
@@ -125,8 +155,19 @@ export default function Questions() {
     const params = { page: pagination.page, limit: pagination.limit };
     if (filterComp) params.competencyId = filterComp;
     if (filterType) params.type = filterType;
+    if (sort.key) { params.sortBy = sort.key; params.sortDir = sort.dir; }
     return params;
-  }, [pagination.page, pagination.limit, filterComp, filterType]);
+  }, [pagination.page, pagination.limit, filterComp, filterType, sort]);
+
+  // Cycle: asc → desc → default (newest first)
+  const toggleSort = (key) => {
+    setSort((prev) => {
+      if (prev.key !== key) return { key, dir: 'asc' };
+      if (prev.dir === 'asc') return { key, dir: 'desc' };
+      return DEFAULT_SORT;
+    });
+    setPagination((p) => ({ ...p, page: 1 }));
+  };
 
   const { data, isLoading } = useQuestions(questionsParams);
   const items = data?.questions || [];
@@ -1386,10 +1427,10 @@ export default function Questions() {
                     />
                   </th>
                   <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap bg-gray-50">Question</th>
-                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap bg-gray-50 w-28">Type</th>
-                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap bg-gray-50">Competency</th>
-                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap bg-gray-50 w-28">Target</th>
-                  <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap bg-gray-50 text-right w-16">Score</th>
+                  <SortableHeader label="Type" sortKey="type" sort={sort} onSort={toggleSort} className="text-left w-28" />
+                  <SortableHeader label="Competency" sortKey="competency" sort={sort} onSort={toggleSort} className="text-left" />
+                  <SortableHeader label="Target" sortKey="targetGroup" sort={sort} onSort={toggleSort} className="text-left w-28" />
+                  <SortableHeader label="Score" sortKey="score" sort={sort} onSort={toggleSort} className="text-right w-16" right />
                   <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap bg-gray-50 text-right w-20">Actions</th>
                 </tr>
               </thead>

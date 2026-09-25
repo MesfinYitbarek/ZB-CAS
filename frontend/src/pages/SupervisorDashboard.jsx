@@ -114,7 +114,7 @@ export default function SupervisorDashboard() {
                 {highPriority} evaluation{highPriority > 1 ? 's' : ''} require urgent attention — deadline within 48 hours
               </p>
               <button
-                onClick={() => nav('/supervisor/pending')}
+                onClick={() => nav('/evaluations')}
                 className="ml-auto text-xs font-semibold text-red-600 hover:text-red-700 hover:underline flex items-center gap-1"
               >
                 View now <ChevronRight className="w-3 h-3" />

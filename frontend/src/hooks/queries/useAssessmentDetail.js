@@ -20,7 +20,7 @@ export function useSupervisorPending(options = {}) {
   return useQuery({
     queryKey: queryKeys.assessments.pending,
     queryFn: async () => {
-      const res = await api.get('/supervisor/pending');
+      const res = await api.get('/supervisors/pending');
       return res.data;
     },
     ...options,
@@ -32,7 +32,7 @@ export function useSupervisorCompletedCount(options = {}) {
   return useQuery({
     queryKey: queryKeys.assessments.completedCount,
     queryFn: async () => {
-      const res = await api.get('/supervisor/completed-count');
+      const res = await api.get('/supervisors/completed-count');
       return res.data;
     },
     ...options,

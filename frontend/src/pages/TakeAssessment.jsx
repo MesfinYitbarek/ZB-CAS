@@ -65,13 +65,13 @@ const SecurityLawsScreen = ({ assessment, onAccept, onCancel }) => {
     {
       icon: <MonitorX className="w-5 h-5 text-red-600" />,
       title: 'No Tab Switching',
-      desc: 'Switching browser tabs or windows during the assessment is strictly prohibited and will be recorded as a violation.',
+      desc: 'Switching browser tabs or windows even once will AUTO-SUBMIT your assessment immediately.',
       color: 'red'
     },
     {
       icon: <EyeOff className="w-5 h-5 text-red-600" />,
       title: 'Full Screen Required',
-      desc: 'You must remain in full-screen mode throughout. Exiting full screen will trigger a security alert.',
+      desc: 'You must remain in full-screen mode throughout. Exiting full screen even once will AUTO-SUBMIT your assessment.',
       color: 'red'
     },
     {
@@ -297,12 +297,21 @@ export default function TakeAssessment() {
 
   // Use a ref to count violations inside the callback — avoids stale closure
   const violationCountRef = useRef(0);
+  const submittedRef = useRef(false);
+  const autoSubmittingRef = useRef(false);
 
   const security = useAssessmentSecurity(assessmentId, (violation) => {
     api.post(`/responses/security-violation`, {
       assessmentId,
       userId: user?._id,
       violation,
+    }).then((res) => {
+      // Server auto-submits on the FIRST tab-switch / fullscreen-exit offense
+      if (res.data?.data?.autoSubmit && !autoSubmittingRef.current && !submittedRef.current) {
+        autoSubmittingRef.current = true;
+        show(`Too many violations (${res.data.data.autoSubmitReason || 'repeated misconduct'}) — submitting automatically.`, 'error');
+        handleSubmit(true, true);
+      }
     }).catch(() => { });
 
     violationCountRef.current += 1;
@@ -388,16 +397,19 @@ export default function TakeAssessment() {
     }
   }, [assessment?.status, assessment?.startDate]);
 
-  // Progress gating (submitted state / attempts / show security laws)
+  // Progress gating (submitted state / attempts / show security laws).
+  // Attempts sync on EVERY load (not only when submitted) — the re-exam pool
+  // decision depends on attemptsUsed, and a fresh retake load is unsubmitted.
   useEffect(() => {
     if (!progressQuery.data) return;
+    setAttempts({
+      used: progressQuery.data.attemptsUsed || 0,
+      maxAttempts: progressQuery.data.maxAttempts ?? null,
+      remaining: progressQuery.data.attemptsRemaining ?? null,
+    });
     if (progressQuery.data.isSubmitted) {
       setSubmitted(true);
-      setAttempts({
-        used: progressQuery.data.attemptsUsed || 0,
-        maxAttempts: progressQuery.data.maxAttempts ?? null,
-        remaining: progressQuery.data.attemptsRemaining ?? null,
-      });
+      submittedRef.current = true;
     } else {
       setShowSecurityLaws(true);
     }
@@ -483,9 +495,25 @@ export default function TakeAssessment() {
     autoSave(questionId, value);
   };
 
+  // ── Which question pool is served? Retakes (attempt ≥ 2) get the REEXAM
+  // set when HR defined one at creation; otherwise everyone gets MAIN.
+  // The server's activePool (from progress) is authoritative; the local
+  // attempts check is the fallback before progress loads.
+  const hasReexamPool = (assessment?.reexamQuestionIds?.length || 0) > 0;
+  const serverPool = progressQuery.data?.activePool;
+  const onReexamPool = hasReexamPool && (serverPool
+    ? serverPool === 'REEXAM'
+    : (attempts.used || 0) >= 1);
+  const poolQuestions = useMemo(
+    () => (onReexamPool ? assessment.reexamQuestionIds : (assessment?.questionIds || [])),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [assessment?.questionIds, assessment?.reexamQuestionIds, onReexamPool]
+  );
+
   // ── Submit ──────────────────────────────────────────────────────────────────
-  const handleSubmit = async (forceSubmit = false) => {
-    const questions = assessment?.questionIds || [];
+  const handleSubmit = async (forceSubmit = false, autoSubmit = false) => {
+    if (submittedRef.current) return;
+    const questions = poolQuestions;
     const unanswered = questions.filter(q => {
       const ans = answers[q._id];
       if (ans === undefined || ans === null || ans === '') return true;
@@ -505,6 +533,7 @@ export default function TakeAssessment() {
         assessmentId, employeeId, respondentType,
         securityLog: security.getViolationLog(),
         totalViolations: security.totalViolations,
+        autoSubmit,
       });
       if (submitData.data?.attempts) {
         const a = submitData.data.attempts;
@@ -516,11 +545,15 @@ export default function TakeAssessment() {
       }
 
       setSubmitted(true);
+      submittedRef.current = true;
       setShowSubmitWarning(false);
       setShowBackWarning(false);
-      show('Assessment submitted successfully!', 'success');
+      show(submitData.message || 'Assessment submitted successfully!', autoSubmit ? 'info' : 'success');
       securityQuery.refetch();
       queryClient.invalidateQueries({ queryKey: queryKeys.responses.progress(assessmentId) });
+      // The Results page caches its list for 60s with no focus refetch —
+      // without this it keeps showing pre-submit data until a hard refresh.
+      queryClient.invalidateQueries({ queryKey: queryKeys.results.all });
 
       setScoringInProgress(true);
       try {
@@ -576,12 +609,14 @@ export default function TakeAssessment() {
       queryClient.invalidateQueries({ queryKey: queryKeys.responses.progress(assessmentId) });
       setCurrentQuestionIndex(0);
       violationCountRef.current = 0;
+      autoSubmittingRef.current = false;
       security.resetViolations();
       setShowViolationBanner(false);
       setShowSeriousModal(false);
       setSeriousModalShownAt(0);
       setShowSecurityMonitor(true);
       setSubmitted(false);
+      submittedRef.current = false;
       if (assessment?.timeLimit) security.startTimer(assessment.timeLimit);
       security.requestFullscreen();
       show('New attempt started. Good luck!', 'success');
@@ -634,9 +669,9 @@ export default function TakeAssessment() {
   // derived from the employee + assessment so each employee sees a different order.
   const orderSeed = `${user?._id || 'anon'}:${assessmentId}`;
   const orderedQuestions = useMemo(
-    () => shuffleBySeed(assessment?.questionIds || [], `${orderSeed}:questions`),
+    () => shuffleBySeed(poolQuestions, `${orderSeed}:questions`),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [assessment?.questionIds, orderSeed]
+    [poolQuestions, orderSeed]
   );
 
   // ── Question renderer ───────────────────────────────────────────────────────
@@ -1114,9 +1149,14 @@ export default function TakeAssessment() {
             </div>
           </div>
 
-          {/* Competency name only in header */}
+              {/* Competency name only in header */}
           <h2 className="text-base  font-bold text-brand-black mb-1 truncate">
             {assessment.competencyId?.name || 'Assessment'}
+            {onReexamPool && (
+              <span className="ml-2 align-middle text-[10px] font-bold px-2 py-0.5 rounded-full bg-brand-red/10 text-brand-red uppercase tracking-wide">
+                Re-exam questions
+              </span>
+            )}
           </h2>
 
           <div className="flex items-center gap-2">

@@ -114,7 +114,6 @@ export default function MyTeam() {
                           </div>
                           <div className="min-w-0">
                             <p className="text-[13px] font-semibold text-gray-900 truncate">{m.name}</p>
-                            <p className="text-[11px] text-gray-400 font-mono truncate">{m.employeeId}</p>
                           </div>
                         </div>
                       </td>

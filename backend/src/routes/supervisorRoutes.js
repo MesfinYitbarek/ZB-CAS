@@ -9,6 +9,7 @@ router.use(protect);
 
 // ── All routes require SUPERVISOR role ─────────────────────────────────────
 router.get('/pending', authorize('SUPERVISOR'), supervisorCtrl.getPendingEvaluations);
+router.get('/completed-count', authorize('SUPERVISOR'), supervisorCtrl.getCompletedEvaluationsCount);
 // router.patch('/evaluations/:assessmentId/:employeeId', 
 //   authorize('SUPERVISOR'), 
 //   supervisorCtrl.updateEvaluationStatus);

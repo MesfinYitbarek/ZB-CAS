@@ -4,6 +4,11 @@
  */
 import bcrypt from 'bcryptjs';
 
+// Default password assigned to every newly created user
+// (single registration + bulk import). Users are expected to
+// change it on first login (see welcome email text).
+export const DEFAULT_USER_PASSWORD = 'Zemen123';
+
 export const hashPassword = async (plain) => bcrypt.hash(plain, 12);
 
 export const comparePassword = (candidatePlain, passwordHash) =>

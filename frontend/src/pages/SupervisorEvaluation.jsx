@@ -184,6 +184,8 @@ export default function SupervisorEvaluation() {
       show('Evaluation submitted!', 'success');
       setShowConfirm(false);
       queryClient.invalidateQueries({ queryKey: queryKeys.assessments.pending });
+      // Supervisor submits also (re)score results — same stale-list problem as TakeAssessment.
+      queryClient.invalidateQueries({ queryKey: queryKeys.results.all });
       setTimeout(() => navigate('/evaluations'), 1200);
     } catch (err) {
       show(err.response?.data?.message || 'Submission failed.', 'error');
@@ -201,7 +203,7 @@ export default function SupervisorEvaluation() {
         </div>
         <h2 className="text-base font-bold text-gray-900 mb-1">Access Denied</h2>
         <p className="text-sm text-gray-400 mb-5">You don't have permission to access this evaluation.</p>
-        <button onClick={() => navigate('/supervisor/pending')}
+        <button onClick={() => navigate('/evaluations')}
           className="w-full py-2 bg-brand-red text-white rounded-lg text-sm font-semibold hover:bg-red-700 transition">
           Back to Pending
         </button>
@@ -220,7 +222,7 @@ export default function SupervisorEvaluation() {
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 text-center max-w-sm w-full">
         <AlertCircle className="w-10 h-10 text-gray-300 mx-auto mb-3" />
         <p className="text-sm text-gray-500 mb-4">Evaluation could not be loaded.</p>
-        <button onClick={() => navigate('/supervisor/pending')}
+        <button onClick={() => navigate('/evaluations')}
           className="w-full py-2 bg-brand-red text-white rounded-lg text-sm font-semibold hover:bg-red-700 transition">
           Go Back
         </button>
@@ -237,7 +239,7 @@ export default function SupervisorEvaluation() {
       {/* ── Sticky header ──────────────────────────────────────────────────── */}
       <div className="flex-shrink-0 bg-white border-b border-gray-100 px-5 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <button onClick={() => navigate('/supervisor/pending')}
+          <button onClick={() => navigate('/evaluations')}
             className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 transition">
             <ChevronLeft className="w-4 h-4" />
           </button>

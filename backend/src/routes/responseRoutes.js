@@ -34,5 +34,6 @@ router.get('/supervisor/:assessmentId/:employeeId', authorize('SUPERVISOR'), rCt
 router.get('/admin/:assessmentId/all', authorize('HR_ADMIN'), rCtrl.getAllResponses);
 router.get('/admin/:assessmentId/security-summary', authorize('HR_ADMIN'), rCtrl.getAssessmentSecuritySummary);
 router.patch('/admin/manual-score/:id', authorize('HR_ADMIN'), rCtrl.setManualScore);
+router.post('/admin/grant-retake', authorize('HR_ADMIN'), rCtrl.grantRetake);
 
 export default router;

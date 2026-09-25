@@ -24,6 +24,7 @@ router.get('/department/:department', authorize('HR_ADMIN', 'SUPERVISOR'), analy
 router.get('/employees', authorize('HR_ADMIN', 'SUPERVISOR'), repCtrl.getEmployees);
 
 // ── Generated reports (Tier 2) — named records with stored Excel artifacts ───
+router.post('/pivot-preview',           authorize('HR_ADMIN'), genCtrl.previewPivot);
 router.post('/generate',                 authorize('HR_ADMIN', 'SUPERVISOR', 'EMPLOYEE'), genCtrl.createGeneratedReport);
 router.get('/generated',                 authorize('HR_ADMIN', 'SUPERVISOR', 'EMPLOYEE'), genCtrl.listGeneratedReports);
 router.get('/generated/:id',             authorize('HR_ADMIN', 'SUPERVISOR', 'EMPLOYEE'), genCtrl.getGeneratedReport);

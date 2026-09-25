@@ -1,18 +1,21 @@
 /* controllers/userController.js */
-import crypto from 'crypto';
 import ExcelJS from 'exceljs';
 import prisma from '../config/prisma.js';
 import AppError from '../utils/AppError.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import logger from '../utils/logger.js';
-import { hashPassword } from '../utils/password.js';
+import { hashPassword, DEFAULT_USER_PASSWORD } from '../utils/password.js';
 import { toPublic } from '../utils/userHelpers.js';
 import { notifyAccountCreated } from '../services/notificationService.js';
 import { logActivity } from '../services/activityService.js';
 
 // ─── GET ALL USERS ────────────────────────────────────────────────────────────
+const USER_SORTABLE_FIELDS = new Set([
+  'employeeId', 'name', 'username', 'email', 'position', 'department', 'status', 'createdAt',
+]);
+
 export const getUsers = asyncHandler(async (req, res) => {
-  const { department, role, status, page = 1, limit = 20, search } = req.query;
+  const { department, role, status, page = 1, limit = 20, search, sortBy, sortDir } = req.query;
 
   const where = {};
   if (department) where.department = department;
@@ -37,13 +40,17 @@ export const getUsers = asyncHandler(async (req, res) => {
 
   const skip = (parseInt(page, 10) - 1) * parseInt(limit, 10);
 
+  // Whitelisted server-side sorting (roles is an array — not sortable via orderBy)
+  const sortField = USER_SORTABLE_FIELDS.has(sortBy) ? sortBy : 'createdAt';
+  const sortOrder = sortDir === 'asc' ? 'asc' : 'desc';
+
   const [users, total] = await Promise.all([
     prisma.user.findMany({
       where,
       include: { supervisor: { select: { id: true, name: true, email: true, employeeId: true } } },
       skip,
       take: parseInt(limit, 10),
-      orderBy: { createdAt: 'desc' },
+      orderBy: { [sortField]: sortOrder },
     }),
     prisma.user.count({ where }),
   ]);
@@ -136,10 +143,13 @@ export const getSupervisorEmployees = asyncHandler(async (req, res, next) => {
   });
 });
 
+const EMAIL_RE_UPDATE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const USERNAME_RE = /^[a-z0-9._-]+$/;
+
 // ─── UPDATE USER ──────────────────────────────────────────────────────────────
 export const updateUser = asyncHandler(async (req, res, next) => {
   const allowedFields = [
-    'name', 'username', 'position', 'department',
+    'name', 'employeeId', 'username', 'email', 'position', 'department',
     'supervisorId', 'roles', 'gender', 'status',
   ];
 
@@ -161,11 +171,73 @@ export const updateUser = asyncHandler(async (req, res, next) => {
     return next(new AppError('No valid fields to update.', 400));
   }
 
-  const user = await prisma.user.update({
-    where: { id: req.params.id },
-    data: updates,
-    include: { supervisor: { select: { id: true, name: true, email: true } } },
-  });
+  // ── Normalize + validate unique identity fields (employeeId is optional) ──
+  if (updates.employeeId !== undefined) {
+    updates.employeeId = String(updates.employeeId).trim() || null;
+  }
+  if (updates.username !== undefined) {
+    updates.username = String(updates.username).toLowerCase().trim();
+    if (!updates.username) return next(new AppError('Username is required.', 400));
+    if (!USERNAME_RE.test(updates.username)) {
+      return next(new AppError('Username may only contain lowercase letters, numbers, dots, hyphens, and underscores.', 400));
+    }
+  }
+  if (updates.email !== undefined) {
+    updates.email = String(updates.email).toLowerCase().trim();
+    if (!updates.email) return next(new AppError('Email is required.', 400));
+    if (!EMAIL_RE_UPDATE.test(updates.email)) {
+      return next(new AppError('Invalid email format.', 400));
+    }
+  }
+  if (updates.name !== undefined && typeof updates.name === 'string') {
+    updates.name = updates.name.trim();
+    if (!updates.name) return next(new AppError('Full name is required.', 400));
+  }
+
+  // ── Uniqueness checks (excluding self; skip empty optional employeeId) ──
+  const uniqueFields = ['employeeId', 'username', 'email'].filter(
+    (f) => updates[f] !== undefined && updates[f] !== null && updates[f] !== ''
+  );
+  if (uniqueFields.length) {
+    // Use case-insensitive match to catch `John@x.com` vs `john@x.com` style dupes
+    const conflicts = await prisma.user.findMany({
+      where: {
+        id: { not: req.params.id },
+        OR: uniqueFields.map((key) => ({ [key]: { equals: updates[key], mode: 'insensitive' } })),
+      },
+      select: { employeeId: true, username: true, email: true },
+    });
+    for (const c of conflicts) {
+      if (updates.employeeId !== undefined && c.employeeId?.toLowerCase() === updates.employeeId.toLowerCase()) {
+        return next(new AppError(`Employee ID "${updates.employeeId}" is already in use.`, 409));
+      }
+      if (updates.username !== undefined && c.username?.toLowerCase() === updates.username.toLowerCase()) {
+        return next(new AppError(`Username "${updates.username}" is already in use.`, 409));
+      }
+      if (updates.email !== undefined && c.email?.toLowerCase() === updates.email.toLowerCase()) {
+        return next(new AppError(`Email "${updates.email}" is already in use.`, 409));
+      }
+    }
+  }
+
+  let user;
+  try {
+    user = await prisma.user.update({
+      where: { id: req.params.id },
+      data: updates,
+      include: { supervisor: { select: { id: true, name: true, email: true } } },
+    });
+  } catch (err) {
+    // Fallback for race-condition dupes surfacing as Prisma unique-constraint errors
+    if (err?.code === 'P2002') {
+      const target = Array.isArray(err.meta?.target) ? err.meta.target.join(', ') : 'field';
+      return next(new AppError(`This ${target} is already in use.`, 409));
+    }
+    if (err?.code === 'P2025') {
+      return next(new AppError('User not found.', 404));
+    }
+    throw err;
+  }
 
   await logActivity({
     req,
@@ -195,6 +267,87 @@ export const deleteUser = asyncHandler(async (req, res, next) => {
   });
 
   res.status(200).json({ status: 'success', message: 'User deactivated.' });
+});
+
+// ─── BULK UPDATE STATUS (activate / deactivate many) ──────────────────────────
+export const bulkUpdateUserStatus = asyncHandler(async (req, res, next) => {
+  const { ids, status } = req.body;
+
+  if (!ids || !Array.isArray(ids) || ids.length === 0) {
+    return next(new AppError('Please provide an array of user IDs.', 400));
+  }
+  if (!['ACTIVE', 'INACTIVE'].includes(status)) {
+    return next(new AppError('Status must be ACTIVE or INACTIVE.', 400));
+  }
+  if (ids.length > 500) {
+    return next(new AppError('Bulk update limited to 500 users at a time.', 400));
+  }
+
+  // Never allow an admin to change their own account status in bulk
+  const uniqueIds = [...new Set(ids)];
+  const skippedSelf = uniqueIds.includes(req.user.id) ? 1 : 0;
+  const filtered = uniqueIds.filter((id) => id !== req.user.id);
+  if (!filtered.length) {
+    return next(new AppError('You cannot change your own account status.', 400));
+  }
+
+  const result = await prisma.user.updateMany({
+    where: { id: { in: filtered } },
+    data: { status },
+  });
+
+  await logActivity({
+    req,
+    action: status === 'ACTIVE' ? 'bulk_activated' : 'bulk_deactivated',
+    entity: 'User',
+    description: `${result.count} user(s) ${status === 'ACTIVE' ? 'activated' : 'deactivated'}`,
+    metadata: { count: result.count, status, skippedSelf },
+  });
+
+  res.status(200).json({
+    status: 'success',
+    message: `${result.count} user(s) ${status === 'ACTIVE' ? 'activated' : 'deactivated'}.`,
+    data: { updated: result.count, skippedSelf },
+  });
+});
+
+// ─── BULK SOFT-DELETE (deactivate many) ───────────────────────────────────────
+export const bulkDeleteUsers = asyncHandler(async (req, res, next) => {
+  const { ids } = req.body;
+
+  if (!ids || !Array.isArray(ids) || ids.length === 0) {
+    return next(new AppError('Please provide an array of user IDs.', 400));
+  }
+  if (ids.length > 500) {
+    return next(new AppError('Bulk delete limited to 500 users at a time.', 400));
+  }
+
+  // Never allow an admin to delete their own account
+  const uniqueIds = [...new Set(ids)];
+  const skippedSelf = uniqueIds.includes(req.user.id) ? 1 : 0;
+  const filtered = uniqueIds.filter((id) => id !== req.user.id);
+  if (!filtered.length) {
+    return next(new AppError('You cannot delete your own account.', 400));
+  }
+
+  const result = await prisma.user.updateMany({
+    where: { id: { in: filtered } },
+    data: { status: 'INACTIVE' },
+  });
+
+  await logActivity({
+    req,
+    action: 'bulk_deleted',
+    entity: 'User',
+    description: `${result.count} user(s) deactivated`,
+    metadata: { count: result.count, skippedSelf },
+  });
+
+  res.status(200).json({
+    status: 'success',
+    message: `${result.count} user(s) deleted.`,
+    data: { deleted: result.count, skippedSelf },
+  });
 });
 
 // ═══ BULK IMPORT (Excel / CSV) ═══════════════════════════════════════════════
@@ -384,9 +537,8 @@ export const bulkImportUsers = asyncHandler(async (req, res, next) => {
 
     const row = { __line: line };
 
-    // Basic validations
+    // Basic validations (employeeId is optional; status/supervisor also optional)
     if (!name) { failed.push(buildRowError(row, 'Missing required field: name')); continue; }
-    if (!employeeId) { failed.push(buildRowError(row, 'Missing required field: employeeId')); continue; }
     if (!username) { failed.push(buildRowError(row, 'Missing required field: username')); continue; }
     if (!email) { failed.push(buildRowError(row, 'Missing required field: email')); continue; }
     if (!EMAIL_RE.test(email)) { failed.push(buildRowError(row, `Invalid email format: ${email}`)); continue; }
@@ -407,8 +559,8 @@ export const bulkImportUsers = asyncHandler(async (req, res, next) => {
       continue;
     }
 
-    // Duplicate detection (DB + within-file)
-    if (uniqueKeyPresent('employeeId', employeeId) || seen.employeeId[employeeId.toLowerCase()] !== undefined) {
+    // Duplicate detection (DB + within-file) — employeeId only when provided
+    if (employeeId && (uniqueKeyPresent('employeeId', employeeId) || seen.employeeId[employeeId.toLowerCase()] !== undefined)) {
       failed.push(buildRowError(row, `Duplicate employeeId: ${employeeId}`)); continue;
     }
     if (uniqueKeyPresent('username', username) || seen.username[username.toLowerCase()] !== undefined) {
@@ -427,17 +579,17 @@ export const bulkImportUsers = asyncHandler(async (req, res, next) => {
     }
 
     // Mark within-file duplicates so the same file can't create dupes
-    seen.employeeId[employeeId.toLowerCase()] = 'pending';
+    if (employeeId) seen.employeeId[employeeId.toLowerCase()] = 'pending';
     seen.username[username.toLowerCase()]     = 'pending';
     seen.email[email.toLowerCase()]           = 'pending';
 
-    const tempPassword = crypto.randomBytes(6).toString('hex').slice(0, 10);
+    const tempPassword = DEFAULT_USER_PASSWORD;
     const passwordHash = await hashPassword(tempPassword);
 
     try {
       const created = await prisma.user.create({
         data: {
-          employeeId,
+          employeeId: employeeId || null,
           name,
           username,
           email,
@@ -452,7 +604,7 @@ export const bulkImportUsers = asyncHandler(async (req, res, next) => {
       });
       imported.push({
         _id: created.id,
-        employeeId,
+        employeeId: employeeId || null,
         name,
         username,
         email,
@@ -488,10 +640,10 @@ export const bulkImportUsers = asyncHandler(async (req, res, next) => {
 // ─── DOWNLOAD IMPORT TEMPLATE (Excel) ────────────────────────────────────────
 export const downloadImportTemplate = asyncHandler(async (req, res) => {
   const headers = [
-    'employeeId', 'name', 'username', 'email', 'role', 'gender', 'position', 'department', 'supervisor', 'status',
+    'employeeId', 'name', 'username', 'email', 'role', 'gender', 'position', 'department',
   ];
   const sample = [
-    'EMP001', 'Abebe Kebede', 'abebe.kebede2', 'abebe@zemenbank.com', 'EMPLOYEE', 'Male', 'Senior Officer', 'Retail Banking', 'dawit.bekele', 'ACTIVE',
+    'EMP001', 'Abebe Kebede', 'abebe.kebede2', 'abebe@zemenbank.com', 'EMPLOYEE', 'Male', 'Senior Officer', 'Retail Banking',
   ];
 
   const wb = new ExcelJS.Workbook();

@@ -7,7 +7,7 @@
 import prisma from '../config/prisma.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import AppError from '../utils/AppError.js';
-import { scoreFullAssessment, scoreIndividual, hasSubmittedBothSides } from '../services/scoringService.js';
+import { scoreFullAssessment, scoreIndividual } from '../services/scoringService.js';
 import { sendResultsEmail } from '../services/emailService.js';
 import { notifyResultReady } from '../services/notificationService.js';
 import { normalizeTargetGroup, denormalizeTargetGroup } from '../utils/targetGroup.js';
@@ -53,6 +53,8 @@ const processResultRow = (r) => ({
   recommendation: r.recommendation,
   status: r.status || 'FINAL',
   notTaken: r.status === 'PENDING' || !!r.scoreDetails?.notTaken,
+  partial: !!r.scoreDetails?.partial,
+  missingSide: r.scoreDetails?.missingSide || null,
   weightUsed: r.scoreDetails?.weightUsed || null,
   calculation: r.scoreDetails?.calculation || null,
   hasQuestionDetails: !!(r.scoreDetails?.questionDetails?.length > 0 || r.scoreDetails),
@@ -88,9 +90,7 @@ export const scoreAssessment = asyncHandler(async (req, res, next) => {
 
   res.status(200).json({
     status: 'success',
-    message: skipped.length > 0
-      ? `Processed ${results.length} results. ${skipped.length} skipped (waiting for both self and supervisor submissions).`
-      : `Processed ${results.length} results.`,
+    message: `Processed ${results.length} results.`,
     data: { results, skipped },
   });
 });
@@ -110,12 +110,6 @@ export const autoScoreEmployee = asyncHandler(async (req, res, next) => {
 
   const assessment = await prisma.assessment.findUnique({ where: { id: assessmentId } });
   if (!assessment) return next(new AppError('Assessment not found.', 404));
-
-  // A Combined result is only meaningful once BOTH sides exist — scoring
-  // earlier would store a single-side row instead of one combined result.
-  if (assessment.type === 'Combined' && !(await hasSubmittedBothSides(assessmentId, employeeId))) {
-    return next(new AppError('Combined result will be calculated once both the self-assessment and the supervisor evaluation are submitted.', 400));
-  }
 
   const result = await scoreIndividual(assessmentId, employeeId);
   logger.info({ event: 'auto_score', assessmentId, employeeId, triggeredBy: req.user.id });
@@ -474,8 +468,15 @@ export const getFilteredResults = asyncHandler(async (req, res) => {
   }
 
   const skip = (parseInt(page) - 1) * parseInt(limit);
-  const orderCol = sortBy === 'score' ? 'finalScore' : sortBy;
-  const orderBy = { [orderCol]: sortDir === 'asc' ? 'asc' : 'desc' };
+  // Whitelisted server-side sorting (`score` aliases finalScore;
+  // `employee` / `competency` sort by related name)
+  const RESULT_SORTABLE_FIELDS = new Set(['createdAt', 'updatedAt', 'finalScore', 'level', 'status']);
+  const order = sortDir === 'asc' ? 'asc' : 'desc';
+  let orderBy;
+  if (sortBy === 'score') orderBy = { finalScore: order };
+  else if (sortBy === 'employee') orderBy = { user: { name: order } };
+  else if (sortBy === 'competency') orderBy = { competency: { name: order } };
+  else orderBy = { [RESULT_SORTABLE_FIELDS.has(sortBy) ? sortBy : 'createdAt']: order };
 
   const [results, total] = await Promise.all([
     prisma.result.findMany({

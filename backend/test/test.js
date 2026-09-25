@@ -1090,6 +1090,61 @@ describe('Generated Reports - buildPivot', () => {
     expect(PIVOT_FIELDS).toContain('competency');
     expect(PIVOT_FIELDS).not.toContain('overallScore');
   });
+
+  it('returns 0 (not blank) for empty buckets under count', () => {
+    const p = buildPivot(raw, { rowFields: ['department'], colField: 'competency', values: [{ valueField: 'count', aggregation: 'count' }] });
+    const it = p.body.find(r => r.path[0] === 'IT');
+    expect(it.cells.Teamwork).toEqual([0]);
+  });
+
+  it('builds multi-level rows with subtotals', () => {
+    const p = buildPivot(raw, { rowFields: ['department', 'competency'], values: [{ valueField: 'score', aggregation: 'avg' }] });
+    const sub = p.body.find(r => r.kind === 'subtotal' && r.path[0] === 'Finance');
+    expect(sub).toBeDefined();
+    expect(sub.totals).toEqual([70]);
+  });
+
+  it('supports median, min, max, gap and distinct metrics', () => {
+    const m = buildPivot(raw, { rowFields: ['department'], values: [
+      { valueField: 'score', aggregation: 'median' },
+      { valueField: 'score', aggregation: 'min' },
+      { valueField: 'score', aggregation: 'max' },
+    ]});
+    const fin = m.body.find(r => r.path[0] === 'Finance');
+    expect(fin.totals).toEqual([70, 60, 80]);
+    const named = [
+      pivotRow({ department: 'Finance', employeeName: 'Abebe', selfScore: 90, supervisorScore: 70 }),
+      pivotRow({ department: 'Finance', employeeName: 'Selam', selfScore: 60, supervisorScore: 60 }),
+    ];
+    const g = buildPivot(named, { rowFields: ['department'], values: [
+      { valueField: 'gap', aggregation: 'avg' },
+      { valueField: 'score', aggregation: 'distinct' },
+    ]});
+    const gfin = g.body.find(r => r.path[0] === 'Finance');
+    expect(gfin.totals[0]).toBe(-10);
+    expect(gfin.totals[1]).toBe(2);
+  });
+
+  it('caps column values and reports a notice', () => {
+    const many = Array.from({ length: 25 }, (_, i) => pivotRow({ competency: `C${i}`, score: 50 }));
+    const p = buildPivot(many, { rowFields: ['department'], colField: 'competency', values: [{ valueField: 'score', aggregation: 'avg' }], maxColumns: 20 });
+    expect(p.colValues.length).toBe(21);
+    expect(p.notices.some(n => n.code === 'capped_columns')).toBe(true);
+  });
+
+  it('sorts rows by value with topN', () => {
+    const p = buildPivot(raw, { rowFields: ['competency'], values: [{ valueField: 'score', aggregation: 'avg' }], orderRows: 'value-desc', topRows: 1 });
+    expect(p.body.filter(r => r.kind === 'detail').map(r => r.path[0])).toEqual(['Communication']);
+  });
+
+  it('orders levels semantically', () => {
+    const lv = [
+      pivotRow({ department: 'X', level: 'Expert', score: 90 }),
+      pivotRow({ department: 'X', level: 'Basic', score: 30 }),
+    ];
+    const p = buildPivot(lv, { rowFields: ['level'], values: [{ valueField: 'score', aggregation: 'avg' }] });
+    expect(p.body.map(r => r.path[0])).toEqual(['Basic', 'Expert']);
+  });
 });
 
 describe('Generated Reports - workbook builders', () => {

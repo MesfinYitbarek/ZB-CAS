@@ -16,6 +16,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Bell, X, CheckCheck, Trash2, ClipboardList,
   Award, Clock, UserCheck, Sparkles, Info,
+  ShieldAlert, RotateCcw,
 } from 'lucide-react';
 import api from '../utils/api';
 import { queryKeys } from '../hooks/queryKeys';
@@ -44,6 +45,16 @@ const TYPE_META = {
   },
   ACCOUNT_CREATED: {
     icon: Sparkles,
+    color: 'text-brand-red',
+    bg: 'bg-brand-red/10',
+  },
+  SECURITY_ALERT: {
+    icon: ShieldAlert,
+    color: 'text-red-700',
+    bg: 'bg-red-100',
+  },
+  RETAKE_GRANTED: {
+    icon: RotateCcw,
     color: 'text-brand-red',
     bg: 'bg-brand-red/10',
   },

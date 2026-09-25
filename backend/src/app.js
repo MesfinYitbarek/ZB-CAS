@@ -101,6 +101,12 @@ app.use('/api/external',        externalRoutes);
 app.use('/api/notifications',   notificationRoutes);
 app.use('/api/activities',      activityRoutes);
 
+import swaggerUi from 'swagger-ui-express';
+import { swaggerSpec } from './config/swagger.js';
+
+// ── Swagger OpenAPI Documentation ─────────────────────────────────────────────
+app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+
 // ── 404 catcher ───────────────────────────────────────────────────────────────
 app.use((req, res, next) => {
   next(new AppError(`Route ${req.method} ${req.originalUrl} not found.`, 404));
@@ -118,7 +124,18 @@ const httpServer = http.createServer(app);
 // Boot Socket.IO real-time layer
 initSocket(httpServer);
 
-connectDB().then(() => {
+connectDB().then(async () => {
+  // Fix stuck report jobs on restart
+  try {
+    const prisma = (await import('./config/prisma.js')).default;
+    await prisma.generatedReport.updateMany({
+      where: { status: 'PROCESSING' },
+      data: { status: 'FAILED', error: 'Server restarted mid-generation' },
+    });
+  } catch (err) {
+    logger.error({ event: 'report_reset_error', err: err.message });
+  }
+
   httpServer.listen(PORT, '0.0.0.0', () => {
   logger.info({
     event: 'server_start',

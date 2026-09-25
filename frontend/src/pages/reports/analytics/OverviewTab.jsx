@@ -92,10 +92,10 @@ export default function OverviewTab({ stats, onPerformerDetail }) {
         )}
       </div>
 
-      <div className="grid lg:grid-cols-2 gap-4">
+      {/* <div className="grid lg:grid-cols-2 gap-4">
         <PerformerTable title="Top 5 Performers" data={top5} type="top" onDetail={onPerformerDetail} />
         <PerformerTable title="Needs Development Support" data={bottom5} type="bottom" onDetail={onPerformerDetail} />
-      </div>
+      </div> */}
     </div>
   );
 }

@@ -15,6 +15,25 @@ const FILTER_LABELS = {
 
 const STATUS_LABEL = { PENDING: 'Pending', PROCESSING: 'Processing', READY: 'Ready', FAILED: 'Failed' };
 
+const PivotConfigSummary = ({ pivot }) => {
+  const rows = pivot.rowFields || (pivot.rowField ? [pivot.rowField] : []);
+  const vals = pivot.values || [{ valueField: pivot.valueField || 'score', aggregation: pivot.aggregation || 'avg' }];
+  return (
+    <div className="text-[13px] text-gray-700 space-y-1">
+      <p><span className="text-gray-400">Rows:</span> {rows.join(' → ') || '—'}</p>
+      {pivot.colField && <p><span className="text-gray-400">Columns:</span> {pivot.colField}</p>}
+      <p><span className="text-gray-400">Metrics:</span> {vals.map((v) => `${v.aggregation} of ${v.valueField}`).join(' · ')}</p>
+      {(pivot.dateTrunc && pivot.dateTrunc !== 'month') || pivot.orderRows !== 'label' || pivot.topRows ? (
+        <p className="text-[11px] text-gray-400">
+          {[pivot.dateTrunc && pivot.dateTrunc !== 'month' ? `by ${pivot.dateTrunc}` : '',
+            pivot.orderRows && pivot.orderRows !== 'label' ? `ordered ${pivot.orderRows}` : '',
+            pivot.topRows ? `top ${pivot.topRows}` : ''].filter(Boolean).join(' · ')}
+        </p>
+      ) : null}
+    </div>
+  );
+};
+
 export default function GeneratedDetailModal({ report, onClose, onDownload, downloading }) {
   const filters = Object.entries(report.filters || {})
     .filter(([, v]) => v !== '' && v !== null && v !== undefined);
@@ -74,10 +93,22 @@ export default function GeneratedDetailModal({ report, onClose, onDownload, down
           {pivot && (
             <div>
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Pivot configuration</p>
-              <p className="text-[13px] text-gray-700">
-                {pivot.rowField}{pivot.colField ? ` × ${pivot.colField}` : ''} — {pivot.aggregation} of {pivot.valueField}
-              </p>
+              <PivotConfigSummary pivot={pivot} />
+              {pivot._notices?.length > 0 && (
+                <div className="mt-2 space-y-1">
+                  {pivot._notices.map((n, i) => (
+                    <p key={i} className="text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1">
+                      {n.message || n}
+                    </p>
+                  ))}
+                </div>
+              )}
             </div>
+          )}
+          {report.truncated && (
+            <p className="text-[11px] font-semibold text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1">
+              Dataset capped at 20,000 rows — narrow the filters for exact figures.
+            </p>
           )}
 
           <div className="flex items-center justify-between text-[11px] text-gray-400 border-t border-gray-100 pt-3">

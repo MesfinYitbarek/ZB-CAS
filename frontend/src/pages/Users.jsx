@@ -1,7 +1,8 @@
 /* pages/Users.jsx */
 import { useState, useRef, useMemo } from 'react';
-import { Plus, Search, Trash2, Edit2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, UserCheck, Upload, Download, FileSpreadsheet, Loader2, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { Plus, Search, Edit2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, UserCheck, UserX, Upload, Download, FileSpreadsheet, Loader2, AlertTriangle, CheckCircle2, X, ArrowUp, ArrowDown, ChevronsUpDown } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
+import { useAuth } from '../context/AuthContext';
 import Modal from '../components/Modal';
 import api from '../utils/api';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -21,24 +22,65 @@ const GENDER_LABELS = {
   Female:            'Female',
 };
 
+// Default (unsorted) order = newest first, matching the API default.
+const DEFAULT_SORT = { key: null, dir: 'desc' };
+
+// Clickable table header with sort-direction indicator.
+function SortableHeader({ label, sortKey, sort, onSort }) {
+  const active = sort.key === sortKey;
+  return (
+    <th className="text-left px-6 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider bg-gray-50">
+      <button
+        onClick={() => onSort(sortKey)}
+        title={`Sort by ${label}`}
+        className={`inline-flex items-center gap-1 uppercase tracking-wider transition-colors hover:text-brand-red ${active ? 'text-brand-red' : ''}`}
+      >
+        {label}
+        {active ? (
+          sort.dir === 'asc'
+            ? <ArrowUp className="w-3.5 h-3.5" />
+            : <ArrowDown className="w-3.5 h-3.5" />
+        ) : (
+          <ChevronsUpDown className="w-3.5 h-3.5 opacity-30" />
+        )}
+      </button>
+    </th>
+  );
+}
+
 export default function Users() {
   const [search,      setSearch]      = useState('');
   const [filterRole,  setFilterRole]  = useState('');
   const [filterStatus,setFilterStatus]= useState('');
   const [modal,       setModal]       = useState(null);    // 'create' | 'edit' | null
   const [selected,    setSelected]    = useState(null);
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
   const { show } = useToast();
+  const { user: currentUser } = useAuth();
   const queryClient = useQueryClient();
+  const currentUserId = currentUser?._id || currentUser?.id;
 
   const [pagination, setPagination] = useState({ page: 1, limit: 10 });
+  const [sort, setSort] = useState(DEFAULT_SORT);
 
   const listParams = useMemo(() => {
     const params = { page: pagination.page, limit: pagination.limit };
     if (filterRole)   params.role   = filterRole;
     if (filterStatus) params.status = filterStatus;
     if (search)       params.search = search;
+    if (sort.key) { params.sortBy = sort.key; params.sortDir = sort.dir; }
     return params;
-  }, [pagination.page, pagination.limit, filterRole, filterStatus, search]);
+  }, [pagination.page, pagination.limit, filterRole, filterStatus, search, sort]);
+
+  // Cycle: asc → desc → default (newest first)
+  const toggleSort = (key) => {
+    setSort((prev) => {
+      if (prev.key !== key) return { key, dir: 'asc' };
+      if (prev.dir === 'asc') return { key, dir: 'desc' };
+      return DEFAULT_SORT;
+    });
+    setPagination((p) => ({ ...p, page: 1 }));
+  };
 
   const { data, isLoading } = useQuery({
     queryKey: queryKeys.users.list(listParams),
@@ -160,9 +202,12 @@ export default function Users() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.users.all }),
   });
 
-  const deactivateUser = useMutation({
-    mutationFn: (id) => api.delete(`/users/${id}`),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.users.all }),
+  const bulkStatus = useMutation({
+    mutationFn: ({ ids, status }) => api.patch('/users/bulk-status', { ids, status }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
+      setSelectedIds(new Set());
+    },
   });
 
   const importUsers = useMutation({
@@ -177,15 +222,15 @@ export default function Users() {
 
   const openEdit = (u) => {
     setForm({
-      employeeId:   u.employeeId,
-      name:         u.name,
+      employeeId:   u.employeeId || '',
+      name:         u.name || '',
       username:     u.username || '',
-      email:        u.email,
+      email:        u.email || '',
       roles:        u.roles || ['EMPLOYEE'],
       gender:       u.gender || '',
       position:     u.position    || '',
       department:   u.department  || '',
-      supervisorId: u.supervisorId?._id || '',
+      supervisorId: u.supervisorId?._id || u.supervisorId || '',
     });
     setSelected(u);
     setModal('edit');
@@ -207,8 +252,11 @@ export default function Users() {
 
   const handleSave = async () => {
     try {
+      if (!form.name?.trim()) { show('Full name is required.', 'error'); return; }
+      if (!form.username?.trim()) { show('Username is required.', 'error'); return; }
+      if (!form.email?.trim()) { show('Email is required.', 'error'); return; }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) { show('Invalid email format.', 'error'); return; }
       if (modal === 'create') {
-        if (!form.username) { show('Username is required.', 'error'); return; }
         await createUser.mutateAsync({ ...form, role: undefined });
         show('User created successfully.', 'success');
       } else {
@@ -224,7 +272,7 @@ export default function Users() {
   const handleDeactivate = async (id) => {
     if (!window.confirm('Deactivate this user?')) return;
     try {
-      await deactivateUser.mutateAsync(id);
+      await updateUser.mutateAsync({ id, payload: { status: 'INACTIVE' } });
       show('User deactivated.', 'success');
     } catch (err) {
       show(err.response?.data?.message || 'Failed.', 'error');
@@ -240,6 +288,48 @@ export default function Users() {
       show(err.response?.data?.message || 'Failed.', 'error');
     }
   };
+
+  // ─── Bulk selection ─────────────────────────────────────────────────────────
+  const selectableIds = users.filter((u) => u._id !== currentUserId).map((u) => u._id);
+  const allPageSelected = selectableIds.length > 0 && selectableIds.every((id) => selectedIds.has(id));
+  const somePageSelected = selectableIds.some((id) => selectedIds.has(id));
+
+  const toggleOne = (id) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAllPage = () => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allPageSelected) selectableIds.forEach((id) => next.delete(id));
+      else selectableIds.forEach((id) => next.add(id));
+      return next;
+    });
+  };
+
+  const bulkIds = () => [...selectedIds];
+
+  const handleBulkStatus = async (status) => {
+    const ids = bulkIds();
+    if (!ids.length) return;
+    const label = status === 'ACTIVE' ? 'activate' : 'deactivate';
+    if (!window.confirm(`${status === 'ACTIVE' ? 'Activate' : 'Deactivate'} ${ids.length} user(s)?`)) return;
+    try {
+      const { data } = await bulkStatus.mutateAsync({ ids, status });
+      let msg = data?.message || `Users ${label}d.`;
+      if (data?.data?.skippedSelf) msg += ' (Your own account was skipped.)';
+      show(msg, 'success');
+    } catch (err) {
+      show(err.response?.data?.message || 'Bulk update failed.', 'error');
+    }
+  };
+
+
 
   // ─── Pagination ───────────────────────────────────────────────────────────
   const goToPage = (page) => {
@@ -332,6 +422,36 @@ export default function Users() {
         </div>
       </div>
 
+      {/* Bulk action bar */}
+      {selectedIds.size > 0 && (
+        <div className="flex items-center gap-2 mb-3 px-4 py-2.5 bg-brand-red-muted border border-brand-red/20 rounded-xl text-sm flex-shrink-0 flex-wrap">
+          <span className="font-semibold text-brand-black">{selectedIds.size} selected</span>
+          <span className="text-gray-300">|</span>
+          <button
+            onClick={() => handleBulkStatus('ACTIVE')}
+            disabled={bulkStatus.isPending}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-300 rounded-lg font-semibold text-sm text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50"
+          >
+            {bulkStatus.isPending
+              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              : <UserCheck className="w-3.5 h-3.5" />} Activate
+          </button>
+          <button
+            onClick={() => handleBulkStatus('INACTIVE')}
+            disabled={bulkStatus.isPending}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-300 rounded-lg font-semibold text-sm text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50"
+          >
+            <UserX className="w-3.5 h-3.5" /> Deactivate
+          </button>
+          <button
+            onClick={() => setSelectedIds(new Set())}
+            className="flex items-center gap-1 px-2 py-1.5 text-gray-500 hover:text-gray-700 text-sm font-medium transition-colors"
+          >
+            <X className="w-3.5 h-3.5" /> Clear
+          </button>
+        </div>
+      )}
+
       {/* Table Container - Scrollable */}
       <div className="bg-white rounded-xl shadow-card border  border-gray-100 overflow-hidden flex flex-col flex-1 min-h-0">
         {isLoading ? (
@@ -343,23 +463,49 @@ export default function Users() {
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-100 sticky top-0 z-10">
                 <tr>
-                  {['Employee ID','Name','Username','Position','Roles','Status','Actions'].map((h) => (
-                    <th key={h} className="text-left px-6 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider bg-gray-50">
-                      {h}
-                    </th>
-                  ))}
+                  <th className="px-4 py-3 bg-gray-50">
+                    <input
+                      type="checkbox"
+                      checked={allPageSelected}
+                      ref={(el) => { if (el) el.indeterminate = !allPageSelected && somePageSelected; }}
+                      onChange={toggleAllPage}
+                      title="Select all on this page"
+                      className="w-4 h-4 accent-brand-red cursor-pointer"
+                    />
+                  </th>
+                  <SortableHeader label="Employee ID" sortKey="employeeId" sort={sort} onSort={toggleSort} />
+                  <SortableHeader label="Name" sortKey="name" sort={sort} onSort={toggleSort} />
+                  <SortableHeader label="Username" sortKey="username" sort={sort} onSort={toggleSort} />
+                  <SortableHeader label="Position" sortKey="position" sort={sort} onSort={toggleSort} />
+                  <th className="text-left px-6 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider bg-gray-50">
+                    Roles
+                  </th>
+                  <SortableHeader label="Status" sortKey="status" sort={sort} onSort={toggleSort} />
+                  <th className="text-left px-6 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider bg-gray-50">
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {users.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-6 py-8 text-center text-gray-400">No users found.</td>
+                    <td colSpan={8} className="px-6 py-8 text-center text-gray-400">No users found.</td>
                   </tr>
                 )}
                 {users.map((u) => (
                   <>
-                    <tr key={u._id} className="hover:bg-brand-red-muted transition-colors">
-                      <td className="px-6 py-3 font-mono text-sm text-gray-600">{u.employeeId}</td>
+                    <tr key={u._id} className={`hover:bg-brand-red-muted transition-colors ${selectedIds.has(u._id) ? 'bg-brand-red-muted/50' : ''}`}>
+                      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(u._id)}
+                          onChange={() => toggleOne(u._id)}
+                          disabled={u._id === currentUserId}
+                          title={u._id === currentUserId ? 'You cannot select your own account' : 'Select user'}
+                          className="w-4 h-4 accent-brand-red cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                        />
+                      </td>
+                      <td className="px-6 py-3 font-mono text-sm text-gray-600">{u.employeeId || '—'}</td>
                       <td className="px-6 py-3 font-semibold text-sm text-brand-black-soft">{u.name}</td>
                       <td className="px-6 py-3 text-sm text-gray-600 font-mono">{u.username || '—'}</td>
                       <td className="px-6 py-3 text-sm text-gray-600">{u.position || '—'}</td>
@@ -400,8 +546,12 @@ export default function Users() {
                             <Edit2 className="w-4 h-4 text-gray-500" />
                           </button>
                           {u.status === 'ACTIVE' && (
-                            <button onClick={() => handleDeactivate(u._id)} className="p-1.5 hover:bg-red-50 rounded transition-colors">
-                              <Trash2 className="w-4 h-4 text-red-600" />
+                            <button
+                              onClick={() => handleDeactivate(u._id)}
+                              title="Deactivate user"
+                              className="p-1.5 hover:bg-red-50 rounded transition-colors"
+                            >
+                              <UserX className="w-4 h-4 text-red-600" />
                             </button>
                           )}
                           {u.status === 'INACTIVE' && (
@@ -419,7 +569,7 @@ export default function Users() {
                     {/* Expanded Details Row */}
                     {expandedUser === u._id && (
                       <tr className="bg-gray-50/50">
-                        <td colSpan={7} className="px-6 py-4">
+                        <td colSpan={8} className="px-6 py-4">
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                             <div>
                               <span className="text-gray-500 text-xs uppercase font-semibold">Username</span>
@@ -519,15 +669,16 @@ export default function Users() {
       >
         <div className="grid grid-cols-2 gap-4">
 
-          {/* Employee ID */}
+          {/* Employee ID (optional) */}
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Employee ID</label>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+              Employee ID <span className="text-gray-400 font-normal text-xs">(optional)</span>
+            </label>
             <input
               value={form.employeeId}
               onChange={(e) => setForm({ ...form, employeeId: e.target.value })}
               placeholder="EMP-001"
-              disabled={modal === 'edit'}
-              className="w-full h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm disabled:bg-gray-100"
+              className="w-full h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm"
             />
           </div>
 
@@ -552,12 +703,9 @@ export default function Users() {
               value={form.username}
               onChange={(e) => setForm({ ...form, username: e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, '') })}
               placeholder="john.doe"
-              disabled={modal === 'edit'}
-              className="w-full h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm disabled:bg-gray-100 font-mono"
+              className="w-full h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm font-mono"
             />
-            {modal === 'create' && (
-              <p className="text-xs text-gray-400 mt-1">Letters, numbers, dots, hyphens, underscores only.</p>
-            )}
+            <p className="text-xs text-gray-400 mt-1">Letters, numbers, dots, hyphens, underscores only.</p>
           </div>
 
           {/* Email */}
@@ -568,8 +716,7 @@ export default function Users() {
               value={form.email}
               onChange={(e) => setForm({ ...form, email: e.target.value })}
               placeholder="john@zemenbank.com"
-              disabled={modal === 'edit'}
-              className="w-full h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm disabled:bg-gray-100"
+              className="w-full h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm"
             />
           </div>
 
@@ -700,8 +847,9 @@ export default function Users() {
               <div className="text-sm">
                 <p className="font-semibold">Bulk import users from Excel or CSV</p>
                 <p className="mt-1 text-gray-700">
-                  Required columns: <code className="font-mono font-semibold">employeeId, name, username, email</code>.
-                  Optional: <code className="font-mono">role, gender, position, department, supervisor, status</code>.
+                  Required columns: <code className="font-mono font-semibold">name, username, email</code>.
+                  Optional: <code className="font-mono">employeeId, role, gender, position, department</code>.
+                  Imported users are set to ACTIVE by default.
                   Max 500 rows per file. Use the template for the correct format.
                 </p>
               </div>

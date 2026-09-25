@@ -86,11 +86,11 @@ export const notifySupervisorReminder = (supervisorId, employeeName, assessmentD
     { assessmentId }
   );
 
-export const notifyDeadlineReminder = (userId, assessmentDescription, daysLeft, assessmentId) =>
+export const notifyDeadlineReminder = (userId, assessmentDescription, leadLabel, assessmentId) =>
   notify(
     userId,
     'DEADLINE_REMINDER',
-    `Assessment deadline in ${daysLeft} day${daysLeft !== 1 ? 's' : ''}`,
+    `Assessment deadline in ${leadLabel}`,
     `"${assessmentDescription || 'Assessment'}" is due soon.`,
     '/assessments',
     { assessmentId }
@@ -103,4 +103,24 @@ export const notifyAccountCreated = (userId) =>
     'Welcome to Zemen Bank CAS',
     'Your account has been created. You can now access your assessments.',
     '/dashboard'
+  );
+
+export const notifySecurityAlert = (userId, title, body, assessmentId) =>
+  notify(
+    userId,
+    'SECURITY_ALERT',
+    title,
+    body,
+    '/assessments',
+    assessmentId ? { assessmentId } : null
+  );
+
+export const notifyRetakeGranted = (userId, assessmentDescription, assessmentId) =>
+  notify(
+    userId,
+    'RETAKE_GRANTED',
+    'Retake access granted',
+    `HR has granted you a retake for "${assessmentDescription || 'Assessment'}". You will receive a new set of questions.`,
+    '/assessments',
+    assessmentId ? { assessmentId } : null
   );

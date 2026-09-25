@@ -46,6 +46,12 @@ export const autoCompleteExpiredAssessments = async () => {
     data: { status: 'COMPLETED' },
   });
 
+  // Update pending supervisor evaluations to prevent them from showing in 'pending' queues
+  await prisma.supervisorEvaluation.updateMany({
+    where: { assessmentId: { in: expired.map(a => a.id) }, status: 'PENDING' },
+    data: { status: 'COMPLETED' },
+  });
+
   // Combined assessments are scored the moment they complete (self + supervisor)
   expired
     .filter(a => a.type === 'Combined')
@@ -60,7 +66,7 @@ const assessmentInclude = {
   creator: { select: { id: true, name: true, email: true } },
   audienceDepartments: { select: { department: true } },
   audienceEmployees: { select: { employeeId: true, employee: { select: { id: true, name: true, email: true, department: true, position: true } } } },
-  assessmentQuestions: { select: { order: true, question: true } },
+  assessmentQuestions: { select: { order: true, pool: true, question: true } },
   supervisorEvaluations: { select: { id: true, employeeId: true, supervisorId: true, status: true, completedAt: true } },
 };
 
@@ -82,7 +88,7 @@ const toLegacy = (a, isAdmin = false) => ({
   targetGroup:     denormalizeTargetGroup(a.targetGroup),
   purpose:         a.purpose,
   description:     a.description,
-  reminderDaysBefore: a.reminderDaysBefore,
+  reminderMinutesBefore: a.reminderMinutesBefore,
   reminderSent:    a.reminderSent,
   targetAudience: {
     type:         a.audienceType,
@@ -96,7 +102,15 @@ const toLegacy = (a, isAdmin = false) => ({
     position:   a.legacyPosition,
   },
   questionIds: a.assessmentQuestions
-    ? a.assessmentQuestions.map(q => ({ ...withSafeQuestion(q.question, isAdmin), _id: q.question.id, targetGroup: denormalizeTargetGroup(q.question.targetGroup) }))
+    ? a.assessmentQuestions
+        .filter(q => (q.pool || 'MAIN') === 'MAIN')
+        .map(q => ({ ...withSafeQuestion(q.question, isAdmin), _id: q.question.id, targetGroup: denormalizeTargetGroup(q.question.targetGroup) }))
+    : [],
+  // Second question set served to retaking users (attempt ≥ 2). Empty = retakes reuse MAIN.
+  reexamQuestionIds: a.assessmentQuestions
+    ? a.assessmentQuestions
+        .filter(q => (q.pool || 'MAIN') === 'REEXAM')
+        .map(q => ({ ...withSafeQuestion(q.question, isAdmin), _id: q.question.id, targetGroup: denormalizeTargetGroup(q.question.targetGroup) }))
     : [],
   startDate:     a.startDate,
   endDate:       a.endDate,
@@ -168,11 +182,18 @@ const deriveLegacyTarget = (targetAudience) => {
 
 // ─── CREATE ──────────────────────────────────────────────────────────────────
 export const createAssessment = asyncHandler(async (req, res, next) => {
-  const { competencyId, targetGroup, purpose, description, targetAudience, reminderDaysBefore, questionIds, startDate, endDate, timeLimit, type, weight, maxAttempts: rawMaxAttempts } = req.body;
+  const { competencyId, targetGroup, purpose, description, targetAudience, reminderMinutesBefore, questionIds, reexamQuestionIds, startDate, endDate, timeLimit, type, weight, maxAttempts: rawMaxAttempts } = req.body;
 
   if (!targetGroup) return next(new AppError('Target group is required.', 400));
   if (!purpose)     return next(new AppError('Purpose is required.', 400));
   if (!validateTargetAudience(targetAudience, next)) return;
+
+  // A question cannot live in both pools (junction is unique per question).
+  const mainIds = questionIds || [];
+  const reexamIds = reexamQuestionIds || [];
+  if (reexamIds.some((id) => mainIds.includes(id))) {
+    return next(new AppError('A question cannot be in both the main and re-exam pools.', 400));
+  }
 
   const normalizedTG = normalizeTargetGroup(targetGroup);
 
@@ -181,6 +202,11 @@ export const createAssessment = asyncHandler(async (req, res, next) => {
     : parseInt(rawMaxAttempts, 10);
   if (maxAttempts !== null && (!Number.isInteger(maxAttempts) || maxAttempts < 1)) {
     return next(new AppError('maxAttempts must be a positive integer or empty for unlimited.', 400));
+  }
+
+  const reminderMinutes = reminderMinutesBefore ? Number(reminderMinutesBefore) : null;
+  if (reminderMinutes !== null && (!Number.isInteger(reminderMinutes) || reminderMinutes < 1 || reminderMinutes > 43200)) {
+    return next(new AppError('Reminder lead time must be between 1 minute and 30 days (43200 minutes).', 400));
   }
 
   const legacyTarget = deriveLegacyTarget(targetAudience);
@@ -194,13 +220,16 @@ export const createAssessment = asyncHandler(async (req, res, next) => {
       description,
       legacyDepartment: legacyTarget.department,
       legacyPosition:   legacyTarget.position,
-      reminderDaysBefore: reminderDaysBefore ? Number(reminderDaysBefore) : null,
+      reminderMinutesBefore: reminderMinutes,
       audienceType:     ta.type || 'ALL_DEPARTMENTS',
       targetAudience:  { create: { type: ta.type || 'ALL_DEPARTMENTS' } },
       audienceDepartments: { create: (ta.departments || []).map(d => ({ department: d })) },
       audienceEmployees:   { create: (ta.employeeIds || []).map(id => ({ employeeId: id })) },
       assessmentQuestions: {
-        create: (questionIds || []).map((qid, idx) => ({ questionId: qid, order: idx })),
+        create: [
+          ...(questionIds || []).map((qid, idx) => ({ questionId: qid, order: idx, pool: 'MAIN' })),
+          ...(reexamQuestionIds || []).map((qid, idx) => ({ questionId: qid, order: idx, pool: 'REEXAM' })),
+        ],
       },
       startDate: new Date(startDate),
       endDate:   new Date(endDate),
@@ -232,11 +261,20 @@ export const createAssessment = asyncHandler(async (req, res, next) => {
 });
 
 // ─── LIST ─────────────────────────────────────────────────────────────────────
+// Whitelisted server-side sorting (`competency` sorts by related name)
+const ASSESSMENT_SORTABLE_FIELDS = new Set(['status', 'type', 'startDate', 'endDate', 'createdAt', 'updatedAt']);
+
+function resolveAssessmentOrderBy(sortBy, sortDir, fallbackDir = 'desc') {
+  const order = sortDir === 'asc' ? 'asc' : sortDir === 'desc' ? 'desc' : fallbackDir;
+  if (sortBy === 'competency') return { competency: { name: order } };
+  return { [ASSESSMENT_SORTABLE_FIELDS.has(sortBy) ? sortBy : 'startDate']: order };
+}
+
 export const getAssessments = asyncHandler(async (req, res) => {
   await autoActivateScheduledAssessments();
   await autoCompleteExpiredAssessments();
 
-  const { status, competencyId, page = 1, limit = 6 } = req.query;
+  const { status, competencyId, page = 1, limit = 6, sortBy, sortDir } = req.query;
 
   const where = {};
   if (status)       where.status       = status;
@@ -261,7 +299,7 @@ export const getAssessments = asyncHandler(async (req, res) => {
       include: assessmentInclude,
       skip,
       take: parseInt(limit, 10),
-      orderBy: { startDate: 'desc' },
+      orderBy: resolveAssessmentOrderBy(sortBy, sortDir, 'desc'),
     }),
     prisma.assessment.count({ where }),
   ]);
@@ -353,8 +391,12 @@ export const updateAssessment = asyncHandler(async (req, res, next) => {
     data.legacyPosition   = legacyTarget.position;
   }
 
-  if (req.body.reminderDaysBefore !== undefined) {
-    data.reminderDaysBefore = req.body.reminderDaysBefore ? Number(req.body.reminderDaysBefore) : null;
+  if (req.body.reminderMinutesBefore !== undefined) {
+    const mins = req.body.reminderMinutesBefore ? Number(req.body.reminderMinutesBefore) : null;
+    if (mins !== null && (!Number.isInteger(mins) || mins < 1 || mins > 43200)) {
+      return next(new AppError('Reminder lead time must be between 1 minute and 30 days (43200 minutes).', 400));
+    }
+    data.reminderMinutesBefore = mins;
     data.reminderSent = false;
   }
 
@@ -363,11 +405,28 @@ export const updateAssessment = asyncHandler(async (req, res, next) => {
     tx.push(prisma.assessment.update({ where: { id: assessment.id }, data }));
   }
 
-  // Replace questionIds
+  // Replace MAIN-pool questionIds (REEXAM pool untouched unless provided)
   if (req.body.questionIds !== undefined) {
-    tx.push(prisma.assessmentQuestion.deleteMany({ where: { assessmentId: assessment.id } }));
+    tx.push(prisma.assessmentQuestion.deleteMany({ where: { assessmentId: assessment.id, pool: 'MAIN' } }));
     tx.push(prisma.assessmentQuestion.createMany({
-      data: (req.body.questionIds || []).map((qid, idx) => ({ assessmentId: assessment.id, questionId: qid, order: idx })),
+      data: (req.body.questionIds || []).map((qid, idx) => ({ assessmentId: assessment.id, questionId: qid, order: idx, pool: 'MAIN' })),
+    }));
+  }
+
+  // Replace REEXAM-pool questions (retake set). Must not overlap MAIN.
+  if (req.body.reexamQuestionIds !== undefined) {
+    const mainIds = req.body.questionIds !== undefined
+      ? (req.body.questionIds || [])
+      : (await prisma.assessmentQuestion.findMany({
+          where: { assessmentId: assessment.id, pool: 'MAIN' },
+          select: { questionId: true },
+        })).map((j) => j.questionId);
+    if ((req.body.reexamQuestionIds || []).some((id) => mainIds.includes(id))) {
+      return next(new AppError('A question cannot be in both the main and re-exam pools.', 400));
+    }
+    tx.push(prisma.assessmentQuestion.deleteMany({ where: { assessmentId: assessment.id, pool: 'REEXAM' } }));
+    tx.push(prisma.assessmentQuestion.createMany({
+      data: (req.body.reexamQuestionIds || []).map((qid, idx) => ({ assessmentId: assessment.id, questionId: qid, order: idx, pool: 'REEXAM' })),
     }));
   }
 
@@ -552,6 +611,8 @@ export const getActiveAssessments = asyncHandler(async (req, res) => {
   await autoActivateScheduledAssessments();
   await autoCompleteExpiredAssessments();
 
+  const { sortBy, sortDir } = req.query;
+
   const me = await prisma.user.findUnique({ where: { id: req.user.id } });
   if (!me) return res.status(404).json({ status: 'fail', message: 'User not found' });
 
@@ -569,7 +630,7 @@ export const getActiveAssessments = asyncHandler(async (req, res) => {
   const assessments = await prisma.assessment.findMany({
     where,
     include: assessmentInclude,
-    orderBy: { startDate: 'asc' },
+    orderBy: resolveAssessmentOrderBy(sortBy, sortDir, 'asc'),
   });
 
   logger.debug({ event: 'active_assessments_found', count: assessments.length, userId: me.id });
@@ -602,7 +663,7 @@ export const duplicateAssessment = asyncHandler(async (req, res, next) => {
     const questionId = q.question?.id ?? q.questionId;
     if (!questionId || seenQuestionIds.has(questionId)) continue;
     seenQuestionIds.add(questionId);
-    questionLinks.push({ questionId, order: q.order ?? 0 });
+    questionLinks.push({ questionId, order: q.order ?? 0, pool: q.pool || 'MAIN' });
   }
 
   const clone = await prisma.assessment.create({
@@ -613,7 +674,7 @@ export const duplicateAssessment = asyncHandler(async (req, res, next) => {
       description:        source.description ? `${source.description} (copy)` : '',
       legacyDepartment:   source.legacyDepartment,
       legacyPosition:     source.legacyPosition,
-      reminderDaysBefore: source.reminderDaysBefore,
+      reminderMinutesBefore: source.reminderMinutesBefore,
       reminderSent:       false,
       audienceType:        source.audienceType,
       targetAudience:      { create: { type: source.audienceType } },
@@ -694,23 +755,34 @@ export const getDepartments = asyncHandler(async (req, res) => {
 });
 
 // ─── PROCESS REMINDERS (called by scheduler AND HTTP endpoint) ──────────────
+// Lead time is stored in minutes so reminders can be set in minutes, hours,
+// or days. Runs every 30 minutes (see schedulerService) for sub-day precision.
+export const formatReminderLead = (msLeft) => {
+  const mins = Math.max(1, Math.ceil(msLeft / 60000));
+  if (mins < 60) return `${mins} minute${mins !== 1 ? 's' : ''}`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 48) return `${hours} hour${hours !== 1 ? 's' : ''}`;
+  const days = Math.ceil(mins / 1440);
+  return `${days} day${days !== 1 ? 's' : ''}`;
+};
+
 export const processPendingReminders = async () => {
   const now = new Date();
   const assessments = await prisma.assessment.findMany({
-    where: { status: 'ACTIVE', reminderDaysBefore: { not: null }, reminderSent: false },
+    where: { status: 'ACTIVE', reminderMinutesBefore: { not: null }, reminderSent: false },
     include: assessmentInclude,
   });
   let processedCount = 0;
 
   for (const assessment of assessments) {
-    const deadline = new Date(assessment.endDate);
-    const daysLeft = Math.ceil((deadline - now) / (1000 * 60 * 60 * 24));
-    if (daysLeft <= assessment.reminderDaysBefore) {
+    const msLeft = new Date(assessment.endDate) - now;
+    if (msLeft <= 0) continue; // expired — completion flow owns it now
+    if (msLeft <= assessment.reminderMinutesBefore * 60000) {
+      const leadLabel = formatReminderLead(msLeft);
       const employees = await resolveEmployees(assessment);
       employees.forEach(emp => {
-        sendAssessmentReminderEmail(emp, assessment);
-        const dl = Math.max(1, Math.ceil((new Date(assessment.endDate) - new Date()) / 86400000));
-        notifyDeadlineReminder(emp.id, assessment.description, dl, assessment.id);
+        sendAssessmentReminderEmail(emp, assessment, leadLabel);
+        notifyDeadlineReminder(emp.id, assessment.description, leadLabel, assessment.id);
       });
       await prisma.assessment.update({ where: { id: assessment.id }, data: { reminderSent: true } });
       processedCount++;

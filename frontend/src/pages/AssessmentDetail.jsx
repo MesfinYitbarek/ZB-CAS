@@ -112,6 +112,23 @@ function statusNote(status) {
   }
 }
 
+const REMINDER_UNIT_MINUTES = { minutes: 1, hours: 60, days: 1440 };
+
+// Split stored minutes into the friendliest value+unit for the edit form.
+function splitReminder(mins) {
+  if (!mins) return { reminderValue: '', reminderUnit: 'days' };
+  if (mins % 1440 === 0) return { reminderValue: String(mins / 1440), reminderUnit: 'days' };
+  if (mins % 60 === 0) return { reminderValue: String(mins / 60), reminderUnit: 'hours' };
+  return { reminderValue: String(mins), reminderUnit: 'minutes' };
+}
+
+function formatReminder(mins) {
+  if (!mins) return '—';
+  if (mins % 1440 === 0) { const d = mins / 1440; return `${d} day${d !== 1 ? 's' : ''} before`; }
+  if (mins % 60 === 0) { const h = mins / 60; return `${h} hour${h !== 1 ? 's' : ''} before`; }
+  return `${mins} minute${mins !== 1 ? 's' : ''} before`;
+}
+
 export default function AssessmentDetail() {
   const { id } = useParams();
   const nav = useNavigate();
@@ -129,10 +146,12 @@ export default function AssessmentDetail() {
   const [form, setForm] = useState({    competencyId: '',
     targetGroup: '',
     purpose: '',
-    reminderDaysBefore: '',
+    reminderValue: '',
+    reminderUnit: 'days',
     description: '',
     targetAudience: { type: 'ALL_DEPARTMENTS', departments: [], employeeIds: [] },
     questionIds: [],
+    reexamQuestionIds: [],
     startDate: '',
     startTime: '09:00',
     endDate: '',
@@ -170,10 +189,11 @@ export default function AssessmentDetail() {
       competencyId: a.competencyId?.id || a.competencyId?._id || '',
       targetGroup: a.targetGroup || '',
       purpose: a.purpose || '',
-      reminderDaysBefore: a.reminderDaysBefore || '',
+      ...splitReminder(a.reminderMinutesBefore),
       description: a.description || '',
       targetAudience: a.targetAudience || { type: 'ALL_DEPARTMENTS', departments: [], employeeIds: [] },
       questionIds: a.questionIds?.map((q) => q._id) || [],
+      reexamQuestionIds: a.reexamQuestionIds?.map((q) => q._id) || [],
       startDate: a.startDate?.split('T')[0] || '',
       startTime: a.startDate ? new Date(a.startDate).toISOString().slice(11, 16) : '09:00',
       endDate: a.endDate?.split('T')[0] || '',
@@ -231,7 +251,7 @@ export default function AssessmentDetail() {
         ...rest,
         startDate: startDateTime,
         endDate: endDateTime,
-        reminderDaysBefore: form.reminderDaysBefore ? Number(form.reminderDaysBefore) : null,
+        reminderMinutesBefore: form.reminderValue ? Number(form.reminderValue) * REMINDER_UNIT_MINUTES[form.reminderUnit] : null,
         timeLimit: form.timeLimit ? Number(form.timeLimit) : null,
         maxAttempts: form.maxAttempts ? Number(form.maxAttempts) : null,
       };
@@ -262,6 +282,18 @@ export default function AssessmentDetail() {
         ? prev.questionIds.filter((id) => id !== qId)
         : [...prev.questionIds, qId],
     }));
+  };
+
+  const toggleReexamQuestion = (qId) => {
+    setForm((prev) => {
+      if (prev.questionIds.includes(qId)) return prev;
+      return {
+        ...prev,
+        reexamQuestionIds: prev.reexamQuestionIds.includes(qId)
+          ? prev.reexamQuestionIds.filter((id) => id !== qId)
+          : [...prev.reexamQuestionIds, qId],
+      };
+    });
   };
 
   const openDeadlineModal = () => {
@@ -502,7 +534,7 @@ export default function AssessmentDetail() {
               <div className="flex items-center justify-between">
                 <span className="text-gray-500">Reminder</span>
                 <span className="font-medium">
-                  {assessment.reminderDaysBefore ? `${assessment.reminderDaysBefore} day${assessment.reminderDaysBefore !== 1 ? 's' : ''} before` : '—'}
+                  {formatReminder(assessment.reminderMinutesBefore)}
                 </span>
               </div>
               {assessment.reminderSent && (
@@ -545,6 +577,9 @@ export default function AssessmentDetail() {
               <SummaryRow icon={Tag} label="Target Group" value={assessment.targetGroup ? assessment.targetGroup.replace('-', ' ') : '—'} />
               <SummaryRow icon={Repeat} label="Attempts" value={assessment.maxAttempts ?? 'Unlimited'} />
               <SummaryRow icon={FileText} label="Questions" value={`${questionCount} question${questionCount !== 1 ? 's' : ''}`} />
+              {(assessment.reexamQuestionIds?.length || 0) > 0 && (
+                <SummaryRow icon={FileText} label="Re-exam pool" value={`${assessment.reexamQuestionIds.length} question${assessment.reexamQuestionIds.length !== 1 ? 's' : ''}`} />
+              )}
             </div>
           </div>
         </div>
@@ -695,12 +730,21 @@ export default function AssessmentDetail() {
             </div>
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                Reminder <span className="text-gray-400 font-normal text-xs">(days before deadline)</span>
+                Reminder <span className="text-gray-400 font-normal text-xs">(before deadline)</span>
               </label>
-              <input type="number" min="1" max="30" placeholder="Optional"
-                value={form.reminderDaysBefore}
-                onChange={(e) => setForm(prev => ({ ...prev, reminderDaysBefore: e.target.value }))}
-                className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red text-sm" />
+              <div className="flex gap-2">
+                <input type="number" min="1" placeholder="Optional"
+                  value={form.reminderValue}
+                  onChange={(e) => setForm(prev => ({ ...prev, reminderValue: e.target.value }))}
+                  className="flex-1 h-10 px-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red text-sm" />
+                <select value={form.reminderUnit}
+                  onChange={(e) => setForm(prev => ({ ...prev, reminderUnit: e.target.value }))}
+                  className="h-10 px-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-red text-sm">
+                  <option value="minutes">Min</option>
+                  <option value="hours">Hrs</option>
+                  <option value="days">Days</option>
+                </select>
+              </div>
             </div>
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">
@@ -853,6 +897,29 @@ export default function AssessmentDetail() {
                   </label>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* Re-exam Questions (second set for retakes) */}
+          {questions.length > 0 && (
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                Re-exam Questions <span className="text-gray-400 font-normal text-xs">(optional — served on retakes)</span>
+              </label>
+              <div className="border border-gray-200 rounded-lg max-h-48 overflow-y-auto p-2 space-y-1">
+                {questions.filter((q) => !form.questionIds.includes(q._id)).map((q) => (
+                  <label key={q._id} className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer text-sm">
+                    <input type="checkbox" checked={form.reexamQuestionIds.includes(q._id)} onChange={() => toggleReexamQuestion(q._id)}
+                      className="w-4 h-4 text-brand-red focus:ring-brand-red rounded" />
+                    <span className="flex-1 line-clamp-1">{q.text}</span>
+                    <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded">{q.type}</span>
+                  </label>
+                ))}
+                {questions.filter((q) => !form.questionIds.includes(q._id)).length === 0 && (
+                  <p className="text-xs text-gray-400 text-center py-3">All available questions are in the main set.</p>
+                )}
+              </div>
+              <p className="text-xs text-gray-500 mt-1">{form.reexamQuestionIds.length} re-exam question(s) selected</p>
             </div>
           )}
         </div>

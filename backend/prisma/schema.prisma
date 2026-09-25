@@ -93,6 +93,8 @@ enum NotificationType {
   SUPERVISOR_REMINDER
   DEADLINE_REMINDER
   ACCOUNT_CREATED
+  SECURITY_ALERT
+  RETAKE_GRANTED
 }
 
 enum FaqCategory {
@@ -147,11 +149,16 @@ enum GeneratedReportStatus {
   FAILED
 }
 
+enum QuestionPool {
+  MAIN
+  REEXAM
+}
+
 // ─── Models ───────────────────────────────────────────────────────────────────
 
 model User {
   id                  String     @id @default(cuid())
-  employeeId          String     @unique
+  employeeId          String?    @unique
   name                String
   username            String     @unique
   email               String     @unique
@@ -192,6 +199,8 @@ model User {
   audienceEmployeeAssessments AssessmentTargetAudienceEmployee[]
   employeeResponses       Response[]              @relation("ResponseEmployee")
   activities              ActivityLog[]           @relation("UserActivities")
+  retakeGrants            RetakeGrant[]
+  retakeGrantsGiven       RetakeGrant[]           @relation("RetakeGrantedBy")
 
   @@index([supervisorId])
   @@index([department, status])
@@ -264,7 +273,7 @@ model Assessment {
   competencyId        String
   targetGroup         TargetGroup
   purpose             String
-  reminderDaysBefore  Int?
+  reminderMinutesBefore Int?
   reminderSent        Boolean         @default(false)
   audienceType        AudienceType    @default(ALL_DEPARTMENTS)
   description         String          @default("")
@@ -289,6 +298,7 @@ model Assessment {
   audienceDepartments AssessmentTargetAudienceDepartment[]
   audienceEmployees   AssessmentTargetAudienceEmployee[]
   assessmentQuestions AssessmentQuestion[]
+  retakeGrants        RetakeGrant[]
   supervisorEvaluations SupervisorEvaluation[]
   responses           Response[]
   results             Result[]
@@ -333,16 +343,39 @@ model AssessmentTargetAudienceEmployee {
 }
 
 model AssessmentQuestion {
-  id           String   @id @default(cuid())
+  id           String       @id @default(cuid())
   assessmentId String
   questionId   String
-  order        Int      @default(0)
+  order        Int          @default(0)
+  pool         QuestionPool @default(MAIN)
   assessment   Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
   question     Question   @relation(fields: [questionId], references: [id], onDelete: Cascade)
 
   @@unique([assessmentId, questionId])
   @@index([assessmentId])
+  @@index([assessmentId, pool])
   @@index([questionId])
+}
+
+// HR-granted extra attempts for one user on one assessment.
+// Base attempts still come from Assessment.maxAttempts; each grant adds
+// `extraAttempts` consumable attempts (tracked via `usedAttempts`).
+model RetakeGrant {
+  id            String   @id @default(cuid())
+  assessmentId  String
+  userId        String
+  grantedBy     String
+  reason        String   @default("")
+  extraAttempts Int      @default(1)
+  usedAttempts  Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  assessment Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  granter    User       @relation("RetakeGrantedBy", fields: [grantedBy], references: [id], onDelete: Cascade)
+
+  @@index([assessmentId, userId])
+  @@index([userId])
 }
 
 model SupervisorEvaluation {
@@ -440,6 +473,8 @@ model ResultQuestionDetail {
   @@index([resultId])
 }
 
+/// @deprecated — written only by seedBulkReports.js (demo only).
+/// Production analytics use the live Result table via analyticsService.js.
 model Report {
   id           String       @id @default(cuid())
   userId       String
@@ -475,6 +510,8 @@ model Report {
   @@index([overallScore])
 }
 
+/// @deprecated — written only by seedBulkReports.js (demo only).
+/// Production analytics use the live Result table via analyticsService.js.
 model ReportCompetency {
   id              String   @id @default(cuid())
   reportId        String
@@ -505,6 +542,7 @@ model GeneratedReport {
   fileName    String                @default("")
   rowCount    Int                   @default(0)
   status      GeneratedReportStatus @default(PENDING)
+  truncated   Boolean               @default(false)
   error       String?
   generatedBy String
   generator   User                  @relation("GeneratedReports", fields: [generatedBy], references: [id], onDelete: Cascade)
@@ -578,12 +616,23 @@ model SecurityViolation {
   attemptCount Int    @default(0)
   tabSwitches  Int       @default(0)
   copyAttempts Int       @default(0)
+  pasteAttempts Int      @default(0)
   rightClickAttempts Int @default(0)
   fullscreenExits Int   @default(0)
   devToolsAttempts Int  @default(0)
   windowBlurs  Int       @default(0)
   printAttempts Int      @default(0)
   isHighRisk   Boolean   @default(false)
+  autoSubmitted Boolean  @default(false)
+  // Distinct client IPs / user-agents observed during attempts (append-only,
+  // capped) — feeds IP/device-change anomaly detection.
+  ipAddresses  String[]  @default([])
+  userAgents   String[]  @default([])
+  // Server-side anomaly flags: { ipChanged, deviceChanged, answerVelocity,
+  // rapidCount, lastAnswerAt, lastAnswerIp, ... }.
+  anomalies    Json?
+  // Frozen per-attempt snapshots archived on retake/grant (see startAttempt).
+  attemptArchives Json?  @default("[]")
   securityLog  Json?
   submittedAt  DateTime?
   createdAt    DateTime  @default(now())

@@ -127,13 +127,18 @@ export const sendSupervisorReminder = async (supervisor, employeeName, assessmen
   return send(supervisor.email, subject, html, text);
 };
 
-// ─── 6. Assessment reminder (days before deadline) ──────────────────────────
-export const sendAssessmentReminderEmail = async (user, assessment) => {
+// ─── 6. Assessment reminder (minutes/hours/days before deadline) ───────────
+export const sendAssessmentReminderEmail = async (user, assessment, leadLabel = null) => {
   const now = new Date();
   const deadline = new Date(assessment.endDate);
-  const daysLeft = Math.max(1, Math.ceil((deadline - now) / (1000 * 60 * 60 * 24)));
-  const subject = `Reminder: "${assessment.description || 'Assessment'}" – Deadline in ${daysLeft} Day(s)`;
-  const text    = `Hi ${user.name},\n\nThis is a reminder that the assessment "${assessment.description || 'Assessment'}" deadline is in ${daysLeft} day(s).\nDeadline: ${assessment.endDate}\n`;
+  const msLeft = Math.max(0, deadline - now);
+  const mins = Math.max(1, Math.ceil(msLeft / 60000));
+  const label = leadLabel
+    || (mins < 60 ? `${mins} minute${mins !== 1 ? 's' : ''}`
+      : mins < 2880 ? `${Math.floor(mins / 60)} hour${Math.floor(mins / 60) !== 1 ? 's' : ''}`
+      : `${Math.ceil(mins / 1440)} day${Math.ceil(mins / 1440) !== 1 ? 's' : ''}`);
+  const subject = `Reminder: "${assessment.description || 'Assessment'}" – Deadline in ${label}`;
+  const text    = `Hi ${user.name},\n\nThis is a reminder that the assessment "${assessment.description || 'Assessment'}" deadline is in ${label}.\nDeadline: ${assessment.endDate}\n`;
   const html    = wrap(`
     <p>Hi <strong>${user.name}</strong>,</p>
     <p>This is a friendly reminder that the following assessment deadline is approaching:</p>
@@ -147,8 +152,8 @@ export const sendAssessmentReminderEmail = async (user, assessment) => {
         <td style="padding:8px;border:1px solid #ddd;color:#C8102E;font-weight:bold">${new Date(assessment.endDate).toLocaleString()}</td>
       </tr>
       <tr>
-        <td style="padding:8px;border:1px solid #ddd;background:#f9f9f9;font-weight:bold">Days Remaining</td>
-        <td style="padding:8px;border:1px solid #ddd">${daysLeft} day(s)</td>
+        <td style="padding:8px;border:1px solid #ddd;background:#f9f9f9;font-weight:bold">Time Remaining</td>
+        <td style="padding:8px;border:1px solid #ddd">${label}</td>
       </tr>
     </table>
     <p>Please log in and complete your assessment before the deadline.</p>

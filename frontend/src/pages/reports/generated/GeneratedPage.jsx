@@ -110,7 +110,6 @@ export default function GeneratedPage() {
                     <td className="px-4 py-2.5 min-w-0">
                       <button type="button" onClick={() => setDetail(r)} className="text-left min-w-0 max-w-full">
                         <p className="font-semibold text-gray-800 text-[13px] truncate hover:text-brand-red">{r.title}</p>
-                        {r.description && <p className="text-[11px] text-gray-400 truncate">{r.description}</p>}
                       </button>
                     </td>
                     <td className="px-3 py-2.5 whitespace-nowrap">
@@ -128,6 +127,9 @@ export default function GeneratedPage() {
                       </span>
                       {r.status === 'FAILED' && r.error && (
                         <p className="text-[10px] text-red-400 max-w-[180px] truncate mt-0.5" title={r.error}>{r.error}</p>
+                      )}
+                      {r.truncated && (
+                        <p className="text-[10px] font-semibold text-amber-600 mt-0.5" title="Dataset capped at 20,000 rows">Truncated</p>
                       )}
                     </td>
                     <td className="px-3 py-2.5 text-gray-600 tabular-nums">{r.status === 'READY' ? r.rowCount : '—'}</td>

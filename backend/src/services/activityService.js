@@ -46,6 +46,8 @@ const isAdminRole = (roles) =>
 // High-volume / non-admin entities (Response, Result, Feedback,
 // SupervisorEvaluation, …) and session noise (login/logout/role_switch,
 // password flows) are intentionally dropped so the log stays readable.
+// SecurityViolation is tracked but ONLY for significant events (high-risk
+// flag, auto-submit, anomalies, retake grants) — never per-violation noise.
 const TRACKED_ENTITIES = new Set([
   'User',
   'Assessment',
@@ -54,7 +56,11 @@ const TRACKED_ENTITIES = new Set([
   'Recommendation',
   'FAQ',
   'GeneratedReport',
+  'SecurityViolation',
 ]);
+
+// Entities exempt from the admin-only gate (employee-originated but audit-worthy).
+const NON_ADMIN_ALLOWED_ENTITIES = new Set(['SecurityViolation']);
 
 // Session/auth noise on the User entity — never stored even for admins.
 const IGNORED_USER_ACTIONS = new Set([
@@ -80,8 +86,9 @@ export const logActivity = async ({ req, actor, action, entity, entityId, descri
     const resolved = await resolveActor({ req, actor });
 
     // The activity log is an admin audit trail only — employee and supervisor
-    // actions (and system-triggered events without an admin actor) are skipped.
-    if (!isAdminRole(resolved.actorRoles)) return false;
+    // actions (and system-triggered events without an admin actor) are skipped,
+    // except for explicitly exempt security entities.
+    if (!isAdminRole(resolved.actorRoles) && !NON_ADMIN_ALLOWED_ENTITIES.has(entityKey)) return false;
 
     await prisma.activityLog.create({
       data: {

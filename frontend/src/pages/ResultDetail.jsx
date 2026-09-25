@@ -5,7 +5,8 @@ import { useToast } from '../context/ToastContext';
 import {
   ArrowLeft, FileText, Check, ChevronDown, ChevronUp, User, Users,
   Scale, Info, Shield, AlertCircle, CheckCircle2, Award, Clock,
-  Target, Building2, Briefcase, ListChecks, MessageSquare
+  Target, Building2, Briefcase, ListChecks, MessageSquare, RotateCcw,
+  Globe, MonitorSmartphone, Gauge
 } from 'lucide-react';
 import api from '../utils/api';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -95,22 +96,40 @@ const TypeBadge = ({ type }) => {
 
 const formatViolationType = (type) => ({
   'FULLSCREEN_EXIT': 'Fullscreen Exit',
+  'FULLSCREEN_DENIED': 'Fullscreen Denied',
   'TAB_SWITCH': 'Tab Switch',
   'WINDOW_BLUR': 'Window Blur',
   'RIGHT_CLICK': 'Right Click',
   'COPY_ATTEMPT': 'Copy Attempt',
+  'CUT_ATTEMPT': 'Cut Attempt',
+  'PASTE_ATTEMPT': 'Paste Attempt',
   'PRINT_ATTEMPT': 'Print Attempt',
+  'SCREENSHOT_ATTEMPT': 'Screenshot Attempt',
+  'DEVTOOLS': 'Developer Tools',
+  'DEVTOOLS_ATTEMPT': 'Developer Tools',
   'DEV_TOOLS': 'Developer Tools',
-}[type] || type.replace(/_/g, ' '));
+  'VIEW_SOURCE_ATTEMPT': 'View Source',
+  'SAVE_ATTEMPT': 'Save Attempt',
+  'TIME_EXPIRED': 'Time Expired',
+}[type] || String(type || '').replace(/_/g, ' '));
 
 const getViolationStyle = (type) => ({
   'FULLSCREEN_EXIT': { bg: 'bg-gray-100', text: 'text-gray-700', dot: 'bg-gray-500' },
+  'FULLSCREEN_DENIED': { bg: 'bg-gray-100', text: 'text-gray-700', dot: 'bg-gray-500' },
   'TAB_SWITCH': { bg: 'bg-gray-100', text: 'text-gray-700', dot: 'bg-gray-500' },
   'WINDOW_BLUR': { bg: 'bg-gray-100', text: 'text-gray-700', dot: 'bg-gray-500' },
   'RIGHT_CLICK': { bg: 'bg-red-100', text: 'text-red-700', dot: 'bg-red-500' },
   'COPY_ATTEMPT': { bg: 'bg-gray-100', text: 'text-gray-700', dot: 'bg-gray-500' },
+  'CUT_ATTEMPT': { bg: 'bg-gray-100', text: 'text-gray-700', dot: 'bg-gray-500' },
+  'PASTE_ATTEMPT': { bg: 'bg-amber-100', text: 'text-amber-700', dot: 'bg-amber-500' },
   'PRINT_ATTEMPT': { bg: 'bg-gray-100', text: 'text-gray-700', dot: 'bg-gray-500' },
+  'SCREENSHOT_ATTEMPT': { bg: 'bg-red-100', text: 'text-red-700', dot: 'bg-red-500' },
+  'DEVTOOLS': { bg: 'bg-gray-100', text: 'text-gray-700', dot: 'bg-gray-500' },
+  'DEVTOOLS_ATTEMPT': { bg: 'bg-gray-100', text: 'text-gray-700', dot: 'bg-gray-500' },
   'DEV_TOOLS': { bg: 'bg-gray-100', text: 'text-gray-700', dot: 'bg-gray-500' },
+  'VIEW_SOURCE_ATTEMPT': { bg: 'bg-gray-100', text: 'text-gray-700', dot: 'bg-gray-500' },
+  'SAVE_ATTEMPT': { bg: 'bg-gray-100', text: 'text-gray-700', dot: 'bg-gray-500' },
+  'TIME_EXPIRED': { bg: 'bg-gray-100', text: 'text-gray-700', dot: 'bg-gray-500' },
 }[type] || { bg: 'bg-gray-100', text: 'text-gray-700', dot: 'bg-gray-400' });
 
 // ─── Question detail row (expandable) ────────────────────────────────────────
@@ -221,10 +240,25 @@ const QuestionDetailsSection = ({ questionDetails, summary, loading, gradeMap, c
 };
 
 // ─── Security panel ──────────────────────────────────────────────────────────
-const SecuritySection = ({ securityData, loading }) => {
+const SecuritySection = ({ securityData, loading, canGrantRetake, onGrantRetake, granting }) => {
   const [open, setOpen] = useState(true);
+  const [showArchives, setShowArchives] = useState(false);
   if (loading) return <div className="text-center py-6 text-gray-400 text-sm">Loading security data...</div>;
   if (!securityData) return null;
+
+  const summary = securityData.summary || {};
+  const anomalies = securityData.anomalies || {};
+  const archives = Array.isArray(securityData.attemptArchives) ? securityData.attemptArchives : [];
+  const grants = Array.isArray(securityData.retakeGrants) ? securityData.retakeGrants : [];
+  const counters = [
+    ['Tab switches', summary.tabSwitches],
+    ['Fullscreen exits', summary.fullscreenExits],
+    ['Copy/cut', summary.copyAttempts],
+    ['Paste', summary.pasteAttempts],
+    ['DevTools', summary.devToolsAttempts],
+    ['Print/screen', summary.printAttempts],
+  ].filter(([, v]) => (v || 0) > 0);
+
   return (
     <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
       <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between px-5 py-4 hover:bg-gray-50 transition-colors">
@@ -236,40 +270,132 @@ const SecuritySection = ({ securityData, loading }) => {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {securityData.summary?.isHighRisk && (
+          {summary.isHighRisk && (
             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-600 flex items-center gap-1">
               <AlertCircle className="w-3 h-3" /> HIGH RISK
             </span>
           )}
-          <span className="text-xs font-bold text-gray-600">{securityData.summary?.totalViolations || 0} violations</span>
+          {summary.autoSubmitted && (
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-brand-red text-white flex items-center gap-1">
+              AUTO-SUBMITTED
+            </span>
+          )}
+          <span className="text-xs font-bold text-gray-600">{summary.totalViolations || 0} violations</span>
           <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} />
         </div>
       </button>
       {open && (
-        securityData.violations && securityData.violations.length > 0 ? (
-          <div className="border-t border-gray-100 divide-y divide-gray-50">
-            {securityData.violations.map((v, i) => {
-              const style = getViolationStyle(v.type);
-              return (
-                <div key={i} className="px-5 py-3 flex items-center gap-3">
-                  <span className={`w-2 h-2 rounded-full ${style.dot} flex-shrink-0`} />
-                  <div className="flex-1 min-w-0">
-                    <p className={`text-xs font-semibold ${style.text}`}>{formatViolationType(v.type)}</p>
-                    {v.details && <p className="text-[11px] text-gray-400 truncate">{v.details}</p>}
+        <div className="border-t border-gray-100">
+          {/* HR retake grant */}
+          {canGrantRetake && (
+            <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between gap-3 bg-gray-50/60">
+              <p className="text-xs text-gray-500">Grant this user a fresh attempt — they will get new re-exam questions when defined.</p>
+              <button
+                onClick={(e) => { e.stopPropagation(); onGrantRetake?.(); }}
+                disabled={granting}
+                className="flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-brand-red text-white rounded-lg hover:bg-brand-red-dark transition-colors disabled:opacity-50"
+              >
+                <RotateCcw className="w-3.5 h-3.5" /> {granting ? 'Granting…' : 'Grant Retake'}
+              </button>
+            </div>
+          )}
+
+          {/* Per-type breakdown */}
+          {counters.length > 0 && (
+            <div className="px-5 py-3 border-b border-gray-100 flex flex-wrap gap-1.5">
+              {counters.map(([label, v]) => (
+                <span key={label} className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
+                  {label}: {v}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* Anomaly flags */}
+          {(anomalies.ipChanged || anomalies.deviceChanged || anomalies.answerVelocity) && (
+            <div className="px-5 py-3 border-b border-gray-100 space-y-1.5">
+              {anomalies.ipChanged && (
+                <p className="text-[11px] font-semibold text-amber-700 flex items-center gap-1.5">
+                  <Globe className="w-3.5 h-3.5" /> IP address changed mid-attempt ({(securityData.ipAddresses || []).length} seen)
+                </p>
+              )}
+              {anomalies.deviceChanged && (
+                <p className="text-[11px] font-semibold text-amber-700 flex items-center gap-1.5">
+                  <MonitorSmartphone className="w-3.5 h-3.5" /> Device/browser changed mid-attempt
+                </p>
+              )}
+              {anomalies.answerVelocity && (
+                <p className="text-[11px] font-semibold text-amber-700 flex items-center gap-1.5">
+                  <Gauge className="w-3.5 h-3.5" /> Abnormally rapid answer changes detected
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Violation rows */}
+          {securityData.violations && securityData.violations.length > 0 ? (
+            <div className="divide-y divide-gray-50">
+              {securityData.violations.map((v, i) => {
+                const style = getViolationStyle(v.type);
+                return (
+                  <div key={i} className="px-5 py-3 flex items-center gap-3">
+                    <span className={`w-2 h-2 rounded-full ${style.dot} flex-shrink-0`} />
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-xs font-semibold ${style.text}`}>{formatViolationType(v.type)}</p>
+                      {v.details && <p className="text-[11px] text-gray-400 truncate">{v.details}</p>}
+                    </div>
+                    <span className="text-[11px] text-gray-400 flex-shrink-0 tabular-nums">
+                      {new Date(v.timestamp).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    </span>
                   </div>
-                  <span className="text-[11px] text-gray-400 flex-shrink-0 tabular-nums">
-                    {new Date(v.timestamp).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                );
+              })}
+            </div>
+          ) : (
+            <div className="px-5 py-4 flex items-center gap-2 text-brand-black">
+              <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+              <p className="text-xs font-semibold">No violations detected</p>
+            </div>
+          )}
+
+          {/* Retake grants ledger */}
+          {grants.length > 0 && (
+            <div className="border-t border-gray-100 px-5 py-3 space-y-1.5">
+              <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wide">Retake grants</p>
+              {grants.map((g) => (
+                <div key={g._id} className="text-[11px] text-gray-600 bg-gray-50 rounded-lg px-3 py-2 flex items-center justify-between gap-2">
+                  <span>
+                    +{g.extraAttempts} attempt{g.extraAttempts !== 1 ? 's' : ''} by {g.grantedBy?.name || 'HR'}
+                    {g.reason ? ` — “{g.reason}”` : ''}
+                  </span>
+                  <span className={`font-bold flex-shrink-0 ${g.remaining > 0 ? 'text-green-700' : 'text-gray-400'}`}>
+                    {g.remaining > 0 ? `${g.remaining} left` : 'used'}
                   </span>
                 </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="border-t border-gray-100 px-5 py-4 flex items-center gap-2 text-brand-black">
-            <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
-            <p className="text-xs font-semibold">No violations detected</p>
-          </div>
-        )
+              ))}
+            </div>
+          )}
+
+          {/* Archived prior attempts */}
+          {archives.length > 0 && (
+            <div className="border-t border-gray-100">
+              <button onClick={() => setShowArchives(v => !v)} className="w-full px-5 py-2.5 flex items-center justify-between text-xs font-semibold text-gray-500 hover:bg-gray-50">
+                <span>{archives.length} prior attempt{archives.length !== 1 ? 's' : ''} archived (kept for audit)</span>
+                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showArchives ? 'rotate-180' : ''}`} />
+              </button>
+              {showArchives && (
+                <div className="px-5 pb-3 space-y-1.5">
+                  {archives.map((a, i) => (
+                    <div key={i} className="text-[11px] text-gray-500 bg-gray-50 rounded-lg px-3 py-2 flex items-center justify-between gap-2">
+                      <span>Attempt {a.attempt ?? i + 1}{a.autoSubmitted ? ' · auto-submitted' : ''}{a.isHighRisk ? ' · high-risk' : ''}</span>
+                      <span className="font-semibold tabular-nums">{a.totalViolations || 0} violations · {a.archivedAt ? new Date(a.archivedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : ''}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
@@ -306,14 +432,42 @@ export default function ResultDetail() {
   const userId = result ? (typeof result.userId === 'object' ? (result.userId._id || result.userId.id) : result.userId) : null;
   const assessmentId = result ? (result.assessmentId?._id || result.assessmentId) : null;
 
+  // Security records are permission-checked server-side (owner, HR_ADMIN, or
+  // direct supervisor). Any signed-in viewer may attempt the fetch; a 403
+  // simply resolves to null and hides the panel.
   const { data: securityData, isLoading: loadingSecurity } = useQuery({
     queryKey: queryKeys.responses.securityViolations(assessmentId, userId),
     queryFn: async () => {
-      const { data: sData } = await api.get(`/responses/security-violations/${assessmentId}/${userId}`);
-      return sData.data.securityRecord || null;
+      try {
+        const { data: sData } = await api.get(`/responses/security-violations/${assessmentId}/${userId}`);
+        return sData.data.securityRecord || null;
+      } catch (err) {
+        if (err.response?.status === 403 || err.response?.status === 404) return null;
+        throw err;
+      }
     },
-    enabled: isAdmin && !!assessmentId && !!userId,
+    enabled: !!assessmentId && !!userId,
   });
+
+  // HR retake grant — gives the employee a fresh attempt (re-exam questions
+  // when the assessment defines them).
+  const [granting, setGranting] = useState(false);
+  const handleGrantRetake = async () => {
+    if (!assessmentId || !userId) return;
+    const reason = window.prompt('Reason for granting a retake (stored in the audit log):', 'Violation appeal approved');
+    if (reason === null) return;
+    if (!window.confirm(`Grant ${result?.userName || 'this user'} an extra attempt? Their current answers will be cleared for a fresh start.`)) return;
+    setGranting(true);
+    try {
+      const { data } = await api.post('/responses/admin/grant-retake', { assessmentId, userId, reason });
+      show(data?.message || 'Retake granted.', 'success');
+      queryClient.invalidateQueries({ queryKey: queryKeys.responses.securityViolations(assessmentId, userId) });
+    } catch (err) {
+      show(err.response?.data?.message || 'Could not grant retake.', 'error');
+    } finally {
+      setGranting(false);
+    }
+  };
 
   // HR manual grading: raw responses (carry response ids + manual scores) for
   // the viewed employee, keyed by question id.
@@ -416,6 +570,9 @@ export default function ResultDetail() {
             </div>
           </div>
           <div className="flex-shrink-0 ml-4 flex items-center gap-2">
+            {result.partial && (
+              <span title={result.missingSide ? `Awaiting ${result.missingSide} side — recalculated when both sides submit` : 'Partial result'} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-700 border border-amber-200">Partial</span>
+            )}
             <LevelBadge level={result.level} />
           </div>
         </div>
@@ -432,7 +589,7 @@ export default function ResultDetail() {
               </div>
               <div className="min-w-0">
                 <h2 className="text-lg font-bold text-gray-900 truncate">{result.userName}</h2>
-                <p className="text-sm text-gray-500 truncate">{result.userEmail} · {result.employeeId}</p>
+                <p className="text-sm text-gray-500 truncate">{result.userEmail}</p>
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1 text-xs text-gray-500">
                   <span className="flex items-center gap-1"><Building2 className="w-3 h-3 text-gray-400" />{result.userDepartment || '—'}</span>
                   {result.userPosition && <span className="flex items-center gap-1"><Briefcase className="w-3 h-3 text-gray-400" />{result.userPosition}</span>}
@@ -545,20 +702,29 @@ export default function ResultDetail() {
             )}
           </div>
 
-          {/* ── Right column: questions + security (admin) ── */}
+          {/* ── Right column: questions (admin) + security (owner/HR/supervisor) ── */}
           <div className="lg:col-span-2 space-y-6">
             {isAdmin ? (
               <>
                 <QuestionDetailsSection questionDetails={questionDetails} summary={questionSummary} loading={loading}
           gradeMap={gradeMap} canGrade={isAdmin} gradingId={gradingId} onSaveGrade={handleSaveGrade} />
-                <SecuritySection securityData={securityData} loading={loadingSecurity} />
+                <SecuritySection
+                  securityData={securityData}
+                  loading={loadingSecurity}
+                  canGrantRetake={!!assessmentId && !!userId}
+                  onGrantRetake={handleGrantRetake}
+                  granting={granting}
+                />
               </>
             ) : (
-              <div className="bg-white rounded-2xl border border-gray-200 min-h-64 flex flex-col items-center justify-center text-center p-8">
-                <CheckCircle2 className="w-12 h-12 text-gray-300 mb-3" />
-                <p className="text-sm text-gray-600">No answer breakdown available for your role.</p>
-                <p className="text-xs text-gray-400 mt-1">Detailed question review is available to HR administrators and supervisors.</p>
-              </div>
+              <>
+                <div className="bg-white rounded-2xl border border-gray-200 min-h-64 flex flex-col items-center justify-center text-center p-8">
+                  <CheckCircle2 className="w-12 h-12 text-gray-300 mb-3" />
+                  <p className="text-sm text-gray-600">No answer breakdown available for your role.</p>
+                  <p className="text-xs text-gray-400 mt-1">Detailed question review is available to HR administrators and supervisors.</p>
+                </div>
+                <SecuritySection securityData={securityData} loading={loadingSecurity} />
+              </>
             )}
           </div>
         </div>

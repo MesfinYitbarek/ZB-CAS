@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import prisma from '../config/prisma.js';
 import AppError from '../utils/AppError.js';
 import asyncHandler from '../utils/asyncHandler.js';
-import { hashPassword, comparePassword } from '../utils/password.js';
+import { hashPassword, comparePassword, DEFAULT_USER_PASSWORD } from '../utils/password.js';
 import { defaultRole, toPublic } from '../utils/userHelpers.js';
 import {
   buildTokenPair,
@@ -35,7 +35,7 @@ export const register = asyncHandler(async (req, res, next) => {
 
   if (!username) return next(new AppError('Username is required.', 400));
 
-  const tempPassword = crypto.randomBytes(10).toString('hex');
+  const tempPassword = DEFAULT_USER_PASSWORD;
   const passwordHash = await hashPassword(tempPassword);
 
   const resolvedRoles = roles
@@ -44,7 +44,7 @@ export const register = asyncHandler(async (req, res, next) => {
 
   const user = await prisma.user.create({
     data: {
-      employeeId,
+      employeeId: employeeId?.trim() || null,
       name,
       username,
       email,

@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+﻿import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useQuery } from '@tanstack/react-query';
@@ -9,7 +9,8 @@ import {
   SlidersHorizontal, Eye, XCircle, Info, ClipboardList, ChevronDown,
   ChevronUp, AlertCircle, HelpCircle, Hash, Minus, ListChecks,
   Shield, Search, BarChart3, Layers, Building2, Briefcase,
-  Target, Clock, RefreshCw, SortAsc, SortDesc
+  Target, Clock, RefreshCw, SortAsc, SortDesc,
+  ArrowUp, ArrowDown, ChevronsUpDown
 } from 'lucide-react';
 import api from '../utils/api';
 
@@ -62,6 +63,29 @@ const LevelBadge = ({ level }) => (
 const TypeBadge = ({ type }) => {
   const label = type === 'SelfAssessment' ? 'Self' : type === 'SupervisorOnly' ? 'Supervisor' : 'Combined';
   return <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${TYPE_COLORS[type] || 'bg-gray-100 text-gray-600'}`}>{label}</span>;
+};
+
+// Clickable table header with sort-direction indicator.
+const SortableHeader = ({ label, sortKey, sortBy, sortDir, onSort }) => {
+  const active = sortBy === sortKey;
+  return (
+    <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap bg-gray-50">
+      <button
+        onClick={() => onSort(sortKey)}
+        title={`Sort by ${label}`}
+        className={`inline-flex items-center gap-1 uppercase tracking-wide transition-colors hover:text-brand-red ${active ? 'text-brand-red' : ''}`}
+      >
+        {label}
+        {active ? (
+          sortDir === 'asc'
+            ? <ArrowUp className="w-3.5 h-3.5" />
+            : <ArrowDown className="w-3.5 h-3.5" />
+        ) : (
+          <ChevronsUpDown className="w-3.5 h-3.5 opacity-30" />
+        )}
+      </button>
+    </th>
+  );
 };
 
 const ScoreBar = ({ score, type }) => {
@@ -164,6 +188,19 @@ const { user, isAdmin } = useAuth();
   };
   const activeFilterCount = Object.entries(filters).filter(([k, v]) => v && !['sortBy', 'sortDir'].includes(k)).length;
 
+  // ── header-click sorting (applies immediately, stays in sync with the filter panel) ──
+  const applyHeaderSort = (key) => {
+    const naturalDir = (key === 'employee' || key === 'competency') ? 'asc' : 'desc';
+    setFilters((prev) => {
+      const next = prev.sortBy === key
+        ? { ...prev, sortDir: prev.sortDir === 'asc' ? 'desc' : 'asc' }
+        : { ...prev, sortBy: key, sortDir: naturalDir };
+      setPendingFilters(next);
+      return next;
+    });
+    setPagination(prev => ({ ...prev, page: 1 }));
+  };
+
   // ── open result detail page ─────────────────────────────────────────────
   const openDetail = (result) => {
     nav(`/results/${result._id}`);
@@ -182,7 +219,7 @@ const { user, isAdmin } = useAuth();
       <div className="flex justify-between items-start mb-3 flex-shrink-0">
         <div>
           <h1 className="text-xl  font-bold text-brand-black">
-            {isAdmin ? 'Assessment Results' : 'My Results'}
+            {isAdmin ? 'Competency Results' : 'My Results'}
           </h1>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
@@ -326,11 +363,13 @@ const { user, isAdmin } = useAuth();
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Sort By</label>
                 <div className="flex gap-1.5">
-                  <select value={pendingFilters.sortBy} onChange={e => setPendingFilters(p => ({ ...p, sortBy: e.target.value }))}
+                  <select value={['createdAt', 'score', 'level', 'employee', 'competency'].includes(pendingFilters.sortBy) ? pendingFilters.sortBy : 'createdAt'} onChange={e => setPendingFilters(p => ({ ...p, sortBy: e.target.value }))}
                     className="flex-1 h-10 px-2 rounded-lg border border-gray-300 focus-brand text-sm">
                     <option value="createdAt">Date</option>
                     <option value="score">Score</option>
                     <option value="level">Level</option>
+                    <option value="competency">Competency</option>
+                    {isAdmin && <option value="employee">Employee</option>}
                   </select>
                   <button onClick={() => setPendingFilters(p => ({ ...p, sortDir: p.sortDir === 'asc' ? 'desc' : 'asc' }))}
                     className="h-10 w-10 flex items-center justify-center border border-gray-300 rounded-lg hover:bg-gray-50 flex-shrink-0">
@@ -373,15 +412,14 @@ const { user, isAdmin } = useAuth();
                 {/* Sticky column headers - now sticky within the scrollable container */}
                 <thead className="bg-gray-50 border-b border-gray-100 sticky top-0 z-10">
                   <tr>
-                    {isAdmin && <>
-                      <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap bg-gray-50">Employee</th>
-                      
-                    </>}
-                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap bg-gray-50">Competency</th>
+                    {isAdmin && (
+                      <SortableHeader label="Employee" sortKey="employee" sortBy={filters.sortBy} sortDir={filters.sortDir} onSort={applyHeaderSort} />
+                    )}
+                    <SortableHeader label="Competency" sortKey="competency" sortBy={filters.sortBy} sortDir={filters.sortDir} onSort={applyHeaderSort} />
                     <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap bg-gray-50">Assessment</th>
-                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap bg-gray-50">Score</th>
-                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap bg-gray-50">Level</th>
-                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap bg-gray-50">Date</th>
+                    <SortableHeader label="Score" sortKey="score" sortBy={filters.sortBy} sortDir={filters.sortDir} onSort={applyHeaderSort} />
+                    <SortableHeader label="Level" sortKey="level" sortBy={filters.sortBy} sortDir={filters.sortDir} onSort={applyHeaderSort} />
+                    <SortableHeader label="Date" sortKey="createdAt" sortBy={filters.sortBy} sortDir={filters.sortDir} onSort={applyHeaderSort} />
                     <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap bg-gray-50 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -424,7 +462,12 @@ const { user, isAdmin } = useAuth();
                         {result.notTaken ? (
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-500 border border-gray-200 whitespace-nowrap">Not Taken</span>
                         ) : (
-                          <div className="font-medium text-sm text-gray-900 whitespace-nowrap">{result.finalScore}%</div>
+                          <div className="font-medium text-sm text-gray-900 whitespace-nowrap flex items-center gap-1.5">
+                            {result.finalScore}%
+                            {result.partial && (
+                              <span title={result.missingSide ? `Awaiting ${result.missingSide} side` : 'Partial result'} className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200">Partial</span>
+                            )}
+                          </div>
                         )}
                       </td>
                       <td className="px-4 py-2">{result.notTaken ? '—' : result.level}</td>

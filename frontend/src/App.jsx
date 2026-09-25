@@ -39,6 +39,7 @@ const Questions       = lazy(() => import('./pages/Questions'));
 
 // Assessments
 const Assessments          = lazy(() => import('./pages/Assessments'));
+const AssessmentCreate       = lazy(() => import('./pages/AssessmentCreate'));
 const AssessmentDetail     = lazy(() => import('./pages/AssessmentDetail'));
 const AssessmentRequests   = lazy(() => import('./pages/AssessmentRequests'));
 const TakeAssessment       = lazy(() => import('./pages/TakeAssessment'));
@@ -274,6 +275,14 @@ export default function App() {
           }
         />
         <Route
+          path="/assessments/new"
+          element={
+            <ProtectedRoute adminOnly>
+              <AppShell><PageSuspense><AssessmentCreate /></PageSuspense></AppShell>
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/assessments/:id"
           element={
             <ProtectedRoute>
@@ -373,9 +382,6 @@ export default function App() {
         />
 
 
-        {/* 404 */}
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
-
         {/* ── User Manual (all roles) ────────────────────────────────── */}
         <Route
           path="/manual"
@@ -385,6 +391,9 @@ export default function App() {
             </ProtectedRoute>
           }
         />
+
+        {/* 404 */}
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
 
       </Routes>
     </BrowserRouter>

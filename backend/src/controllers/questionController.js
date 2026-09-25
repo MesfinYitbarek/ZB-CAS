@@ -7,8 +7,10 @@ import { logActivity } from '../services/activityService.js';
 import { normalizeTargetGroup, denormalizeTargetGroup } from '../utils/targetGroup.js';
 
 // ───────────────────────── GET LIST ─────────────────────────
+const QUESTION_SORTABLE_FIELDS = new Set(['type', 'targetGroup', 'score', 'createdAt', 'updatedAt']);
+
 export const getQuestions = asyncHandler(async (req, res) => {
-  const { competencyId, targetGroup, type, page = 1, limit = 30 } = req.query;
+  const { competencyId, targetGroup, type, page = 1, limit = 30, sortBy, sortDir } = req.query;
 
   const where = {};
   if (competencyId) where.competencyId = competencyId;
@@ -17,13 +19,19 @@ export const getQuestions = asyncHandler(async (req, res) => {
 
   const skip = (Number(page) - 1) * Number(limit);
 
+  // Whitelisted server-side sorting (`competency` sorts by related name)
+  const order = sortDir === 'asc' ? 'asc' : 'desc';
+  const orderBy = sortBy === 'competency'
+    ? { competency: { name: order } }
+    : { [QUESTION_SORTABLE_FIELDS.has(sortBy) ? sortBy : 'createdAt']: order };
+
   const [questions, total] = await Promise.all([
     prisma.question.findMany({
       where,
       include: { competency: { select: { id: true, name: true, category: true, targetGroups: true } } },
       skip,
       take: Number(limit),
-      orderBy: { createdAt: 'desc' },
+      orderBy,
     }),
     prisma.question.count({ where }),
   ]);

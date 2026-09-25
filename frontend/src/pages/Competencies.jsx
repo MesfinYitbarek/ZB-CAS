@@ -14,6 +14,9 @@ import {
   Loader2,
   AlertTriangle,
   CheckCircle2,
+  ArrowUp,
+  ArrowDown,
+  ChevronsUpDown,
 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import Modal from '../components/Modal';
@@ -44,6 +47,32 @@ const TG_COLORS = {
   common: 'bg-gray-100 text-gray-700',
 };
 
+// Default order matches the API default (name A→Z).
+const DEFAULT_SORT = { key: 'name', dir: 'asc' };
+
+// Clickable table header with sort-direction indicator.
+function SortableHeader({ label, sortKey, sort, onSort }) {
+  const active = sort.key === sortKey;
+  return (
+    <th className="px-4 py-2.5 font-semibold">
+      <button
+        onClick={() => onSort(sortKey)}
+        title={`Sort by ${label}`}
+        className={`inline-flex items-center gap-1 transition-colors hover:text-brand-red ${active ? 'text-brand-red' : ''}`}
+      >
+        {label}
+        {active ? (
+          sort.dir === 'asc'
+            ? <ArrowUp className="w-3.5 h-3.5" />
+            : <ArrowDown className="w-3.5 h-3.5" />
+        ) : (
+          <ChevronsUpDown className="w-3.5 h-3.5 opacity-30" />
+        )}
+      </button>
+    </th>
+  );
+}
+
 export default function Competencies() {
   const { show } = useToast();
 
@@ -70,6 +99,7 @@ export default function Competencies() {
     total: 0,
     totalPages: 0,
   });
+  const [sort, setSort] = useState(DEFAULT_SORT);
 
   // ── Bulk import ────────────────────────────────────────────────────────────
   const [showImport, setShowImport] = useState(false);
@@ -79,10 +109,19 @@ export default function Competencies() {
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef(null);
 
+  const toggleSort = (key) => {
+    setSort((prev) => {
+      if (prev.key !== key) return { key, dir: 'asc' };
+      if (prev.dir === 'asc') return { key, dir: 'desc' };
+      return DEFAULT_SORT;
+    });
+    setPagination((p) => ({ ...p, page: 1 }));
+  };
+
   const fetch = useCallback(async () => {
     setLoading(true);
     try {
-      const params = { page: pagination.page, limit: pagination.limit };
+      const params = { page: pagination.page, limit: pagination.limit, sortBy: sort.key, sortDir: sort.dir };
       if (catFilter !== 'All') params.category = catFilter;
       if (search.trim()) params.search = search.trim();
 
@@ -101,7 +140,7 @@ export default function Competencies() {
       show('Failed to load competencies.', 'error');
     }
     setLoading(false);
-  }, [catFilter, search, pagination.page, pagination.limit, show]);
+  }, [catFilter, search, pagination.page, pagination.limit, sort, show]);
 
   useEffect(() => {
     fetch();
@@ -352,8 +391,8 @@ export default function Competencies() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-xs uppercase tracking-wide text-gray-500 border-b border-gray-100 bg-gray-50">
-                    <th className="px-4 py-2.5 font-semibold">Competency</th>
-                    <th className="px-4 py-2.5 font-semibold">Category</th>
+                    <SortableHeader label="Competency" sortKey="name" sort={sort} onSort={toggleSort} />
+                    <SortableHeader label="Category" sortKey="category" sort={sort} onSort={toggleSort} />
                     <th className="px-4 py-2.5 font-semibold">Target Groups</th>
                     <th className="px-4 py-2.5 font-semibold text-right">Actions</th>
                   </tr>

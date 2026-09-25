@@ -166,6 +166,25 @@ export const getPendingEvaluations = asyncHandler(async (req, res) => {
   res.status(200).json({ status: 'success', data: { pendingEvaluations } });
 });
 
+// ─── GET COMPLETED EVALUATIONS COUNT ─────────────────────────────────────────
+export const getCompletedEvaluationsCount = asyncHandler(async (req, res) => {
+  const supervisorId = req.user.id;
+
+  const teamMembers = await prisma.user.findMany({
+    where: { supervisorId, status: 'ACTIVE' },
+    select: { id: true },
+  });
+  const teamIds = teamMembers.map((m) => m.id);
+
+  const count = teamIds.length
+    ? await prisma.supervisorEvaluation.count({
+        where: { supervisorId, employeeId: { in: teamIds }, status: 'COMPLETED' },
+      })
+    : 0;
+
+  res.status(200).json({ status: 'success', data: { count } });
+});
+
 // Helper functions
 function getPriority(endDate) {
   if (!endDate) return 'LOW';
