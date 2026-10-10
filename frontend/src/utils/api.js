@@ -106,12 +106,13 @@ api.interceptors.response.use(
         // protected page (i.e. there WAS an active session that just expired).
         // Do NOT redirect if we're already on /login or if there's no session
         // to clear — that would cause an infinite reload loop on startup.
-        const alreadyOnAuth = window.location.pathname.startsWith('/login') ||
-                              window.location.pathname.startsWith('/reset-password');
-        if (!alreadyOnAuth) {
-          sessionStorage.removeItem('activeRole'); // remove only auth key, not all storage
-          window.location.href = '/login';
-        }
+        const APP_BASE = import.meta.env.BASE_URL; // '/cas/' in prod, '/' in dev
+const alreadyOnAuth = window.location.pathname.startsWith(`${APP_BASE}login`) ||
+                      window.location.pathname.startsWith(`${APP_BASE}reset-password`);
+if (!alreadyOnAuth) {
+  sessionStorage.removeItem('activeRole');
+  window.location.href = `${APP_BASE}login`;
+}
         throw err;
       } finally {
         isRefreshing = false;

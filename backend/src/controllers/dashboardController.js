@@ -289,6 +289,18 @@ export const getEmployeeDashboardStats = asyncHandler(async (req, res) => {
   const dateRange = getDateRange(period);
   const dateMatch = dateRange ? { createdAt: dateRange } : {};
 
+  // Scope assessments to this employee's audience — mirrors getActiveAssessments.
+  // Without this, EVERY active assessment shows as pending for EVERY employee.
+  const me = await prisma.user.findUnique({ where: { id: employeeId }, select: { department: true } });
+  const audienceFilter = {
+    status: 'ACTIVE',
+    OR: [
+      { audienceType: 'ALL_DEPARTMENTS' },
+      ...(me?.department ? [{ audienceDepartments: { some: { department: me.department } } }] : []),
+      { audienceEmployees: { some: { employeeId } } },
+    ],
+  };
+
   const [allResultsRaw, periodResultsRaw, activeAssessmentsList, supervisor, competencyProgressRaw, scoreTrend] = await Promise.all([
     prisma.result.findMany({
       where: { userId: employeeId, status: 'FINAL' },
@@ -306,7 +318,7 @@ export const getEmployeeDashboardStats = asyncHandler(async (req, res) => {
       orderBy: { createdAt: 'desc' },
     }),
     prisma.assessment.findMany({
-      where: { status: 'ACTIVE' },
+      where: audienceFilter,
       include: { competency: { select: { id: true, name: true } } },
     }),
     req.user.supervisorId

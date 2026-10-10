@@ -19,7 +19,6 @@ import SocketProvider from './context/SocketContext';
 
 // ── Eager-loaded: Auth pages are tiny and needed before the app shell renders
 import Login from './pages/Login';
-import ResetPassword from './pages/ResetPassword';
 
 // ── Lazy-loaded: every page below becomes its own JS chunk ──────────────────
 // Dashboards
@@ -151,12 +150,11 @@ function SmartDashboard() {
 ========================================================= */
 export default function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, '')}>
       <Routes>
 
         {/* Public */}
         <Route path="/login" element={<Login />} />
-        <Route path="/reset-password/:token" element={<ResetPassword />} />
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
 
 

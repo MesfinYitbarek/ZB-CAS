@@ -1,5 +1,4 @@
 /* controllers/authController.js */
-import crypto from 'crypto';
 import prisma from '../config/prisma.js';
 import AppError from '../utils/AppError.js';
 import asyncHandler from '../utils/asyncHandler.js';
@@ -10,10 +9,11 @@ import {
   verifyRefreshToken,
   refreshCookieOptions,
 } from '../utils/jwt.js';
-import { sendWelcomeEmail, sendPasswordResetEmail } from '../services/emailService.js';
+import { sendWelcomeEmail } from '../services/emailService.js';
 import { notifyAccountCreated } from '../services/notificationService.js';
 import { logActivity } from '../services/activityService.js';
 import logger from '../utils/logger.js';
+import { ldapAuthenticate } from '../services/ldapService.js';
 
 /* ─── Password complexity ─────────────────────────────────────────────────── */
 const PASS_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]).{8,}$/;
@@ -85,22 +85,43 @@ export const login = asyncHandler(async (req, res, next) => {
     return next(new AppError('Username and password are required.', 400));
   }
 
+  const normalizedUsername = username.toLowerCase().trim();
+
+  // Look up user in DB first (auth mode does not affect this check)
   const user = await prisma.user.findUnique({
-    where: { username: username.toLowerCase().trim() },
+    where: { username: normalizedUsername },
   });
 
-  // Account lockout check
+  // Account lockout check (applies regardless of auth mode)
   if (user && user.lockUntil && user.lockUntil > Date.now()) {
     const waitMinutes = Math.ceil((user.lockUntil - Date.now()) / 60000);
     return next(new AppError(`Account locked due to too many failed attempts. Try again in ${waitMinutes} minute(s).`, 423));
   }
 
-  const passwordMatch = user && await comparePassword(password, user.passwordHash);
+  const useLocal = (process.env.AUTH_MODE || '').toLowerCase() === 'local';
 
-  if (!user || !passwordMatch) {
+  let credentialsValid = false;
+
+  if (useLocal) {
+    // ── Local mode: compare against bcrypt hash in DB ──────────────────────
+    credentialsValid = !!(user && await comparePassword(password, user.passwordHash));
+  } else {
+    // ── LDAP mode (default): bind against Active Directory ─────────────────
+    if (!user) {
+      // User not provisioned in the local DB — reject before even hitting LDAP
+      return next(new AppError('User not found or not allowed.', 401));
+    }
+    const ldapResult = await ldapAuthenticate(normalizedUsername, password);
+    credentialsValid = ldapResult.success;
+  }
+
+  if (!credentialsValid) {
+    // Increment lockout counter (only meaningful when the user row exists)
     if (user) {
       const failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
-      const lockUntil = failedLoginAttempts >= 5 ? new Date(Date.now() + 15 * 60 * 1000) : user.lockUntil;
+      const lockUntil = failedLoginAttempts >= 5
+        ? new Date(Date.now() + 15 * 60 * 1000)
+        : user.lockUntil;
       await prisma.user.update({
         where: { id: user.id },
         data: { failedLoginAttempts, lockUntil },
@@ -116,7 +137,7 @@ export const login = asyncHandler(async (req, res, next) => {
     return next(new AppError('Account is inactive. Please contact HR.', 403));
   }
 
-  // Reset lockout on success
+  // Reset lockout counter on successful login
   if (user.failedLoginAttempts > 0) {
     await prisma.user.update({
       where: { id: user.id },
@@ -133,7 +154,7 @@ export const login = asyncHandler(async (req, res, next) => {
   });
 
   res.cookie('refreshToken', refreshToken, refreshCookieOptions());
-  logger.info({ event: 'user_login', userId: user.id, role: activeRole });
+  logger.info({ event: 'user_login', userId: user.id, role: activeRole, mode: useLocal ? 'local' : 'ldap' });
 
   res.status(200).json({
     status: 'success',
@@ -236,92 +257,6 @@ export const logout = asyncHandler(async (req, res) => {
   res.status(200).json({ status: 'success', message: 'Logged out.' });
 });
 
-// ─── FORGOT PASSWORD ──────────────────────────────────────────────────────────
-export const forgotPassword = asyncHandler(async (req, res, next) => {
-  // Accept either email or username for forgot-password flow
-  const identifier = req.body.email?.toLowerCase() || req.body.username?.toLowerCase();
-  const user = await prisma.user.findFirst({
-    where: { OR: [{ email: identifier }, { username: identifier }] },
-  });
-
-  if (!user) {
-    return res.status(200).json({
-      status:  'success',
-      message: 'If this account exists, a reset link has been sent.',
-    });
-  }
-
-  const resetToken = crypto.randomBytes(32).toString('hex');
-  await prisma.user.update({
-    where: { id: user.id },
-    data: {
-      passwordResetToken:   crypto.createHash('sha256').update(resetToken).digest('hex'),
-      passwordResetExpires: new Date(Date.now() + 60 * 60 * 1000),
-    },
-  });
-
-  sendPasswordResetEmail(user, resetToken);
-
-  res.status(200).json({
-    status:  'success',
-    message: 'If this account exists, a reset link has been sent.',
-  });
-});
-
-// ─── RESET PASSWORD ───────────────────────────────────────────────────────────
-export const resetPassword = asyncHandler(async (req, res, next) => {
-  if (!validatePasswordStrength(req.body.password, next)) return;
-
-  const hashedToken = crypto.createHash('sha256').update(req.params.token).digest('hex');
-
-  const user = await prisma.user.findFirst({
-    where: {
-      passwordResetToken:   hashedToken,
-      passwordResetExpires: { gt: new Date() },
-    },
-  });
-
-  if (!user) return next(new AppError('Token is invalid or has expired.', 400));
-
-  const passwordHash = await hashPassword(req.body.password);
-  await prisma.user.update({
-    where: { id: user.id },
-    data: {
-      passwordHash,
-      passwordResetToken:   null,
-      passwordResetExpires: null,
-      failedLoginAttempts:  0,
-      lockUntil:            null,
-    },
-  });
-
-  res.status(200).json({ status: 'success', message: 'Password reset successful.' });
-});
-
-// ─── CHANGE PASSWORD ──────────────────────────────────────────────────────────
-export const changePassword = asyncHandler(async (req, res, next) => {
-  const { currentPassword, newPassword } = req.body;
-
-  if (!validatePasswordStrength(newPassword, next)) return;
-
-  const user = await prisma.user.findUnique({ where: { id: req.user.id } });
-  if (!user) return next(new AppError('User not found.', 404));
-
-  if (!(await comparePassword(currentPassword, user.passwordHash))) {
-    return next(new AppError('Current password is incorrect.', 401));
-  }
-
-  if (currentPassword === newPassword) {
-    return next(new AppError('New password must differ from current password.', 400));
-  }
-
-  const passwordHash = await hashPassword(newPassword);
-  await prisma.user.update({
-    where: { id: user.id },
-    data: { passwordHash },
-  });
-
-  logger.info({ event: 'password_changed', userId: user.id });
-
-  res.status(200).json({ status: 'success', message: 'Password changed successfully.' });
-});
+// NOTE: forgotPassword, resetPassword, and changePassword are intentionally
+// removed. Password management is handled by Active Directory (LDAP).
+// Users must reset their passwords through the Zemen Bank AD self-service portal.

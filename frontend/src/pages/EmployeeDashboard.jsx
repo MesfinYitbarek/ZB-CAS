@@ -113,7 +113,7 @@ export default function EmployeeDashboard() {
               {/* Welcome */}
               <div className="flex items-center gap-2.5 mb-1">
                 <h1 className="text-xl  font-bold text-brand-black">
-                  Welcome back, {user?.name?.split(' ')[0]} 👋
+                  Welcome back, {user?.name?.split(' ')[0]}
                 </h1>
                 {refreshing && <div className="w-4 h-4 border-2 border-brand-red border-t-transparent rounded-full animate-spin" />}
               </div>

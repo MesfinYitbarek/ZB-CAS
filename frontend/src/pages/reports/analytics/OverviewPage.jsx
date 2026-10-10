@@ -17,8 +17,8 @@ export default function OverviewPage() {
   });
 
   const handlePerformerDetail = useCallback((performer) => {
-    if (performer?.userId) window.location.href = `/users/${performer.userId}`;
-    else if (performer?._id) window.location.href = `/users/${performer._id}`;
+    if (performer?.userId) window.location.href = `${import.meta.env.BASE_URL}users/${performer.userId}`;
+else if (performer?._id) window.location.href = `${import.meta.env.BASE_URL}users/${performer._id}`;
   }, []);
 
   if (!isAdmin) return <Navigate to="/reports/individual" replace />;
