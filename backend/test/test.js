@@ -574,44 +574,55 @@ describe('Assessment — date and weight validation', () => {
 // 9. PENETRATION TEST SCENARIOS (logic-level)
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('Penetration Tests — Account Lockout Logic', () => {
-  function checkLockout(failedAttempts, lockUntil) {
-    if (lockUntil && lockUntil > Date.now()) {
-      const waitMinutes = Math.ceil((lockUntil - Date.now()) / 60000);
-      return { locked: true, waitMinutes };
-    }
-    const newAttempts = failedAttempts + 1;
-    const shouldLock = newAttempts >= 5;
-    return {
-      locked: false,
-      newAttempts,
-      lockUntil: shouldLock ? new Date(Date.now() + 15 * 60 * 1000) : null,
-    };
-  }
+describe('Penetration Tests — Login Throttle (per-source lockout)', () => {
+  let throttle;
 
-  it('does not lock account on first failure', () => {
-    const result = checkLockout(0, null);
-    expect(result.locked).toBe(false);
-    expect(result.lockUntil).toBeNull();
+  beforeAll(async () => {
+    throttle = await import('../src/services/loginThrottle.js');
   });
 
-  it('locks account on 5th failure', () => {
-    const result = checkLockout(4, null);
-    expect(result.locked).toBe(false);
-    expect(result.lockUntil).not.toBeNull();
+  beforeEach(() => {
+    throttle.resetLoginThrottle();
+    jest.useRealTimers();
   });
 
-  it('reports locked when lockUntil is in the future', () => {
-    const future = new Date(Date.now() + 10 * 60 * 1000);
-    const result = checkLockout(5, future);
+  it('does not lock a source before the threshold', () => {
+    for (let i = 0; i < 4; i++) throttle.recordFailure('alice', '10.0.0.1');
+    expect(throttle.checkLock('alice', '10.0.0.1').locked).toBe(false);
+  });
+
+  it('locks a source on the 5th failed attempt', () => {
+    let result;
+    for (let i = 0; i < 5; i++) result = throttle.recordFailure('alice', '10.0.0.1');
     expect(result.locked).toBe(true);
-    expect(result.waitMinutes).toBeGreaterThan(0);
+    const status = throttle.checkLock('alice', '10.0.0.1');
+    expect(status.locked).toBe(true);
+    expect(status.waitMinutes).toBeGreaterThan(0);
   });
 
-  it('allows login after lockout expires', () => {
-    const past = new Date(Date.now() - 1000);
-    const result = checkLockout(5, past);
-    expect(result.locked).toBe(false);
+  it('does NOT lock the account for a different source (third-party DoS fix)', () => {
+    for (let i = 0; i < 5; i++) throttle.recordFailure('alice', '203.0.113.9');
+    expect(throttle.checkLock('alice', '203.0.113.9').locked).toBe(true);
+    // Legitimate user on their own network is unaffected by the attacker.
+    expect(throttle.checkLock('alice', '198.51.100.7').locked).toBe(false);
+  });
+
+  it('clears the failure counter on successful login', () => {
+    for (let i = 0; i < 4; i++) throttle.recordFailure('bob', '10.0.0.1');
+    throttle.recordSuccess('bob', '10.0.0.1');
+    for (let i = 0; i < 4; i++) throttle.recordFailure('bob', '10.0.0.1');
+    expect(throttle.checkLock('bob', '10.0.0.1').locked).toBe(false);
+  });
+
+  it('allows login after the lock window expires', () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    for (let i = 0; i < 5; i++) throttle.recordFailure('carol', '10.0.0.1');
+    expect(throttle.checkLock('carol', '10.0.0.1').locked).toBe(true);
+
+    jest.setSystemTime(new Date('2026-01-01T00:16:00Z'));
+    expect(throttle.checkLock('carol', '10.0.0.1').locked).toBe(false);
+    jest.useRealTimers();
   });
 });
 

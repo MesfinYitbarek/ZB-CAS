@@ -418,7 +418,7 @@ model Response {
   @@index([assessmentId, userId])
   @@index([assessmentId, employeeId])
   @@index([userId, respondentType])
-  @@index([assessmentId, questionId, employeeId, respondentType])
+  @@unique([assessmentId, questionId, employeeId, respondentType])
   @@index([assessmentId, employeeId, userId, respondentType])
 }
 

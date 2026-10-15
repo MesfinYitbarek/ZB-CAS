@@ -9,6 +9,7 @@ import {
   getGrantBalance,
   consumeGrantedAttempt,
 } from '../services/scoringService.js';
+import { getCachedQuestionIds } from '../services/assessmentMetaCache.js';
 import { sendResultsEmail } from '../services/emailService.js';
 import {
   notifyResultReady,
@@ -26,6 +27,15 @@ const MAX_DEVICE_ENTRIES = 10;
 const VELOCITY_GAP_MS = 3000;      // saves faster than this count as "rapid"
 const VELOCITY_FLAG_COUNT = 10;    // consecutive rapid saves flag an anomaly
 const MAX_ATTEMPT_ARCHIVES = 10;
+
+// Auto-save security bookkeeping throttle. Individual violations are already
+// persisted in real time by POST /responses/security-violation; the per-save
+// device/velocity/log work is metadata, so it is flushed at most once per
+// SECURITY_FLUSH_INTERVAL_MS per (assessment, user) — and immediately when a
+// fresh client violation snapshot arrives or in-memory answer-velocity trips.
+// Single-process app, so a plain Map is safe (same reasoning as the caches).
+const SECURITY_FLUSH_INTERVAL_MS = 30_000;
+const securityThrottle = new Map(); // `${assessmentId}:${userId}` -> { flushedAt, lastSaveAt, rapidCount }
 
 const withAssessmentQuestions = (assessment) => ({
   ...assessment,
@@ -80,7 +90,7 @@ const logSecurityEvent = (payload) => {
  * Reads the existing SecurityViolation row (may be null) and returns a Prisma
  * data patch plus a list of newly detected anomaly events.
  */
-const buildDevicePatch = (sec, req, { answerSave = false } = {}) => {
+const buildDevicePatch = (sec, req, { answerSave = false, skipVelocity = false } = {}) => {
   const ip = req.ip || null;
   const ua = req.headers?.['user-agent'] || '';
   const patch = {};
@@ -114,17 +124,22 @@ const buildDevicePatch = (sec, req, { answerSave = false } = {}) => {
   }
 
   if (answerSave) {
-    const now = Date.now();
-    const lastAt = anomalies.lastAnswerAt ? new Date(anomalies.lastAnswerAt).getTime() : 0;
-    if (lastAt && now - lastAt < VELOCITY_GAP_MS) {
-      anomalies.rapidCount = (anomalies.rapidCount || 0) + 1;
-      if (anomalies.rapidCount >= VELOCITY_FLAG_COUNT && !anomalies.answerVelocity) {
-        anomalies.answerVelocity = true;
-        anomalies.answerVelocityAt = new Date().toISOString();
-        events.push('answerVelocity');
+    if (!skipVelocity) {
+      // DB-backed rapid/velocity detection. When skipVelocity is set the
+      // caller tracks rapid answers in memory (the DB lastAnswerAt now only
+      // updates on throttled flushes, so the DB gap check would misfire).
+      const now = Date.now();
+      const lastAt = anomalies.lastAnswerAt ? new Date(anomalies.lastAnswerAt).getTime() : 0;
+      if (lastAt && now - lastAt < VELOCITY_GAP_MS) {
+        anomalies.rapidCount = (anomalies.rapidCount || 0) + 1;
+        if (anomalies.rapidCount >= VELOCITY_FLAG_COUNT && !anomalies.answerVelocity) {
+          anomalies.answerVelocity = true;
+          anomalies.answerVelocityAt = new Date().toISOString();
+          events.push('answerVelocity');
+        }
+      } else {
+        anomalies.rapidCount = 0;
       }
-    } else {
-      anomalies.rapidCount = 0;
     }
     anomalies.lastAnswerAt = new Date().toISOString();
     if (ip) anomalies.lastAnswerIp = ip;
@@ -142,6 +157,35 @@ const persistDevicePatch = async (assessmentId, userId, sec, patch) => {
     return prisma.securityViolation.update({ where: { id: sec.id }, data: patch });
   }
   return prisma.securityViolation.create({ data: { assessmentId, userId, ...patch } });
+};
+
+/**
+ * Throttled security-metadata flush for auto-save (fire-and-forget).
+ * Detects answer-velocity in memory (see saveAnswer) because the persisted
+ * lastAnswerAt only advances on flushes; trips are injected here so the
+ * anomaly is recorded exactly once per trip.
+ */
+const flushSecurityBookkeeping = async ({ req, assessmentId, securityLog, velocityTripped }) => {
+  const sec = await prisma.securityViolation.findUnique({
+    where: { assessmentId_userId: { assessmentId, userId: req.user.id } },
+  });
+  const { patch, events } = buildDevicePatch(sec, req, { answerSave: true, skipVelocity: true });
+  if (securityLog !== undefined) patch.securityLog = securityLog || null;
+  if (velocityTripped && !patch.answerVelocity) {
+    patch.answerVelocity = true;
+    patch.answerVelocityAt = new Date().toISOString();
+    events.push('answerVelocity');
+  }
+  await persistDevicePatch(assessmentId, req.user.id, sec, patch);
+  for (const event of events) {
+    logSecurityEvent({
+      req,
+      action: 'security_anomaly',
+      entityId: assessmentId,
+      description: `Anomaly detected during assessment (${event})`,
+      metadata: { userId: req.user.id, assessmentId, event },
+    });
+  }
 };
 
 /** Snapshot the current attempt into attemptArchives before any reset. */
@@ -213,53 +257,71 @@ export const saveAnswer = asyncHandler(async (req, res, next) => {
   const { assessmentId, questionId, selectedAnswer, employeeId, securityLog } = req.body;
   const empId = employeeId || req.user.id;
 
-  const assessment = await validateAccess(assessmentId, req.user.id, empId, 'self');
+  // Hot-path access check. Status is always read live so the
+  // SCHEDULED->ACTIVE->COMPLETED transitions stay exact; only the question
+  // list (immutable while ACTIVE) comes from the 60s TTL cache. This
+  // replaces the old validateAccess() call, which loaded the assessment
+  // with every question ID on every 600ms-debounced save.
+  const assessment = await prisma.assessment.findUnique({
+    where: { id: assessmentId },
+    select: { status: true },
+  });
+  if (!assessment) return next(new AppError('Assessment not found.', 404));
+  if (assessment.status !== 'ACTIVE') return next(new AppError('Assessment is not active.', 400));
+  if (req.user.id !== empId) {
+    return next(new AppError('You can only submit self-assessments for yourself.', 403));
+  }
 
-  const questionIds = (assessment.assessmentQuestions || []).map(aq => aq.questionId);
-  if (!questionIds.some((q) => q === questionId)) {
+  const questionIds = await getCachedQuestionIds(assessmentId);
+  if (!questionIds?.includes(questionId)) {
     return next(new AppError('Question does not belong to this assessment.', 400));
   }
 
-  const existing = await prisma.response.findFirst({
-    where: { assessmentId, questionId, userId: req.user.id, employeeId: empId, respondentType: 'self' },
-  });
-
-  let response;
-  if (existing) {
-    response = await prisma.response.update({
-      where: { id: existing.id },
-      data: { selectedAnswer },
-    });
-  } else {
-    response = await prisma.response.create({
-      data: {
+  // Single round-trip upsert (requires the compound unique on
+  // (assessmentId, questionId, employeeId, respondentType) — migration
+  // 20261010090000_response_save_unique).
+  const response = await prisma.response.upsert({
+    where: {
+      assessmentId_questionId_employeeId_respondentType: {
         assessmentId,
         questionId,
-        userId: req.user.id,
         employeeId: empId,
         respondentType: 'self',
-        selectedAnswer,
       },
-    });
-  }
+    },
+    update: { selectedAnswer },
+    create: {
+      assessmentId,
+      questionId,
+      userId: req.user.id,
+      employeeId: empId,
+      respondentType: 'self',
+      selectedAnswer,
+    },
+  });
 
-  // Persist the client's live violation snapshot + device/velocity tracking.
-  // Best-effort: auto-save must never fail because of security bookkeeping.
+  // Throttled, fire-and-forget security bookkeeping: never fails the save
+  // and never blocks the response. See SECURITY_FLUSH_INTERVAL_MS above.
   try {
-    const sec = await prisma.securityViolation.findUnique({
-      where: { assessmentId_userId: { assessmentId, userId: req.user.id } },
-    });
-    const { patch, events } = buildDevicePatch(sec, req, { answerSave: true });
-    if (securityLog !== undefined) patch.securityLog = securityLog || null;
-    await persistDevicePatch(assessmentId, req.user.id, sec, patch);
-    for (const event of events) {
-      logSecurityEvent({
-        req,
-        action: 'security_anomaly',
-        entityId: assessmentId,
-        description: `Anomaly detected during assessment (${event})`,
-        metadata: { userId: req.user.id, assessmentId, event },
-      });
+    const key = `${assessmentId}:${req.user.id}`;
+    const now = Date.now();
+    let st = securityThrottle.get(key);
+    if (!st) {
+      st = { flushedAt: 0, lastSaveAt: 0, rapidCount: 0 };
+      securityThrottle.set(key, st);
+    }
+    const gap = st.lastSaveAt ? now - st.lastSaveAt : Number.MAX_SAFE_INTEGER;
+    st.lastSaveAt = now;
+    st.rapidCount = gap < VELOCITY_GAP_MS ? st.rapidCount + 1 : 0;
+    const velocityTripped = st.rapidCount >= VELOCITY_FLAG_COUNT;
+    const hasNewLog = Array.isArray(securityLog) && securityLog.length > 0;
+    const due = now - st.flushedAt >= SECURITY_FLUSH_INTERVAL_MS;
+
+    if (due || hasNewLog || velocityTripped) {
+      st.flushedAt = now;
+      if (velocityTripped) st.rapidCount = 0; // flag once per trip
+      void flushSecurityBookkeeping({ req, assessmentId, securityLog, velocityTripped })
+        .catch((secErr) => logger.error({ event: 'security_autosave_fail', message: secErr.message }));
     }
   } catch (secErr) {
     logger.error({ event: 'security_autosave_fail', message: secErr.message });
@@ -345,6 +407,9 @@ export const submitAssessment = asyncHandler(async (req, res, next) => {
   } catch (secErr) {
     logger.error({ event: 'security_log_fail', message: secErr.message });
   }
+
+  // Attempt over — drop the auto-save throttle state for this user.
+  securityThrottle.delete(`${assessmentId}:${employeeId}`);
 
   // Consume one HR-granted attempt when submitting beyond the base allowance.
   if (assessment.maxAttempts != null && attemptsUsed >= assessment.maxAttempts) {
@@ -853,6 +918,7 @@ export const startAttempt = asyncHandler(async (req, res, next) => {
   await prisma.response.deleteMany({
     where: { assessmentId, userId: req.user.id, respondentType: 'self' },
   });
+  securityThrottle.delete(`${assessmentId}:${req.user.id}`);
 
   if (sec) {
     await prisma.securityViolation.update({
@@ -910,6 +976,7 @@ export const grantRetake = asyncHandler(async (req, res, next) => {
   await prisma.response.deleteMany({
     where: { assessmentId, userId, respondentType: 'self' },
   });
+  securityThrottle.delete(`${assessmentId}:${userId}`);
   const sec = await prisma.securityViolation.findUnique({
     where: { assessmentId_userId: { assessmentId, userId } },
   });

@@ -14,6 +14,7 @@ import { notifyAccountCreated } from '../services/notificationService.js';
 import { logActivity } from '../services/activityService.js';
 import logger from '../utils/logger.js';
 import { ldapAuthenticate } from '../services/ldapService.js';
+import { checkLock, recordFailure, recordSuccess } from '../services/loginThrottle.js';
 
 /* ─── Password complexity ─────────────────────────────────────────────────── */
 const PASS_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]).{8,}$/;
@@ -86,17 +87,21 @@ export const login = asyncHandler(async (req, res, next) => {
   }
 
   const normalizedUsername = username.toLowerCase().trim();
+  const sourceIp = req.ip;
+
+  // Per-source lockout (username + client IP). Scoped to the source so an
+  // attacker cannot lock an account for its legitimate owner (lockout DoS) —
+  // see services/loginThrottle.js. Checked before the DB lookup so unknown
+  // usernames are throttled identically.
+  const lock = checkLock(normalizedUsername, sourceIp);
+  if (lock.locked) {
+    return next(new AppError(`Too many failed login attempts from this location. Try again in ${lock.waitMinutes} minute(s).`, 423));
+  }
 
   // Look up user in DB first (auth mode does not affect this check)
   const user = await prisma.user.findUnique({
     where: { username: normalizedUsername },
   });
-
-  // Account lockout check (applies regardless of auth mode)
-  if (user && user.lockUntil && user.lockUntil > Date.now()) {
-    const waitMinutes = Math.ceil((user.lockUntil - Date.now()) / 60000);
-    return next(new AppError(`Account locked due to too many failed attempts. Try again in ${waitMinutes} minute(s).`, 423));
-  }
 
   const useLocal = (process.env.AUTH_MODE || '').toLowerCase() === 'local';
 
@@ -116,19 +121,10 @@ export const login = asyncHandler(async (req, res, next) => {
   }
 
   if (!credentialsValid) {
-    // Increment lockout counter (only meaningful when the user row exists)
-    if (user) {
-      const failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
-      const lockUntil = failedLoginAttempts >= 5
-        ? new Date(Date.now() + 15 * 60 * 1000)
-        : user.lockUntil;
-      await prisma.user.update({
-        where: { id: user.id },
-        data: { failedLoginAttempts, lockUntil },
-      });
-      if (failedLoginAttempts >= 5) {
-        logger.warn({ event: 'account_locked', userId: user.id });
-      }
+    // Count the failure against this source; only ever locks this (username+IP).
+    const { locked } = recordFailure(normalizedUsername, sourceIp);
+    if (locked) {
+      logger.warn({ event: 'login_throttled', username: normalizedUsername, ip: sourceIp });
     }
     return next(new AppError('Invalid username or password.', 401));
   }
@@ -137,13 +133,8 @@ export const login = asyncHandler(async (req, res, next) => {
     return next(new AppError('Account is inactive. Please contact HR.', 403));
   }
 
-  // Reset lockout counter on successful login
-  if (user.failedLoginAttempts > 0) {
-    await prisma.user.update({
-      where: { id: user.id },
-      data: { failedLoginAttempts: 0, lockUntil: null },
-    });
-  }
+  // Clear this source's failure counter on successful login.
+  recordSuccess(normalizedUsername, sourceIp);
 
   const activeRole = defaultRole(user.roles);
   const { accessToken, refreshToken } = buildTokenPair(user.id, activeRole);

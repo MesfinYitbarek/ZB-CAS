@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 import logoFull from '../image/ZB-logo.png';
@@ -41,6 +42,7 @@ function friendlyError(err) {
 export default function Login() {
   const [username,   setUsername]   = useState('');
   const [password,   setPassword]   = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loginError, setLoginError] = useState('');
   const [loading,    setLoading]    = useState(false);
   const { login } = useAuth();
@@ -127,16 +129,29 @@ export default function Login() {
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">
                 Password
               </label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => { setPassword(e.target.value); setLoginError(''); }}
-                placeholder="••••••••"
-                autoComplete="current-password"
-                className={`w-full h-11 px-3.5 rounded-lg border outline-none transition-colors ${
-                  loginError ? 'border-red-400 bg-red-50 focus:border-red-500' : 'border-gray-300 focus-brand'
-                }`}
-              />
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => { setPassword(e.target.value); setLoginError(''); }}
+                  placeholder="••••••••"
+                  autoComplete="current-password"
+                  className={`w-full h-11 pl-3.5 pr-11 rounded-lg border outline-none transition-colors ${
+                    loginError ? 'border-red-400 bg-red-50 focus:border-red-500' : 'border-gray-300 focus-brand'
+                  }`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  aria-pressed={showPassword}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:text-gray-600 outline-none"
+                >
+                  {showPassword
+                    ? <EyeOff className="w-4 h-4" aria-hidden="true" />
+                    : <Eye className="w-4 h-4" aria-hidden="true" />}
+                </button>
+              </div>
             </div>
 
             {/* Submit */}
