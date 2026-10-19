@@ -712,7 +712,30 @@ export const deleteAssessments = asyncHandler(async (req, res, next) => {
   const assessment = await prisma.assessment.findUnique({ where: { id: req.params.id } });
   if (!assessment) return next(new AppError('Assessment not found.', 404));
   clearAssessmentTimers(req.params.id);
-  await prisma.assessment.delete({ where: { id: req.params.id } });
+
+  // Results are kept after deletion (FK is SET NULL). Freeze the assessment's
+  // identity into each result first so it still displays name/type/etc.
+  const snapshot = {
+    id: assessment.id,
+    description: assessment.description,
+    type: assessment.type,
+    targetGroup: assessment.targetGroup,
+    purpose: assessment.purpose,
+    startDate: assessment.startDate,
+    endDate: assessment.endDate,
+    deletedAt: new Date().toISOString(),
+  };
+  const kept = await prisma.result.findMany({
+    where: { assessmentId: assessment.id },
+    select: { id: true, scoreDetails: true },
+  });
+  await prisma.$transaction([
+    ...kept.map((r) => prisma.result.update({
+      where: { id: r.id },
+      data: { scoreDetails: { ...(r.scoreDetails && typeof r.scoreDetails === 'object' ? r.scoreDetails : {}), assessmentSnapshot: snapshot } },
+    })),
+    prisma.assessment.delete({ where: { id: req.params.id } }),
+  ]);
 
   await logActivity({
     req,

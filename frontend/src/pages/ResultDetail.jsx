@@ -431,6 +431,7 @@ export default function ResultDetail() {
 
   const userId = result ? (typeof result.userId === 'object' ? (result.userId._id || result.userId.id) : result.userId) : null;
   const assessmentId = result ? (result.assessmentId?._id || result.assessmentId) : null;
+  const assessmentStatus = result?.assessmentStatus || null;
 
   // Security records are permission-checked server-side (owner, HR_ADMIN, or
   // direct supervisor). Any signed-in viewer may attempt the fetch; a 403
@@ -711,7 +712,7 @@ export default function ResultDetail() {
                 <SecuritySection
                   securityData={securityData}
                   loading={loadingSecurity}
-                  canGrantRetake={!!assessmentId && !!userId}
+                  canGrantRetake={!!assessmentId && !!userId && assessmentStatus !== 'COMPLETED'}
                   onGrantRetake={handleGrantRetake}
                   granting={granting}
                 />

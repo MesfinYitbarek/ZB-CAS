@@ -30,15 +30,20 @@ const resultInclude = (excludeDetails = false) => ({
 });
 
 // Helper to map a result row to the legacy shape used by the frontend
-const processResultRow = (r) => ({
+const processResultRow = (r) => {
+  const a = r.assessment || r.scoreDetails?.assessmentSnapshot || null;
+  const aId = r.assessment?.id || r.scoreDetails?.assessmentSnapshot?.id || null;
+  return {
   _id: r.id,
   id: r.id,
   competencyId: r.competency || r.competencyId,
   competencyName: r.competency?.name || 'N/A',
   competencyCategory: r.competency?.category || 'N/A',
-  assessmentId: r.assessment ? { _id: r.assessment.id, description: r.assessment.description, type: r.assessment.type } : null,
-  assessmentDescription: r.assessment?.description || 'N/A',
-  assessmentType: r.assessment?.type || 'N/A',
+  assessmentId: a ? { _id: aId, description: a.description, type: a.type } : null,
+  assessmentDeleted: !r.assessment && !!a,
+  assessmentDescription: a?.description || 'N/A',
+  assessmentType: a?.type || 'N/A',
+  assessmentStatus: a?.status || null,
   userId: r.user ? { ...r.user, _id: r.user.id } : r.userId,
   userName: r.user?.name || 'N/A',
   userEmail: r.user?.email || 'N/A',
@@ -61,10 +66,11 @@ const processResultRow = (r) => ({
   date: r.createdAt,
   formattedDate: new Date(r.createdAt).toLocaleDateString(),
   hasBoth: r.scoreDetails?.selfScore !== null && r.scoreDetails?.supervisorScore !== null,
-  isCombined: r.assessment?.type === 'Combined',
-  targetGroup: denormalizeTargetGroup(r.assessment?.targetGroup) || 'N/A',
-  purpose: r.assessment?.purpose || 'N/A',
-});
+  isCombined: a?.type === 'Combined',
+  targetGroup: denormalizeTargetGroup(a?.targetGroup) || 'N/A',
+  purpose: a?.purpose || 'N/A',
+  };
+};
 
 const getSubordinateIds = async (supervisorId) => {
   const subs = await prisma.user.findMany({ where: { supervisorId }, select: { id: true } });
@@ -122,12 +128,12 @@ export const getAvailableAssessments = asyncHandler(async (req, res) => {
   let assessmentIds = [];
 
   if (req.user.role === 'EMPLOYEE') {
-    assessmentIds = (await prisma.result.findMany({ where: { userId: req.user.id, status: 'FINAL' }, select: { assessmentId: true }, distinct: ['assessmentId'] })).map(r => r.assessmentId);
+    assessmentIds = (await prisma.result.findMany({ where: { userId: req.user.id, status: 'FINAL' }, select: { assessmentId: true }, distinct: ['assessmentId'] })).map(r => r.assessmentId).filter(Boolean);
   }
 
   if (req.user.role === 'SUPERVISOR') {
     const subordinateIds = await getSubordinateIds(req.user.id);
-    assessmentIds = (await prisma.result.findMany({ where: { userId: { in: subordinateIds }, status: 'FINAL' }, select: { assessmentId: true }, distinct: ['assessmentId'] })).map(r => r.assessmentId);
+    assessmentIds = (await prisma.result.findMany({ where: { userId: { in: subordinateIds }, status: 'FINAL' }, select: { assessmentId: true }, distinct: ['assessmentId'] })).map(r => r.assessmentId).filter(Boolean);
   }
 
   const assessments = await prisma.assessment.findMany({
@@ -226,7 +232,7 @@ export const getResultsByAssessment = asyncHandler(async (req, res, next) => {
 const processResults = (results) => {
   const grouped = results.reduce((acc, result) => {
     const competencyId = result.competencyId;
-    const assessmentId = result.assessmentId;
+    const assessmentId = result.assessmentId || result.id;
     if (!competencyId || !assessmentId) return acc;
     const key = `${competencyId}-${assessmentId}`;
     if (!acc[key]) {
@@ -294,7 +300,7 @@ export const getResult = asyncHandler(async (req, res, next) => {
     include: {
       user: { select: { id: true, name: true, email: true, department: true, position: true } },
       competency: { select: { id: true, name: true, category: true } },
-      assessment: { select: { id: true, description: true, type: true, targetGroup: true, purpose: true, selfWeight: true, supervisorWeight: true } },
+      assessment: { select: { id: true, description: true, type: true, targetGroup: true, purpose: true, selfWeight: true, supervisorWeight: true, status: true } },
     },
   });
 
@@ -312,7 +318,7 @@ export const getResult = asyncHandler(async (req, res, next) => {
   }
 
   // Supervisor evaluation (score + comments) for this result, if any
-  const supervisorEval = await prisma.response.findFirst({
+  const supervisorEval = !result.assessmentId ? null : await prisma.response.findFirst({
     where: {
       assessmentId: result.assessmentId,
       employeeId: result.userId,
@@ -529,7 +535,7 @@ export const getResultFilterOptions = asyncHandler(async (req, res) => {
     select: { id: true, name: true, category: true },
   });
   const assessments = await prisma.assessment.findMany({
-    where: { id: { in: resultAssessmentIds.map(r => r.assessmentId) } },
+    where: { id: { in: resultAssessmentIds.map(r => r.assessmentId).filter(Boolean) } },
     select: { id: true, description: true, type: true, status: true, targetGroup: true, purpose: true },
   });
 
@@ -538,7 +544,8 @@ export const getResultFilterOptions = asyncHandler(async (req, res) => {
     data: {
       departments: departments.map(d => d.department).filter(Boolean).sort(),
       positions: positions.map(p => p.position).filter(Boolean).sort(),
-      competencies, assessments,
+      competencies: competencies.map(c => ({ ...c, _id: c.id })),
+      assessments: assessments.map(a => ({ ...a, _id: a.id })),
       levels: ['Basic', 'Intermediate', 'Advanced', 'Expert'],
       assessmentTypes: ['SelfAssessment', 'SupervisorOnly', 'Combined'],
       targetGroups: ['managerial', 'non-managerial', 'common'],

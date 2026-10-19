@@ -15,10 +15,19 @@ import {
   ArrowUp,
   ArrowDown,
   ChevronsUpDown,
+  AlertTriangle,
+  Table as TableIcon,
 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import Modal from '../components/Modal';
 import api from '../utils/api';
+import {
+  createEmptyQuestion,
+  downloadDocxTemplate,
+  downloadQuestionTemplate,
+  parseQuestionFile,
+  parseQuestionsFromText,
+} from '../utils/questionImport';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useQuestions, useAllCompetencies, queryKeys } from '../hooks/queries';
 
@@ -103,19 +112,7 @@ function SortableHeader({ label, sortKey, sort, onSort, className = '', right = 
 }
 
 // ─── Default form state for a single question ──────────────────────────────
-const initQuestionForm = () => ({
-  type: 'MCQ',
-  text: '',
-  score: 1,
-  targetGroup: '',
-  options: ['', '', '', ''],
-  correctAnswer: '',
-  correctAnswers: [],
-  scenario: '',
-  matchingPairs: [{ left: '', right: '' }, { left: '', right: '' }],
-  correctOrder: ['', ''],
-  categories: { '': [''] },
-});
+const initQuestionForm = () => createEmptyQuestion();
 
 // ─── Question type group ────────────────────────────────────────────────────
 const initQuestionTypeGroup = () => ({
@@ -181,6 +178,7 @@ export default function Questions() {
   const [batchForm, setBatchForm] = useState(initBatchForm());
   const [editForm, setEditForm] = useState(null);
   const [uploadedQuestions, setUploadedQuestions] = useState(null);
+  const [uploadWarnings, setUploadWarnings] = useState([]);
   const [uploadLoading, setUploadLoading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
 
@@ -262,23 +260,24 @@ export default function Questions() {
 
   const openUpload = () => {
     setUploadedQuestions(null);
+    setUploadWarnings([]);
     setUploadProgress(0);
     setModal('upload');
   };
 
-  const handleDownloadFormat = async () => {
+  const handleDownloadExcelTemplate = async () => {
     try {
-      const res = await api.get('/questions/import/template', { responseType: 'blob' });
-      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'text/plain' }));
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'question-upload-format.txt';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
+      await downloadQuestionTemplate();
     } catch {
-      show('Could not download the format file.', 'error');
+      show('Could not generate the Excel template.', 'error');
+    }
+  };
+
+  const handleDownloadWordTemplate = async () => {
+    try {
+      await downloadDocxTemplate();
+    } catch {
+      show('Could not generate the Word template.', 'error');
     }
   };
 
@@ -313,7 +312,6 @@ export default function Questions() {
   //  • PDF  – pdf.js with per-page progress + TextItem x/y sorting to preserve
   //           reading order (columns, multi-paragraph layouts)
   //  • DOCX – mammoth extractRawText (full fidelity, no style noise)
-  //  • TXT/MD – FileReader with UTF-8 BOM stripping
 
   const MAX_FILE_SIZE_MB = 10;
 
@@ -333,27 +331,62 @@ export default function Questions() {
 
     const isPdf   = name.endsWith('.pdf') || mime === 'application/pdf';
     const isDocx  = name.endsWith('.docx') || mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-    const isDoc   = name.endsWith('.doc')  || mime === 'application/msword';
-    const isTxt   = name.endsWith('.txt')  || name.endsWith('.md') || mime.startsWith('text/');
+    const isXlsx  = name.endsWith('.xlsx') || mime === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    const isCsv   = name.endsWith('.csv')  || mime === 'text/csv';
 
-    if (!isPdf && !isDocx && !isDoc && !isTxt) {
-      show('Unsupported file type. Please upload a PDF, DOCX, or TXT file.', 'error');
+    if (name.endsWith('.xls')) {
+      show('Legacy .xls files are not supported. Save the file as .xlsx or .csv and try again.', 'error');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
+    if (name.endsWith('.doc') || mime === 'application/msword') {
+      show('Legacy .doc files are not supported. Save the file as .docx and try again.', 'error');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
+    if (!isPdf && !isDocx && !isXlsx && !isCsv) {
+      show('Unsupported file type. Please upload an XLSX, CSV, PDF, or DOCX file.', 'error');
       if (fileInputRef.current) fileInputRef.current.value = '';
       return;
     }
 
     setUploadLoading(true);
     setUploadProgress(5);
+    setUploadWarnings([]);
 
     try {
+      // ── Excel / CSV: parse directly against the template columns ──
+      if (isXlsx || isCsv) {
+        setUploadProgress(40);
+        const { questions: parsed, warnings } = await parseQuestionFile(file);
+        setUploadProgress(100);
+
+        if (parsed.length === 0) {
+          show('No questions found in the spreadsheet. Make sure each row has a question in the "Question" column.', 'error');
+          setUploadLoading(false);
+          if (fileInputRef.current) fileInputRef.current.value = '';
+          return;
+        }
+
+        setUploadedQuestions({ competencyId: '', questionGroups: groupQuestionsByType(parsed) });
+        setUploadWarnings(warnings);
+        show(
+          warnings.length > 0
+            ? `Extracted ${parsed.length} question(s) — review ${warnings.length} warning(s) below.`
+            : `Successfully extracted ${parsed.length} question(s).`,
+          warnings.length > 0 ? 'info' : 'success'
+        );
+        return;
+      }
+
       let text = '';
 
       if (isPdf) {
         text = await extractTextFromPDF(file);
-      } else if (isDocx) {
-        text = await extractTextFromDOCX(file);
       } else {
-        text = await extractTextFromPlain(file);
+        text = await extractTextFromDOCX(file);
       }
 
       setUploadProgress(75);
@@ -372,7 +405,7 @@ export default function Questions() {
       setUploadedQuestions({ competencyId: '', questionGroups: grouped });
       show(`Successfully extracted ${parsed.length} question(s).`, 'success');
     } catch (err) {
-      show('Failed to parse document: ' + (err.message || 'Unknown error'), 'error');
+      show('Failed to parse file: ' + (err.message || 'Unknown error'), 'error');
     } finally {
       setUploadLoading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -422,236 +455,6 @@ export default function Questions() {
       .replace(/[^\S\n]+/g, ' ')      // collapse horizontal whitespace
       .replace(/\n{3,}/g, '\n\n')    // max two consecutive blank lines
       .trim();
-  };
-
-  // TXT / MD: FileReader with UTF-8 BOM stripping
-  const extractTextFromPlain = (file) => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        let text = e.target.result || '';
-        // Strip UTF-8 BOM if present
-        if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
-        resolve(text.replace(/\r\n|\r/g, '\n').trim());
-      };
-      reader.onerror = () => reject(new Error('Could not read file'));
-      reader.readAsText(file, 'UTF-8');
-    });
-  };
-
-  const parseQuestionsFromText = (text) => {
-    const questions = [];
-    let lines;
-    if (text.includes('\n')) {
-      lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-    } else {
-      const withBreaks = text
-        .replace(/(Type:)/g, '\n$1')
-        .replace(/(Question \d+:)/g, '\n$1')
-        .replace(/(Score:)/g, '\n$1')
-        .replace(/(Answer:)/g, '\n$1')
-        .replace(/([a-d]\))/g, '\n$1')
-        .replace(/(\w+ -> \w+)/g, '\n$1');
-      lines = withBreaks.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-    }
-
-    let currentType = 'MCQ';
-    let currentQuestion = null;
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      if (line.length < 2) continue;
-
-      if (line.match(/^type\s*:\s*(.+)$/i)) {
-        const match = line.match(/^type\s*:\s*(.+)$/i);
-        const typeStr = match[1].trim().toUpperCase();
-        const typeMap = {
-          'MCQ': 'MCQ',
-          'MULTIPLE CHOICE': 'MCQ',
-          'MULTIPLECHOICE': 'MCQ',
-          'TRUE/FALSE': 'TrueFalse',
-          'TRUE FALSE': 'TrueFalse',
-          'TRUEFALSE': 'TrueFalse',
-          'TRUE-FALSE': 'TrueFalse',
-          'RATING': 'Rating',
-          'MULTISELECT': 'MultiSelect',
-          'MULTI-SELECT': 'MultiSelect',
-          'MULTI SELECT': 'MultiSelect',
-          'MATCHING': 'Matching',
-          'ORDERING': 'Ordering',
-          'SCENARIO MCQ': 'ScenarioMCQ',
-          'SCENARIOMCQ': 'ScenarioMCQ',
-          'SCENARIO': 'ScenarioMCQ',
-          'DRAGDROP': 'DragDropClassification',
-          'DRAG DROP': 'DragDropClassification',
-          'CLASSIFICATION': 'DragDropClassification',
-          'DRAG-DROP CLASSIFICATION': 'DragDropClassification',
-        };
-        currentType = typeMap[typeStr] || 'MCQ';
-        if (currentQuestion && currentQuestion.text) questions.push(currentQuestion);
-        currentQuestion = null;
-        continue;
-      }
-
-      if (line.match(/^(?:question\s*\d*\s*:|q\d*\s*:|\d+\.)\s*(.+)$/i)) {
-        if (currentQuestion && currentQuestion.text) questions.push(currentQuestion);
-        const match = line.match(/^(?:question\s*\d*\s*:|q\d*\s*:|\d+\.)\s*(.+)$/i);
-        const questionText = match ? match[1].trim() : line;
-        currentQuestion = {
-          ...initQuestionForm(),
-          type: currentType,
-          text: questionText,
-        };
-        continue;
-      }
-
-      if (currentQuestion) {
-        // Score
-        if (line.match(/^score\s*:\s*(\d+(?:\.\d+)?)/i)) {
-          const match = line.match(/^score\s*:\s*(\d+(?:\.\d+)?)/i);
-          if (match) {
-            currentQuestion.score = parseFloat(match[1]) || 1;
-          }
-          continue;
-        }
-
-        // Answer/Correct Answer
-        if (line.match(/^(?:answer|correct)\s*:\s*(.+)$/i)) {
-          const match = line.match(/^(?:answer|correct)\s*:\s*(.+)$/i);
-          const answer = match[1].trim();
-
-          if (currentQuestion.type === 'TrueFalse') {
-            currentQuestion.correctAnswer = answer.match(/true/i) ? 'True' : 'False';
-          } else if (currentQuestion.type === 'MultiSelect') {
-            currentQuestion.correctAnswers = answer
-              .split(/[,;]/)
-              .map(a => a.trim())
-              .filter(a => a.length > 0);
-          } else {
-            currentQuestion.correctAnswer = answer;
-          }
-          continue;
-        }
-
-        // Options (a), b), c), d) format)
-        if (line.match(/^[a-d]\)\s*(.+)$/i)) {
-          const match = line.match(/^([a-d])\)\s*(.+)$/i);
-          const optionLetter = match[1].toLowerCase();
-          let optionText = match[2].trim();
-
-          const isCorrect = optionText.includes('*') || optionText.includes('(correct)');
-          optionText = optionText.replace(/\*|\(correct\)/gi, '').trim();
-
-          const index = optionLetter.charCodeAt(0) - 'a'.charCodeAt(0);
-
-          if (!currentQuestion.options) {
-            currentQuestion.options = ['', '', '', ''];
-          }
-
-          while (currentQuestion.options.length <= index) {
-            currentQuestion.options.push('');
-          }
-
-          currentQuestion.options[index] = optionText;
-
-          if (isCorrect) {
-            if (currentQuestion.type === 'MultiSelect') {
-              if (!currentQuestion.correctAnswers) {
-                currentQuestion.correctAnswers = [];
-              }
-              currentQuestion.correctAnswers.push(optionText);
-            } else {
-              currentQuestion.correctAnswer = optionText;
-            }
-          }
-          continue;
-        }
-
-        // Matching pairs (left -> right format)
-        if (currentQuestion.type === 'Matching' && line.includes('->')) {
-          const [left, right] = line.split('->').map(s => s.trim());
-
-          if (!currentQuestion.matchingPairs) {
-            currentQuestion.matchingPairs = [];
-          }
-
-          if (currentQuestion.matchingPairs.length === 1 &&
-            currentQuestion.matchingPairs[0].left === '' &&
-            currentQuestion.matchingPairs[0].right === '') {
-            currentQuestion.matchingPairs[0] = { left, right };
-          } else {
-            currentQuestion.matchingPairs.push({ left, right });
-          }
-          continue;
-        }
-
-        // Ordering items (1., 2., 3. format)
-        if (currentQuestion.type === 'Ordering' && line.match(/^\d+\.\s*(.+)$/)) {
-          const match = line.match(/^\d+\.\s*(.+)$/);
-          const itemText = match[1].trim();
-
-          if (!currentQuestion.correctOrder || currentQuestion.correctOrder.length === 0 ||
-            (currentQuestion.correctOrder.length === 1 && currentQuestion.correctOrder[0] === '')) {
-            currentQuestion.correctOrder = [itemText];
-          } else {
-            currentQuestion.correctOrder.push(itemText);
-          }
-          continue;
-        }
-
-        // Categories for classification (Category: item1, item2, item3)
-        if (currentQuestion.type === 'DragDropClassification' && line.match(/^(.+?):\s*(.+)$/)) {
-          const match = line.match(/^(.+?):\s*(.+)$/);
-          const category = match[1].trim();
-          const itemsText = match[2].trim();
-          const items = itemsText.split(',').map(item => item.trim()).filter(item => item.length > 0);
-
-          if (!currentQuestion.categories || Object.keys(currentQuestion.categories).length === 0) {
-            currentQuestion.categories = {};
-          }
-
-          if (currentQuestion.categories[''] && currentQuestion.categories[''].length === 1 && currentQuestion.categories[''][0] === '') {
-            delete currentQuestion.categories[''];
-          }
-
-          currentQuestion.categories[category] = items;
-          continue;
-        }
-
-        // Scenario text (for ScenarioMCQ)
-        if (currentQuestion.type === 'ScenarioMCQ' && line.match(/^scenario\s*:\s*(.+)$/i)) {
-          const match = line.match(/^scenario\s*:\s*(.+)$/i);
-          currentQuestion.scenario = match[1].trim();
-          continue;
-        }
-      }
-    }
-
-    if (currentQuestion && currentQuestion.text) questions.push(currentQuestion);
-
-    return questions.map(q => {
-      if (['MCQ', 'MultiSelect', 'ScenarioMCQ'].includes(q.type)) {
-        q.options = (q.options || []).filter(opt => opt && opt.length > 0);
-        if (q.options.length === 0) q.options = ['', '', '', ''];
-      }
-      if (q.type === 'Matching') {
-        q.matchingPairs = (q.matchingPairs || []).filter(p => p.left && p.right);
-        if (q.matchingPairs.length === 0) q.matchingPairs = [{ left: '', right: '' }, { left: '', right: '' }];
-      }
-      if (q.type === 'Ordering') {
-        q.correctOrder = (q.correctOrder || []).filter(item => item && item.length > 0);
-        if (q.correctOrder.length === 0) q.correctOrder = ['', ''];
-      }
-      if (q.type === 'DragDropClassification') {
-        const cats = {};
-        Object.entries(q.categories || {}).forEach(([cat, items]) => {
-          const trimmed = cat.trim();
-          if (trimmed && items && items.length > 0) cats[trimmed] = items.filter(i => i && i.trim());
-        });
-        q.categories = Object.keys(cats).length > 0 ? cats : { '': [''] };
-      }
-      return q;
-    });
   };
 
   const groupQuestionsByType = (questions) => {
@@ -1748,7 +1551,29 @@ export default function Questions() {
           <div className="rounded-lg border border-gray-200 bg-gray-100 p-4 space-y-3">
             <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Supported File Formats</p>
 
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2">
+              {/* XLSX */}
+              <div className="relative bg-white rounded-md border border-gray-200 p-2.5 text-center">
+                <span className="absolute -top-2 right-2 px-1.5 py-0.5 rounded-full bg-brand-red text-white text-[9px] font-semibold uppercase tracking-wide">
+                  Recommended
+                </span>
+                <div className="w-8 h-8 mx-auto mb-1.5 rounded bg-emerald-100 flex items-center justify-center">
+                  <TableIcon className="w-4 h-4 text-emerald-600" />
+                </div>
+                <p className="text-xs font-semibold text-gray-700">.XLSX</p>
+                <p className="text-[10px] text-gray-400 mt-0.5">Excel template<br/>(easiest)</p>
+              </div>
+              {/* CSV */}
+              <div className="bg-white rounded-md border border-gray-200 p-2.5 text-center">
+                <div className="w-8 h-8 mx-auto mb-1.5 rounded bg-emerald-50 flex items-center justify-center">
+                  <TableIcon className="w-4 h-4 text-emerald-500" />
+                </div>
+                <p className="text-xs font-semibold text-gray-700">.CSV</p>
+                <p className="text-[10px] text-gray-400 mt-0.5">Comma-separated<br/>sheet export</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
               {/* PDF */}
               <div className="bg-white rounded-md border border-gray-200 p-2.5 text-center">
                 <div className="w-8 h-8 mx-auto mb-1.5 rounded bg-red-100 flex items-center justify-center">
@@ -1765,65 +1590,26 @@ export default function Questions() {
                 <p className="text-xs font-semibold text-gray-700">.DOCX</p>
                 <p className="text-[10px] text-gray-400 mt-0.5">Word 2007+<br/>documents</p>
               </div>
-              {/* TXT */}
-              <div className="bg-white rounded-md border border-gray-200 p-2.5 text-center">
-                <div className="w-8 h-8 mx-auto mb-1.5 rounded bg-gray-100 flex items-center justify-center">
-                  <FileText className="w-4 h-4 text-gray-500" />
-                </div>
-                <p className="text-xs font-semibold text-gray-700">.TXT / .MD</p>
-                <p className="text-[10px] text-gray-400 mt-0.5">Plain text or<br/>Markdown files</p>
-              </div>
             </div>
 
-            {/* Format guide */}
-            <details className="group">
-              <summary className="cursor-pointer text-xs font-medium text-gray-700 hover:text-gray-700 list-none flex items-center gap-1 select-none">
-                <span className="group-open:rotate-90 transition-transform inline-block">▶</span>
-                Required document format
-              </summary>
-              <div className="mt-2 rounded-md bg-white border border-gray-200 p-3 text-[11px] text-gray-600 font-mono leading-relaxed overflow-auto max-h-52">
-                <p className="font-semibold text-gray-500 mb-1 not-italic font-sans text-[10px] uppercase">MCQ example:</p>
-                <pre className="whitespace-pre-wrap">{`Type: MCQ
-Question 1: What does RAM stand for?
-a) Read Access Memory
-b) Random Access Memory *
-c) Rapid Access Module
-d) Read Anywhere Memory
-Score: 2`}</pre>
-                <p className="font-semibold text-gray-500 mb-1 mt-3 not-italic font-sans text-[10px] uppercase">True/False example:</p>
-                <pre className="whitespace-pre-wrap">{`Type: TrueFalse
-Question 2: The CPU is the brain of the computer.
-Answer: True`}</pre>
-                <p className="font-semibold text-gray-500 mb-1 mt-3 not-italic font-sans text-[10px] uppercase">MultiSelect example:</p>
-                <pre className="whitespace-pre-wrap">{`Type: MultiSelect
-Question 3: Which are programming languages?
-a) Python *
-b) HTML *
-c) Photoshop
-d) JavaScript *`}</pre>
-                <p className="font-semibold text-gray-500 mb-1 mt-3 not-italic font-sans text-[10px] uppercase">Matching example:</p>
-                <pre className="whitespace-pre-wrap">{`Type: Matching
-Question 4: Match the term to its definition.
-CPU -> Processes instructions
-RAM -> Temporary memory
-HDD -> Permanent storage`}</pre>
-                <p className="font-semibold text-gray-500 mb-1 mt-3 not-italic font-sans text-[10px] uppercase">Ordering example:</p>
-                <pre className="whitespace-pre-wrap">{`Type: Ordering
-Question 5: Order the OSI model layers (bottom up).
-1. Physical
-2. Data Link
-3. Network
-4. Transport`}</pre>
-                <p className="mt-2 text-[10px] text-gray-400 not-italic font-sans">Mark the correct MCQ option with * or (correct) after the text. Multiple types can exist in the same file.</p>
-              </div>
-            </details>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={handleDownloadExcelTemplate}
+                className="flex items-center justify-center gap-2 bg-white border border-gray-200 rounded-md px-3 py-2.5 text-brand-red font-semibold text-xs hover:border-brand-red hover:bg-red-50/40 transition-colors"
+              >
+                <Download className="w-3.5 h-3.5" /> Excel template
+              </button>
+              <button
+                onClick={handleDownloadWordTemplate}
+                className="flex items-center justify-center gap-2 bg-white border border-gray-200 rounded-md px-3 py-2.5 text-brand-red font-semibold text-xs hover:border-brand-red hover:bg-red-50/40 transition-colors"
+              >
+                <Download className="w-3.5 h-3.5" /> Word template
+              </button>
+            </div>
 
-            <button
-              onClick={handleDownloadFormat}
-              className="flex items-center gap-2 text-brand-red font-semibold text-sm hover:text-brand-red-dark transition-colors"
-            >
-              <Download className="w-4 h-4" /> Download format file
-            </button>
+            <p className="text-[10px] text-gray-400">
+              Both templates include sample questions for every question type — fill them in and upload.
+            </p>
           </div>
 
           {/* ── Drop zone ──────────────────────────────────────────────────── */}
@@ -1831,7 +1617,7 @@ Question 5: Order the OSI model layers (bottom up).
             <input
               ref={fileInputRef}
               type="file"
-              accept=".pdf,.docx,.doc,.txt,.md"
+              accept=".xlsx,.csv,.pdf,.docx"
               onChange={handleFileUpload}
               className="hidden"
               id="file-upload"
@@ -1839,7 +1625,7 @@ Question 5: Order the OSI model layers (bottom up).
             <label htmlFor="file-upload" className="cursor-pointer block">
               <Upload className="w-9 h-9 mx-auto text-gray-300 group-hover:text-brand-red transition-colors mb-2" />
               <p className="text-sm font-medium text-gray-600">Click to choose a file</p>
-              <p className="text-xs text-gray-400 mt-0.5">PDF, DOCX, TXT or MD · max 10 MB</p>
+              <p className="text-xs text-gray-400 mt-0.5">XLSX, CSV, PDF or DOCX · max 10 MB</p>
             </label>
           </div>
 
@@ -1849,7 +1635,7 @@ Question 5: Order the OSI model layers (bottom up).
               <div className="flex items-center justify-between text-xs text-gray-500">
                 <span className="flex items-center gap-1.5">
                   <span className="w-3.5 h-3.5 border-2 border-brand-red border-t-transparent rounded-full animate-spin inline-block" />
-                  Extracting text…
+                  Reading file…
                 </span>
                 <span className="tabular-nums">{uploadProgress}%</span>
               </div>
@@ -1863,22 +1649,75 @@ Question 5: Order the OSI model layers (bottom up).
           )}
 
           {/* ── Success / Review ───────────────────────────────────────────── */}
-          {uploadedQuestions && (
-            <div className="flex items-center justify-between bg-gray-100 border border-gray-300 rounded-lg px-4 py-3">
-              <div className="flex items-center gap-2">
-                <Check className="w-4 h-4 text-gray-700 flex-shrink-0" />
-                <span className="text-sm text-gray-700 font-medium">
-                  {uploadedQuestions.questionGroups.reduce((sum, g) => sum + g.questions.length, 0)} question(s) extracted
-                </span>
+          {uploadedQuestions && (() => {
+            const flatQuestions = uploadedQuestions.questionGroups.flatMap((g) => g.questions);
+            return (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between bg-gray-100 border border-gray-300 rounded-lg px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <Check className="w-4 h-4 text-gray-700 flex-shrink-0" />
+                    <span className="text-sm text-gray-700 font-medium">
+                      {flatQuestions.length} question(s) extracted
+                    </span>
+                  </div>
+                  <button
+                    onClick={useUploadedQuestions}
+                    className="px-3 py-1.5 bg-brand-black text-white rounded-lg hover:bg-gray-700 text-xs font-medium transition"
+                  >
+                    Review &amp; Save →
+                  </button>
+                </div>
+
+                {uploadWarnings.length > 0 && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
+                    <p className="text-xs font-semibold text-amber-800 flex items-center gap-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                      {uploadWarnings.length} item(s) need attention
+                    </p>
+                    <ul className="mt-1.5 space-y-0.5 max-h-28 overflow-auto">
+                      {uploadWarnings.map((w, i) => (
+                        <li key={i} className="text-[11px] text-amber-700">
+                          Row {w.row}: {w.message}
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="text-[10px] text-amber-600 mt-1.5">
+                      This will not block the upload — you can fix them in the review step.
+                    </p>
+                  </div>
+                )}
+
+                <div className="rounded-lg border border-gray-200 overflow-hidden">
+                  <div className="px-3 py-1.5 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                      Extracted questions
+                    </span>
+                    <span className="text-[10px] text-gray-400">{flatQuestions.length} total</span>
+                  </div>
+                  <div className="max-h-44 overflow-auto divide-y divide-gray-100">
+                    {flatQuestions.map((q, i) => (
+                      <div key={i} className="flex items-center gap-2 px-3 py-1.5">
+                        <span className="text-[10px] text-gray-400 w-6 tabular-nums text-right flex-shrink-0">
+                          {i + 1}.
+                        </span>
+                        <span
+                          className={`px-1.5 py-0.5 rounded text-[9px] font-medium flex-shrink-0 ${
+                            TYPE_BADGES[q.type] || 'bg-gray-200 text-gray-700'
+                          }`}
+                        >
+                          {TYPE_LABELS[q.type] || q.type}
+                        </span>
+                        <span className="text-[11px] text-gray-700 truncate flex-1" title={q.text}>
+                          {q.text}
+                        </span>
+                        <span className="text-[10px] text-gray-400 flex-shrink-0">{q.score} pt</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
-              <button
-                onClick={useUploadedQuestions}
-                className="px-3 py-1.5 bg-brand-black text-white rounded-lg hover:bg-gray-700 text-xs font-medium transition"
-              >
-                Review &amp; Save →
-              </button>
-            </div>
-          )}
+            );
+          })()}
         </div>
 
         <div className="flex justify-end mt-4">

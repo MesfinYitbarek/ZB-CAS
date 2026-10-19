@@ -1145,7 +1145,7 @@ export default function TakeAssessment() {
                   <span className="font-mono">{security.formatTime(security.timeRemaining)}</span>
                 </div>
               )}
-              <span className="text-xs text-gray-500 font-medium">{answeredCount}/{questions.length}</span>
+              <span className="text-xs text-gray-500 font-medium">{answeredCount} of {questions.length} answered</span>
             </div>
           </div>
 
@@ -1235,26 +1235,27 @@ export default function TakeAssessment() {
         </div>
 
         <aside className="w-full lg:w-56 flex-shrink-0 bg-white rounded-xl shadow border border-gray-100 p-4 lg:sticky lg:top-32 lg:max-h-[calc(100vh-10rem)] lg:overflow-y-auto scrollbar-none">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-bold text-brand-black">Navigator</h3>
-            <span className="text-xs text-gray-500 font-medium">{answeredCount}/{questions.length}</span>
-          </div>
+          
           <div className="flex flex-wrap gap-1.5">
             {questions.map((q, idx) => {
               const ans = isAnswered(q);
               const isCurrent = idx === currentQuestionIndex;
               return (
-                <button key={q._id} onClick={() => goToQuestion(idx)} title={`Question ${idx + 1}`}
-                  className={`w-9 h-9 rounded-lg text-xs font-semibold transition-all flex items-center justify-center flex-shrink-0 ${isCurrent ? 'bg-red-600 text-white shadow scale-105' : ans ? 'bg-green-300 text-gray-700 border border-gray-400' : 'bg-gray-100 text-gray-600 border border-gray-200 hover:border-gray-300'}`}>
+                <button key={q._id} onClick={() => goToQuestion(idx)}
+                  title={`Question ${idx + 1}: ${ans ? 'Answered' : 'Not answered yet'}`}
+                  className={`w-9 h-9 rounded-lg text-xs font-semibold transition-all flex items-center justify-center flex-shrink-0 border ${ans ? 'bg-brand-black border-brand-black text-white' : 'bg-white border-gray-300 text-gray-500 hover:border-gray-400'} ${isCurrent ? 'ring-2 ring-brand-red ring-offset-1 scale-105' : ''}`}>
                   {idx + 1}
                 </button>
               );
             })}
           </div>
           <div className="flex lg:flex-col flex-wrap gap-x-3 gap-y-1.5 mt-4 text-[10px]">
-            <div className="flex items-center gap-1.5"><div className="w-3.5 h-3.5 rounded bg-red-600 flex-shrink-0" /><span className="text-gray-600">Current</span></div>
-            <div className="flex items-center gap-1.5"><div className="w-3.5 h-3.5 rounded bg-green-300 border border-gray-400 flex-shrink-0" /><span className="text-gray-600">Answered</span></div>
-            <div className="flex items-center gap-1.5"><div className="w-3.5 h-3.5 rounded bg-gray-100 border border-gray-200 flex-shrink-0" /><span className="text-gray-600">Unanswered</span></div>
+            <div className="flex items-center gap-1.5"><div className="w-3.5 h-3.5 rounded bg-white border-2 border-brand-red flex-shrink-0" /><span className="text-gray-600">Current question</span></div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-3.5 h-3.5 rounded bg-brand-black border border-brand-black flex-shrink-0" />
+              <span className="text-gray-600">Answered</span>
+            </div>
+            <div className="flex items-center gap-1.5"><div className="w-3.5 h-3.5 rounded bg-white border border-gray-300 flex-shrink-0" /><span className="text-gray-600">Not answered yet</span></div>
           </div>
         </aside>
       </div>

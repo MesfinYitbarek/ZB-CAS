@@ -13,6 +13,8 @@ import {
   ArrowUp, ArrowDown, ChevronsUpDown
 } from 'lucide-react';
 import api from '../utils/api';
+import { exportToExcel, generateFilename } from '../utils/exportUtils';
+import { useToast } from '../context/ToastContext';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 const formatAnswer = (answer, questionType) => {
@@ -129,8 +131,9 @@ const Paginator = ({ pagination, goToPage }) => {
 // MAIN COMPONENT
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 export default function Results() {
-const { user, isAdmin } = useAuth();
+const { isAdmin } = useAuth();
   const nav = useNavigate();
+  const { show } = useToast();
 
   // ── filter options loaded from API ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   const { data: filterOptionsData } = useQuery({
@@ -206,6 +209,29 @@ const { user, isAdmin } = useAuth();
     nav(`/results/${result._id}`);
   };
 
+  const handleExportExcel = async () => {
+    if (results.length === 0) return;
+    try {
+      await exportToExcel(
+        {
+          type: 'results',
+          results: results.map(r => ({
+            competencyName: r.competencyName,
+            userName:       r.userName,
+            department:     r.userDepartment,
+            finalScore:     r.finalScore,
+            status:         r.notTaken ? 'Not Taken' : 'Taken',
+            date:           r.formattedDate || (r.createdAt ? new Date(r.createdAt).toLocaleDateString() : ''),
+          })),
+        },
+        generateFilename('results', 'xlsx')
+      );
+      show('Results exported successfully!', 'success');
+    } catch (e) {
+      show('Failed to export results.', 'error');
+    }
+  };
+
   // ── Ref for the table header to handle sticky positioning ─────────────────
   const tableContainerRef = useRef(null);
 
@@ -223,6 +249,13 @@ const { user, isAdmin } = useAuth();
           </h1>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
+          <button
+            onClick={handleExportExcel}
+            disabled={results.length === 0}
+            className="flex items-center gap-1.5 px-2 py-1 rounded-lg border border-gray-300 bg-white text-brand-black hover:bg-gray-50 text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Download className="w-3 h-3" /> Export Excel
+          </button>
           <button
             onClick={() => { setPendingFilters({ ...filters }); setShowFilters(v => !v); }}
             className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border font-semibold text-sm transition-colors ${showFilters || activeFilterCount > 0 ? 'border-brand-red bg-brand-red/10 text-brand-red' : 'border-gray-300 bg-white text-brand-black hover:bg-gray-50'}`}
@@ -277,7 +310,15 @@ const { user, isAdmin } = useAuth();
                 <select value={pendingFilters.competencyId} onChange={e => setPendingFilters(p => ({ ...p, competencyId: e.target.value }))}
                   className="w-full h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm">
                   <option value="">All Competencies</option>
-                  {filterOptions.competencies.map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
+                  {filterOptions.competencies.map(c => <option key={c._id || c.id} value={c._id || c.id}>{c.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5">Assessment</label>
+                <select value={pendingFilters.assessmentId} onChange={e => setPendingFilters(p => ({ ...p, assessmentId: e.target.value }))}
+                  className="w-full h-10 px-3 rounded-lg border border-gray-300 focus-brand text-sm">
+                  <option value="">All Assessments</option>
+                  {filterOptions.assessments.map(a => <option key={a._id || a.id} value={a._id || a.id}>{a.description}</option>)}
                 </select>
               </div>
               {isAdmin && (

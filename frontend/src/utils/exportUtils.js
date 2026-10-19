@@ -27,16 +27,16 @@ export const exportToExcel = async (data, filename = 'export.xlsx') => {
 
     if (data.type === 'results') {
 
-      // ── Results sheet ──────────────────────────────────────────────────────
+      // ── Results sheet (one row per employee × competency) ─────────────────
       const ws = wb.addWorksheet('Results');
 
       ws.columns = [
-        { header: 'Competency',      key: 'competency',      width: 30 },
-        { header: 'Score (%)',        key: 'score',            width: 13 },
-        { header: 'Level',            key: 'level',            width: 16 },
-        { header: 'Status',           key: 'status',           width: 13 },
-        { header: 'Date',             key: 'date',             width: 14 },
-        { header: 'Recommendation',   key: 'recommendation',   width: 60 },
+        { header: 'Competency',    key: 'competency', width: 32 },
+        { header: 'Employee Name', key: 'employee',   width: 28 },
+        { header: 'Department',    key: 'department', width: 24 },
+        { header: 'Score (%)',     key: 'score',      width: 12 },
+        { header: 'Status',        key: 'status',     width: 14 },
+        { header: 'Date',          key: 'date',       width: 16 },
       ];
 
       // Style header row
@@ -50,14 +50,14 @@ export const exportToExcel = async (data, filename = 'export.xlsx') => {
       headerRow.height = 22;
 
       // Add data rows
-      data.results.forEach((r, idx) => {
+      (data.results || []).forEach((r, idx) => {
         const row = ws.addRow({
-          competency:     r.competencyName || r.competencyId?.name || 'N/A',
-          score:          r.finalScore,
-          level:          r.level,
-          status:         r.status,
-          date:           new Date(r.createdAt).toLocaleDateString(),
-          recommendation: r.recommendation || '',
+          competency: r.competencyName || 'N/A',
+          employee:   r.userName || 'N/A',
+          department: r.department || 'N/A',
+          score:      r.finalScore === null || r.finalScore === undefined ? '-' : Number(r.finalScore),
+          status:     r.status || '',
+          date:       r.date || '',
         });
 
         // Alternate row shading
@@ -66,61 +66,11 @@ export const exportToExcel = async (data, filename = 'export.xlsx') => {
         }
         row.eachCell((cell) => { cell.border = allBorders; });
 
-        // Colour-code level cell
-        const levelColors = {
-          Basic:        'FF9CA3AF',
-          Intermediate: 'FF4B5563',
-          Advanced:     'FF111827',
-          Expert:       'FFC8102E',
-        };
-        const levelCell = row.getCell('level');
-        const argb = levelColors[r.level];
-        if (argb) {
-          levelCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb } };
-          levelCell.font = { bold: true, color: { argb: WHITE } };
-        }
-
-        // Wrap recommendation text
-        row.getCell('recommendation').alignment = { wrapText: true };
+        // Center score, keep it a real number so Excel can sort/filter
+        const scoreCell = row.getCell('score');
+        scoreCell.alignment = { horizontal: 'center' };
+        if (typeof scoreCell.value === 'number') scoreCell.numFmt = '0.0';
       });
-
-      // ── Summary sheet ──────────────────────────────────────────────────────
-      if (data.user) {
-        const avgScore = data.results.length > 0
-          ? Math.round(data.results.reduce((acc, r) => acc + r.finalScore, 0) / data.results.length)
-          : 0;
-
-        const ws2 = wb.addWorksheet('Summary');
-        ws2.columns = [
-          { header: 'Field', key: 'field', width: 28 },
-          { header: 'Value', key: 'value', width: 42 },
-        ];
-
-        const hdr2 = ws2.getRow(1);
-        hdr2.eachCell((cell) => {
-          cell.fill   = headerFill;
-          cell.font   = boldWhiteFont;
-          cell.border = allBorders;
-          cell.alignment = { vertical: 'middle', horizontal: 'center' };
-        });
-        hdr2.height = 22;
-
-        const summaryRows = [
-          { field: 'Employee Name',      value: data.user.name },
-          { field: 'Employee ID',        value: data.user.employeeId },
-          { field: 'Department',         value: data.user.department || 'N/A' },
-          { field: 'Position',           value: data.user.position   || 'N/A' },
-          { field: 'Total Assessments',  value: data.results.length },
-          { field: 'Average Score',      value: `${avgScore}%` },
-          { field: 'Generated',          value: new Date().toLocaleString() },
-        ];
-
-        summaryRows.forEach((r, idx) => {
-          const row = ws2.addRow(r);
-          if (idx % 2 === 0) row.eachCell((cell) => { cell.fill = altRowFill; });
-          row.eachCell((cell) => { cell.border = allBorders; });
-        });
-      }
     }
 
     if (data.type === 'activities') {

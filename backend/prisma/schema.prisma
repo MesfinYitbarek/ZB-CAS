@@ -418,14 +418,15 @@ model Response {
   @@index([assessmentId, userId])
   @@index([assessmentId, employeeId])
   @@index([userId, respondentType])
-  @@unique([assessmentId, questionId, employeeId, respondentType])
+  @@index([assessmentId, questionId, employeeId, respondentType])
   @@index([assessmentId, employeeId, userId, respondentType])
+  @@unique([assessmentId, questionId, userId, employeeId, respondentType], map: "Response_unique_answer")
 }
 
 model Result {
   id            String       @id @default(cuid())
   userId        String
-  assessmentId  String
+  assessmentId  String?
   competencyId  String
   finalScore    Float
   level         Level
@@ -436,7 +437,7 @@ model Result {
   updatedAt     DateTime     @updatedAt
 
   user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  assessment  Assessment  @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  assessment  Assessment? @relation(fields: [assessmentId], references: [id], onDelete: SetNull)
   competency  Competency  @relation(fields: [competencyId], references: [id], onDelete: Restrict)
   reports     ReportCompetency[]
   questionDetails ResultQuestionDetail[]

@@ -475,7 +475,6 @@ export default function Users() {
                   </th>
                   <SortableHeader label="Employee ID" sortKey="employeeId" sort={sort} onSort={toggleSort} />
                   <SortableHeader label="Name" sortKey="name" sort={sort} onSort={toggleSort} />
-                  <SortableHeader label="Username" sortKey="username" sort={sort} onSort={toggleSort} />
                   <SortableHeader label="Position" sortKey="position" sort={sort} onSort={toggleSort} />
                   <th className="text-left px-6 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider bg-gray-50">
                     Roles
@@ -489,7 +488,7 @@ export default function Users() {
               <tbody className="divide-y divide-gray-100">
                 {users.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="px-6 py-8 text-center text-gray-400">No users found.</td>
+                    <td colSpan={7} className="px-6 py-8 text-center text-gray-400">No users found.</td>
                   </tr>
                 )}
                 {users.map((u) => (
@@ -507,7 +506,6 @@ export default function Users() {
                       </td>
                       <td className="px-6 py-3 font-mono text-sm text-gray-600">{u.employeeId || '—'}</td>
                       <td className="px-6 py-3 font-semibold text-sm text-brand-black-soft">{u.name}</td>
-                      <td className="px-6 py-3 text-sm text-gray-600 font-mono">{u.username || '—'}</td>
                       <td className="px-6 py-3 text-sm text-gray-600">{u.position || '—'}</td>
 
                       {/* Roles – show with attractive separator */}
@@ -569,7 +567,7 @@ export default function Users() {
                     {/* Expanded Details Row */}
                     {expandedUser === u._id && (
                       <tr className="bg-gray-50/50">
-                        <td colSpan={8} className="px-6 py-4">
+                        <td colSpan={7} className="px-6 py-4">
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                             <div>
                               <span className="text-gray-500 text-xs uppercase font-semibold">Username</span>
